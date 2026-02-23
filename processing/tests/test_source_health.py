@@ -148,7 +148,8 @@ class TestGetSourceHealthSummary:
         assert result["sources"][0]["status"] == "failing"
 
     @pytest.mark.asyncio
-    async def test_sources_sorted_worst_first(self):
+    async def test_sources_sorted_critical_first(self):
+        # Worst-first: critical(10 failures) → failing(4 failures) → healthy(0 failures)
         mock_raw = [
             {"_id": "a", "name": "A", "consecutive_failures": 0, "source_quality_score": 0.9, "last_successful_fetch": None},
             {"_id": "b", "name": "B", "consecutive_failures": 10, "source_quality_score": 0.2, "last_successful_fetch": None},
@@ -159,4 +160,4 @@ class TestGetSourceHealthSummary:
             result = await get_source_health_summary(env=None)
 
         statuses = [s["status"] for s in result["sources"]]
-        assert statuses == ["healthy", "failing", "critical"]
+        assert statuses == ["critical", "failing", "healthy"]

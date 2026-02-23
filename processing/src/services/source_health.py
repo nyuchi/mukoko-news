@@ -117,7 +117,7 @@ async def check_source_health(env) -> dict:
 
     counts: dict[str, int] = {"healthy": 0, "degraded": 0, "failing": 0, "critical": 0}
     for item in updates:
-        counts[item["update"]["health_status"]] = counts.get(item["update"]["health_status"], 0) + 1
+        counts[item["update"]["health_status"]] += 1
 
     return {
         "sources": len(sources),
@@ -160,14 +160,16 @@ async def get_source_health_summary(env) -> dict:
             "quality_score": s.get("source_quality_score", 0.5),
         })
 
-    # Sort by recomputed status (worst first) then quality descending
-    sources.sort(key=lambda s: (_rank.get(s["status"], 0), -s["quality_score"]), reverse=False)
+    # Sort worst-first (critical → failing → degraded → healthy), then quality descending within tier
+    sources.sort(key=lambda s: (_rank.get(s["status"], 0), -s["quality_score"]), reverse=True)
     return {"sources": sources, "summary": summary}
 
 
 async def _compute_source_quality(db: MongoDBClient, source_id) -> dict:
     """Compute quality metrics for a source from its recent articles."""
-    week_ago = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+    # Use Z-suffix to match the ISO storage format produced by datetime.isoformat() callers
+    # that normalize with .replace('+00:00', 'Z') — ensures consistent lexicographic $gte comparison.
+    week_ago = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat().replace("+00:00", "Z")
     pipeline = [
         {"$match": {
             "source_id": source_id,
