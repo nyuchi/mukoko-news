@@ -127,7 +127,7 @@ def _extract_images(soup: BeautifulSoup) -> list[str]:
 
     # img tags
     for img in soup.find_all("img", src=True):
-        url = _normalise_image_url(img["src"])
+        url = _normalise_image_url(str(img["src"]))
         if url and url not in seen:
             seen.add(url)
             images.append(url)
@@ -135,7 +135,7 @@ def _extract_images(soup: BeautifulSoup) -> list[str]:
     # picture > source tags
     for source in soup.find_all("source", srcset=True):
         # srcset can have multiple URLs; take the first
-        srcset = source["srcset"].split(",")[0].strip().split(" ")[0]
+        srcset = str(source["srcset"]).split(",")[0].strip().split(" ")[0]
         url = _normalise_image_url(srcset)
         if url and url not in seen:
             seen.add(url)
@@ -143,7 +143,7 @@ def _extract_images(soup: BeautifulSoup) -> list[str]:
 
     # Background images in inline styles (common in WordPress)
     for tag in soup.find_all(style=True):
-        style = tag["style"]
+        style = str(tag["style"])
         match = re.search(r"url\(['\"]?(https?://[^'\")\s]+)['\"]?\)", style)
         if match:
             url = match.group(1)

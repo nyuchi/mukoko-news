@@ -4,7 +4,7 @@
  * Production: https://news-api.mukoko.com
  * Dev:        https://mukoko-news-api.<account>.workers.dev
  *
- * Primary data store: MongoDB Atlas (via Data API)
+ * Primary data store: MongoDB Atlas (Flex cluster, direct driver via TCP)
  * Edge cache: D1 (low-bandwidth optimization for African markets)
  *
  * Handles: RSS parsing, content cleaning, AI processing (Anthropic Claude),
@@ -42,17 +42,15 @@
      *
      * Secrets (set via: uv run pywrangler secret put SECRET_NAME):
      * - ANTHROPIC_API_KEY     : Anthropic API key for Claude via AI Gateway
-     * - MONGODB_API_KEY       : MongoDB Atlas Data API key
-     * - MONGODB_APP_ID        : MongoDB Atlas App Services app ID
+     * - MONGODB_URI           : MongoDB connection string (mongodb+srv://...)
      *
      * Public vars below:
      */
     "vars": {
         "NODE_ENV": "production",
         "AI_GATEWAY_ID": "mukoko-gateway",
-        "MONGODB_CLUSTER": "mukoko-news",
+        "MONGODB_CLUSTER": "mukoko-app",
         "MONGODB_DATABASE": "mukoko_news",
-        "MONGODB_DATA_API_URL": "https://data.mongodb-api.com/app",
         "CORS_ORIGINS": "https://news.mukoko.com,https://weather.mukoko.com,https://mukoko.com",
         "SERVICE_NAME": "mukoko-news-api",
         "LOG_LEVEL": "info"
@@ -104,6 +102,20 @@
         {
             "binding": "CACHE_STORAGE",
             "id": "91721240e81943aa880dfc1b83fa75ff"
+        }
+    ],
+
+    /**
+     * Service Bindings — internal Worker-to-Worker RPC
+     *
+     * MONGO: MongoDB proxy Worker (JS Worker with MongoDB Node.js driver)
+     * Python Workers can't use TCP drivers directly (Pyodide limitation),
+     * so all MongoDB operations go through this Service Binding (~1ms RPC).
+     */
+    "services": [
+        {
+            "binding": "MONGO",
+            "service": "mukoko-mongo-proxy"
         }
     ],
 

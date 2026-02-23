@@ -7,7 +7,7 @@
  * The Python Worker handles: RSS parsing, content cleaning, AI processing,
  * clustering, search, and feed ranking using proper Python libraries
  * (feedparser, beautifulsoup4, numpy, textstat) + Anthropic Claude via AI Gateway.
- * Primary data store: MongoDB Atlas (via Data API in the Python Worker).
+ * Primary data store: MongoDB Atlas (via mongo-proxy Service Binding in the Python Worker).
  *
  * Usage:
  *   const client = new ProcessingClient(env.DATA_PROCESSOR);
@@ -17,8 +17,6 @@
  * On failure, they throw with the error message from the Worker.
  */
 
-// TODO: replace Fetcher with the actual Service Binding type once wrangler
-// generates it (after adding the service binding to wrangler.jsonc)
 type ServiceBinding = { fetch(input: RequestInfo, init?: RequestInit): Promise<Response> };
 
 export class ProcessingClient {
@@ -227,34 +225,198 @@ export class ProcessingClient {
   }
 
   // ---------------------------------------------------------------------------
+  // Feed collection — triggers batch RSS collection in Python Worker
+  // ---------------------------------------------------------------------------
+
+  async collectFeeds(options?: { batch?: number; batchSize?: number }) {
+    return this._post<{
+      success: boolean;
+      newArticles: number;
+      errors: number;
+      batch: number;
+      totalBatches: number;
+      totalSources: number;
+      details: string[];
+      sourceResults?: Array<{ source_id: number; success: boolean; error?: string }>;
+    }>('/feed/collect', options || {});
+  }
+
+  // ---------------------------------------------------------------------------
+  // Source health — MongoDB-backed health monitoring
+  // ---------------------------------------------------------------------------
+
+  async getSourceHealth() {
+    return this._get<{
+      sources: Array<{
+        source_id: number;
+        name: string;
+        status: string;
+        consecutive_failures: number;
+        last_successful_fetch: string | null;
+        quality_score: number;
+      }>;
+      summary: {
+        healthy: number;
+        degraded: number;
+        failing: number;
+        critical: number;
+      };
+    }>('/sources/health');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Trending — MongoDB aggregation-based trending topics
+  // ---------------------------------------------------------------------------
+
+  async getTrending(countryId?: string) {
+    if (countryId && !/^[A-Z]{2}$/.test(countryId)) {
+      throw new Error(`Invalid country ID: ${countryId}`);
+    }
+    const path = countryId ? `/trending/${encodeURIComponent(countryId)}` : '/trending';
+    return this._get<{
+      topics: Array<{
+        keyword: string;
+        count: number;
+        velocity: number;
+        country_id?: string;
+      }>;
+      cached: boolean;
+    }>(path);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Analytics & insights — MongoDB aggregation-powered
+  // ---------------------------------------------------------------------------
+
+  async getEnhancedStats() {
+    return this._get<{
+      database: {
+        total_articles: number;
+        active_sources: number;
+        categories: number;
+        today_articles: number;
+        week_articles: number;
+      };
+      source: string;
+      timestamp: string;
+    }>('/analytics/stats');
+  }
+
+  async getTrendingCategories(limit = 8) {
+    return this._get<{
+      success: boolean;
+      trending: Array<{
+        id: string;
+        name: string;
+        slug: string;
+        article_count: number;
+        growth_rate: number;
+        engagement: number;
+      }>;
+      source: string;
+      timestamp: string;
+    }>('/analytics/trending-categories');
+  }
+
+  async getContentInsights(countryId?: string) {
+    if (countryId && !/^[A-Z]{2}$/.test(countryId)) {
+      throw new Error(`Invalid country ID: ${countryId}`);
+    }
+    return this._post<{
+      top_articles: Array<{
+        title: string;
+        source: string;
+        category_id: string;
+        country_id: string;
+        engagement_score: number;
+        view_count: number;
+        like_count: number;
+        published_at: string;
+      }>;
+      source_productivity: Array<{
+        _id: string;
+        article_count: number;
+        avg_engagement: number;
+      }>;
+      country_id: string | null;
+      source: string;
+      timestamp: string;
+    }>('/analytics/insights', { country_id: countryId || null });
+  }
+
+  // ---------------------------------------------------------------------------
   // Internal helpers
   // ---------------------------------------------------------------------------
 
-  private async _post<T>(path: string, body: unknown): Promise<T> {
-    const res = await this.binding.fetch(`http://news-api${path}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-
-    if (!res.ok) {
-      const error = await res.text();
-      throw new Error(`News API Worker error (${res.status}): ${error}`);
+  async _healthCheck(): Promise<boolean> {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      try {
+        const res = await this.binding.fetch('http://news-api/health', {
+          method: 'GET',
+          signal: controller.signal,
+        });
+        return res.ok;
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    } catch {
+      return false;
     }
+  }
 
-    return res.json() as Promise<T>;
+  private async _post<T>(path: string, body: unknown): Promise<T> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    try {
+      const res = await this.binding.fetch(`http://news-api${path}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+
+      if (!res.ok) {
+        const errorBody = await res.text();
+        console.error(`[ProcessingClient] POST ${path} failed (${res.status}):`, errorBody.slice(0, 200));
+        throw new Error(`Processing service error (${res.status}) at POST ${path}`);
+      }
+
+      return res.json() as Promise<T>;
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new Error(`Processing service timeout (15s) at POST ${path}`);
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeoutId);
+    }
   }
 
   private async _get<T>(path: string): Promise<T> {
-    const res = await this.binding.fetch(`http://news-api${path}`, {
-      method: 'GET',
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    try {
+      const res = await this.binding.fetch(`http://news-api${path}`, {
+        method: 'GET',
+        signal: controller.signal,
+      });
 
-    if (!res.ok) {
-      const error = await res.text();
-      throw new Error(`News API Worker error (${res.status}): ${error}`);
+      if (!res.ok) {
+        const errorBody = await res.text();
+        console.error(`[ProcessingClient] GET ${path} failed (${res.status}):`, errorBody.slice(0, 200));
+        throw new Error(`Processing service error (${res.status}) at GET ${path}`);
+      }
+
+      return res.json() as Promise<T>;
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new Error(`Processing service timeout (15s) at GET ${path}`);
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeoutId);
     }
-
-    return res.json() as Promise<T>;
   }
 }

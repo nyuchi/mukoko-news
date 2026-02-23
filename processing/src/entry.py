@@ -8,29 +8,20 @@ FastAPI entrypoint called by the main TypeScript Worker via Service Binding.
 All heavy data processing lives here: RSS parsing, content cleaning,
 AI orchestration, clustering, search, and feed ranking.
 
-Bindings available via self.env:
+Bindings available via self.env / env:
   - EDGE_CACHE_DB    : D1 database (edge cache for low-bandwidth African markets)
   - AI               : Workers AI (embeddings) + AI Gateway (Anthropic Claude)
   - VECTORIZE_INDEX  : Vectorize semantic search
   - CACHE_STORAGE    : KV cache
   - STORAGE          : R2 file storage
+  - MONGO            : Service Binding to mongo-proxy Worker (MongoDB access)
 
-  MongoDB (primary data store, accessed via HTTP Data API):
-  - MONGODB_DATA_API_URL : Base URL for the Data API
-  - MONGODB_APP_ID       : Atlas App Services app ID (secret)
-  - MONGODB_API_KEY      : Data API key (secret)
-  - MONGODB_CLUSTER      : Cluster name (e.g. "mukoko-news")
-  - MONGODB_DATABASE     : Database name (e.g. "mukoko_news")
+  MongoDB (primary data store, via mongo-proxy Service Binding):
+  - MONGODB_CLUSTER  : Cluster name (e.g. "mukoko-app")
+  - MONGODB_DATABASE : Database name (e.g. "mukoko_news")
 """
 
-from workers import WorkerEntrypoint, Response
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
-
-app = FastAPI(
-    title="Mukoko News API",
-    version="0.1.0",
-)
+from workers import WorkerEntrypoint, Response, handler
 
 # ---------------------------------------------------------------------------
 # Global env reference — set per-request by the WorkerEntrypoint
@@ -45,24 +36,28 @@ def get_env():
 
 
 # ---------------------------------------------------------------------------
-# WorkerEntrypoint — receives Service Binding calls from the Hono Worker
+# Fetch handler — receives Service Binding calls from the Hono Worker
+# Class MUST be named "Default" for Python Workers.
 # ---------------------------------------------------------------------------
 
-class DataProcessor(WorkerEntrypoint):
+class Default(WorkerEntrypoint):
     async def fetch(self, request):
         global _env
         _env = self.env
 
-        # TODO: wire FastAPI via workers.serve once pywrangler supports it
-        # For now, manual routing to keep things simple and testable
         from services.router import handle_request
         return await handle_request(request, self.env)
 
 
 # ---------------------------------------------------------------------------
-# Health check
+# Scheduled handler — cron triggers (defined in wrangler.jsonc)
+# Uses @handler decorator on module-level function.
 # ---------------------------------------------------------------------------
 
-@app.get("/health")
-async def health():
-    return {"status": "ok", "service": "mukoko-news-api"}
+@handler
+async def on_scheduled(event, env, ctx):
+    """Handle cron triggers."""
+    global _env
+    _env = env
+    from services.cron import handle_scheduled
+    await handle_scheduled(event, env, ctx)

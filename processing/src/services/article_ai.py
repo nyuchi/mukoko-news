@@ -1,13 +1,11 @@
 """
-Full article AI processing pipeline — replaces ArticleAIService.processArticle().
+Full article AI processing pipeline — writes results to MongoDB.
 
 Orchestrates: content cleaning → keyword extraction → quality scoring →
-content hashing → embedding generation.
+content hashing → embedding generation → MongoDB persistence.
 
-This is the main entry point called by the TS Worker via:
+Called via Service Binding:
   env.DATA_PROCESSOR.fetch("http://news-api/content/process", {...})
-
-TS counterpart: ArticleAIService.processArticle() lines 50-123
 """
 
 import hashlib
@@ -17,6 +15,7 @@ from services.content_cleaner import clean_html_content
 from services.keyword_extractor import extract_keywords
 from services.quality_scorer import score_quality
 from services.ai_client import get_embedding
+from services.mongodb import MongoDBClient
 
 
 async def process_article(article: dict, env=None) -> dict:
@@ -51,6 +50,7 @@ async def process_article(article: dict, env=None) -> dict:
     content = article.get("content", "")
     article_id = article.get("id")
     category = article.get("category")
+    country_id = article.get("country_id")
 
     # ---------------------------------------------------------------
     # Step 1: Clean content and extract images
@@ -71,6 +71,7 @@ async def process_article(article: dict, env=None) -> dict:
         title=title,
         content=cleaned,
         existing_category=category,
+        country_id=country_id,
         env=env,
     )
     keywords = kw_result.get("keywords", [])
@@ -108,6 +109,18 @@ async def process_article(article: dict, env=None) -> dict:
 
     processing_time_ms = int((time.time() - start) * 1000)
 
+    # ---------------------------------------------------------------
+    # Step 6: Persist results to MongoDB
+    # ---------------------------------------------------------------
+    if env and article_id:
+        await _persist_results(env, article_id, {
+            "processed_content": cleaned,
+            "quality_score": quality_score,
+            "content_hash": content_hash,
+            "ai_processed": True,
+            "ai_processed_at": _now_iso(),
+        }, keywords)
+
     return {
         "cleaned_content": cleaned,
         "extracted_images": images,
@@ -118,3 +131,35 @@ async def process_article(article: dict, env=None) -> dict:
         "processing_time_ms": processing_time_ms,
         "quality_details": quality,
     }
+
+
+async def _persist_results(env, article_id, update_fields: dict, keywords: list[dict]):
+    """Write processing results to MongoDB."""
+    try:
+        db = MongoDBClient(env)
+        await db.update_one(
+            "articles",
+            {"_id": article_id},
+            {"$set": update_fields},
+        )
+
+        # Store keyword links
+        if keywords:
+            kw_docs = [
+                {
+                    "article_id": article_id,
+                    "keyword_id": kw.get("keyword", ""),
+                    "relevance_score": kw.get("confidence", 0.7),
+                    "source": "ai",
+                }
+                for kw in keywords
+            ]
+            await db.insert_many("article_keyword_links", kw_docs)
+
+    except Exception as e:
+        print(f"[ARTICLE_AI] MongoDB persist failed for {article_id}: {e}")
+
+
+def _now_iso() -> str:
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).isoformat()

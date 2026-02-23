@@ -1,7 +1,7 @@
 /**
  * Tests for SourceHealthService
- * Covers health classification, alert generation, fetch result recording,
- * batch recording, and the full health summary pipeline.
+ * Covers health classification, alert generation, health summary pipeline,
+ * and admin read operations. Write operations (recording) moved to Python Worker.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -110,110 +110,6 @@ describe('SourceHealthService', () => {
         fetch_count: 100,
         consecutive_failures: 10,
       })).toBe('critical');
-    });
-  });
-
-  describe('recordFetchResult', () => {
-    it('should record a successful fetch with last_success_at', async () => {
-      await service.recordFetchResult('source-1', true);
-
-      expect(mockDb.prepare).toHaveBeenCalledTimes(1);
-      const sql = mockDb.prepare.mock.calls[0][0];
-      expect(sql).toContain('fetch_count = fetch_count + 1');
-      expect(sql).toContain('last_success_at = datetime');
-      expect(sql).toContain('consecutive_failures = 0');
-      expect(sql).toContain('last_error = NULL');
-      expect(mockStatement.bind).toHaveBeenCalledWith('source-1');
-      expect(mockStatement.run).toHaveBeenCalled();
-    });
-
-    it('should not update last_success_at on failure', async () => {
-      await service.recordFetchResult('source-1', false, 'HTTP 404: Not Found');
-
-      expect(mockDb.prepare).toHaveBeenCalledTimes(1);
-      const sql = mockDb.prepare.mock.calls[0][0];
-      expect(sql).toContain('error_count = error_count + 1');
-      expect(sql).toContain('consecutive_failures = COALESCE(consecutive_failures, 0) + 1');
-      expect(sql).toContain('last_error = ?');
-      expect(sql).toContain('last_error_at = datetime');
-      expect(sql).not.toContain('last_success_at');
-      expect(mockStatement.bind).toHaveBeenCalledWith('HTTP 404: Not Found', 'source-1');
-    });
-
-    it('should use default error message if none provided', async () => {
-      await service.recordFetchResult('source-1', false);
-
-      expect(mockStatement.bind).toHaveBeenCalledWith('Unknown error', 'source-1');
-    });
-
-    it('should not throw on database error', async () => {
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-      mockStatement.run.mockRejectedValue(new Error('DB error'));
-
-      // Should not throw
-      await service.recordFetchResult('source-1', true);
-
-      expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('[SourceHealth]'),
-        expect.any(Error)
-      );
-      consoleSpy.mockRestore();
-    });
-  });
-
-  describe('recordHealthBatch', () => {
-    it('should batch multiple health updates into a single db.batch call', async () => {
-      const results = [
-        { sourceId: 'source-1', success: true },
-        { sourceId: 'source-2', success: false, error: 'HTTP 500' },
-        { sourceId: 'source-3', success: true },
-      ];
-
-      await service.recordHealthBatch(results);
-
-      // Should prepare 3 statements and call db.batch once
-      expect(mockDb.prepare).toHaveBeenCalledTimes(3);
-      expect(mockDb.batch).toHaveBeenCalledTimes(1);
-      expect(mockDb.batch).toHaveBeenCalledWith(expect.arrayContaining([
-        expect.anything(),
-        expect.anything(),
-        expect.anything(),
-      ]));
-    });
-
-    it('should do nothing for empty results', async () => {
-      await service.recordHealthBatch([]);
-
-      expect(mockDb.prepare).not.toHaveBeenCalled();
-      expect(mockDb.batch).not.toHaveBeenCalled();
-    });
-
-    it('should use correct SQL for success vs failure', async () => {
-      await service.recordHealthBatch([
-        { sourceId: 'ok', success: true },
-        { sourceId: 'bad', success: false, error: 'Timeout' },
-      ]);
-
-      const calls = mockDb.prepare.mock.calls;
-      // First call = success SQL
-      expect(calls[0][0]).toContain('last_success_at = datetime');
-      expect(calls[0][0]).toContain('consecutive_failures = 0');
-      // Second call = failure SQL
-      expect(calls[1][0]).toContain('error_count = error_count + 1');
-      expect(calls[1][0]).not.toContain('last_success_at');
-    });
-
-    it('should not throw on database error', async () => {
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-      mockDb.batch.mockRejectedValue(new Error('Batch DB error'));
-
-      await service.recordHealthBatch([{ sourceId: 'source-1', success: true }]);
-
-      expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('[SourceHealth]'),
-        expect.any(Error)
-      );
-      consoleSpy.mockRestore();
     });
   });
 

@@ -1,4 +1,4 @@
-name: Deploy Mukoko News
+name: Test Mukoko News
 
 on:
   push:
@@ -76,76 +76,28 @@ jobs:
         cd backend
         npm run test:build
 
-  deploy-backend:
+  test-api:
     runs-on: ubuntu-latest
-    name: Deploy Backend
-    needs: [test-frontend, test-backend]
-    if: github.ref == 'refs/heads/main'
+    name: Test Python API Worker
 
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '20'
-        cache: 'npm'
-        cache-dependency-path: 'backend/package-lock.json'
+    - name: Install uv
+      uses: astral-sh/setup-uv@v5
 
-    - name: Install backend dependencies
+    - name: Install Python dependencies
       run: |
-        cd backend
-        npm install
+        cd processing
+        uv sync --group dev
 
-    - name: Run database migrations
+    - name: Run Python tests
       run: |
-        cd backend
-        echo "Running D1 database migrations..."
-        npm run db:migrate || echo "Migration completed (may show warnings for existing tables)"
-      env:
-        CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        cd processing
+        uv run pytest
 
-    - name: Deploy backend to Cloudflare
+    - name: Type check Python
       run: |
-        cd backend
-        npm run deploy
-      env:
-        CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-
-  test-deployment:
-    runs-on: ubuntu-latest
-    name: Test Deployment
-    needs: deploy-backend
-    if: github.ref == 'refs/heads/main'
-
-    steps:
-    - name: Wait for deployment propagation
-      run: sleep 30
-
-    - name: Test backend health
-      run: |
-        echo "Testing backend health..."
-        max_retries=3
-        retry_count=0
-        while [ $retry_count -lt $max_retries ]; do
-          response=$(curl -s -o /dev/null -w "%{http_code}" \
-            -H "User-Agent: GitHub-Actions-Health-Check" \
-            -H "Accept: application/json" \
-            https://mukoko-news-backend.nyuchi.workers.dev/api/health)
-
-          if [ $response -eq 200 ]; then
-            echo "Backend is healthy!"
-            exit 0
-          fi
-
-          retry_count=$((retry_count + 1))
-          if [ $retry_count -lt $max_retries ]; then
-            echo "Attempt $retry_count failed (HTTP $response), retrying in 10s..."
-            sleep 10
-          fi
-        done
-
-        echo "Backend health check failed after $max_retries attempts (HTTP $response)"
-        echo "This may be due to Cloudflare bot protection. Check Cloudflare dashboard."
-        exit 0
+        cd processing
+        uv run pyright

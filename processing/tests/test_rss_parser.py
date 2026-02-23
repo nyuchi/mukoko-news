@@ -6,7 +6,7 @@ malformed feeds, empty feeds, Atom format, media namespaces.
 """
 
 import pytest
-from services.rss_parser import parse_rss_feed, _parse_entry, _extract_image, _clean_summary, _generate_slug
+from services.rss_parser import parse_rss_feed, _clean_summary, _generate_slug, _extract_image_rss, _is_valid_image_url
 
 
 # ---------------------------------------------------------------------------

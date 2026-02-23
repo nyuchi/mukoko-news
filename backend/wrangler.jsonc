@@ -158,9 +158,9 @@
   ],
 
   /**
-   * Service Binding - Python News API Worker
+   * Service Binding - Python Data Processing Worker
    * Handles: RSS parsing, AI processing, clustering, search, feed ranking
-   * Primary data store: MongoDB Atlas (via Data API in Python Worker)
+   * Primary data store: MongoDB Atlas (via mongo-proxy Service Binding)
    * Called via: env.DATA_PROCESSOR.fetch("http://news-api/...", {...})
    */
   "services": [

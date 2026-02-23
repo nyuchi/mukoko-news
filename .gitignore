@@ -41,6 +41,7 @@ __pycache__/
 *.egg-info/
 .pytest_cache/
 .venv/
+python_modules/
 
 # Cache directories
 .npm

@@ -1,19 +1,16 @@
 """
-Semantic search processor — replaces backend/services/AISearchService.ts.
+Semantic search processor — MongoDB-backed article fetch + trending.
 
-Uses Vectorize (via FFI) for vector search and Anthropic Claude for
-AI insights, replacing:
-  - Workers AI embedding per query (llama-3.1-8b for trending)
-  - SQL LIKE fallback with no ranking
-  - AI-only trending topics
-
-TS counterpart: AISearchService.ts (334 lines)
+Uses Vectorize for vector search, MongoDB for article data retrieval
+and trending topics (delegated to trending.py). D1 as fallback for
+keyword search when Vectorize is unavailable.
 """
 
 from services.ai_client import AnthropicClient, get_embedding
+from services.mongodb import MongoDBClient
 
 
-async def semantic_search(query: str, options: dict = None, env=None) -> dict:
+async def semantic_search(query: str, options: dict | None = None, env=None) -> dict:
     """
     Perform semantic search using Vectorize + D1.
 
@@ -97,54 +94,15 @@ async def semantic_search(query: str, options: dict = None, env=None) -> dict:
     return {"results": results, "insights": None, "method": "keyword"}
 
 
-async def get_trending_topics(env=None) -> dict:
+async def get_trending_topics(env=None, country_id: str | None = None) -> dict:
     """
-    Get trending topics from recent articles.
+    Get trending topics — delegates to trending.py service.
 
-    Uses frequency analysis on keywords/titles instead of Llama AI.
-    Falls back to Claude for summarisation if needed.
-
-    TS counterpart: AISearchService.getTrendingTopics()
+    Uses MongoDB aggregation with engagement weighting,
+    not Claude AI calls (pure data analysis).
     """
-    if not env:
-        return {"topics": []}
-
-    try:
-        # Fetch recent article titles from D1 edge cache
-        # TODO: migrate to MongoDB as primary source
-        result = await env.EDGE_CACHE_DB.prepare("""
-            SELECT title FROM articles
-            WHERE published_at >= datetime('now', '-24 hours')
-            ORDER BY published_at DESC
-            LIMIT 50
-        """).all()
-
-        titles = [r["title"] for r in (result.results if hasattr(result, "results") else [])]
-
-        if not titles:
-            return {"topics": []}
-
-        # TODO: frequency-based topic extraction using collections.Counter
-        # on normalised title words (avoid AI for this — it's just word counting)
-        #
-        # For now, use Claude to summarise trends
-        client = AnthropicClient(env)
-        prompt = f"""Given these recent news headlines from Pan-African news sources,
-identify the top 5 trending topics. Return JSON only.
-
-Headlines:
-{chr(10).join(f'- {t}' for t in titles[:30])}
-
-Return: {{"topics": ["topic1", "topic2", "topic3", "topic4", "topic5"]}}"""
-
-        parsed = await client.extract_json(prompt, max_tokens=200)
-        topics = parsed.get("topics", []) if parsed else []
-
-        return {"topics": topics[:5]}
-
-    except Exception as e:
-        print(f"[SEARCH] Trending topics failed: {e}")
-        return {"topics": []}
+    from services.trending import get_trending
+    return await get_trending(env, country_id=country_id)
 
 
 async def _fetch_articles(
@@ -157,11 +115,42 @@ async def _fetch_articles(
     limit: int,
     env,
 ) -> list[dict]:
-    """Fetch articles from D1 edge cache by IDs with optional filters.
-    TODO: migrate to MongoDB as primary source."""
+    """Fetch articles by IDs — MongoDB first, D1 edge cache fallback."""
     if not article_ids:
         return []
 
+    # Try MongoDB first
+    try:
+        db = MongoDBClient(env)
+        mongo_filter: dict = {"_id": {"$in": [str(aid) for aid in article_ids]}}
+        if category:
+            mongo_filter["category_id"] = category
+        if source:
+            mongo_filter["source"] = source
+        if date_from or date_to:
+            date_filter: dict = {}
+            if date_from:
+                date_filter["$gte"] = date_from
+            if date_to:
+                date_filter["$lte"] = date_to
+            mongo_filter["published_at"] = date_filter
+
+        rows = await db.find(
+            "articles",
+            mongo_filter,
+            projection={
+                "title": 1, "slug": 1, "description": 1, "source": 1,
+                "category_id": 1, "country_id": 1, "published_at": 1,
+            },
+            limit=limit,
+        )
+
+        if rows:
+            return _attach_scores(rows, score_map, limit)
+    except Exception as e:
+        print(f"[SEARCH] MongoDB fetch failed, trying D1: {e}")
+
+    # Fallback: D1 edge cache
     try:
         placeholders = ",".join("?" for _ in article_ids)
         sql = f"""
@@ -188,21 +177,23 @@ async def _fetch_articles(
 
         result = await env.EDGE_CACHE_DB.prepare(sql).bind(*params).all()
         rows = result.results if hasattr(result, "results") else []
-
-        # Attach vector scores and sort by score descending
-        articles = []
-        for row in rows:
-            row_dict = dict(row) if not isinstance(row, dict) else row
-            article_id = row_dict.get("id")
-            row_dict["score"] = score_map.get(f"article_{article_id}", score_map.get(str(article_id), 0))
-            articles.append(row_dict)
-
-        articles.sort(key=lambda a: a.get("score", 0), reverse=True)
-        return articles[:limit]
+        return _attach_scores(list(rows), score_map, limit)
 
     except Exception as e:
-        print(f"[SEARCH] Edge cache query failed: {e}")
+        print(f"[SEARCH] D1 edge cache query also failed: {e}")
         return []
+
+
+def _attach_scores(rows: list, score_map: dict, limit: int) -> list[dict]:
+    """Attach vector scores to articles and sort by score descending."""
+    articles = []
+    for row in rows:
+        row_dict = dict(row) if not isinstance(row, dict) else row
+        article_id = row_dict.get("_id") or row_dict.get("id")
+        row_dict["score"] = score_map.get(f"article_{article_id}", score_map.get(str(article_id), 0))
+        articles.append(row_dict)
+    articles.sort(key=lambda a: a.get("score", 0), reverse=True)
+    return articles[:limit]
 
 
 async def _keyword_search(

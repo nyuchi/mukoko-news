@@ -1,12 +1,14 @@
 /**
- * SourceHealthService - RSS Source Health Monitoring and Alerting
+ * SourceHealthService - RSS Source Health Monitoring (D1 Read Layer)
  *
- * Provides:
- * - Per-source error tracking with persistence after each fetch
+ * Provides D1-based health reads for the admin dashboard (fallback when Python Worker unavailable).
+ * Health recording (writes) is handled by the Python Worker via MongoDB.
+ *
+ * Read operations:
  * - Health status classification (healthy, degraded, failing, critical)
  * - Alerting for sources that cross error thresholds
  * - Source health dashboard data for admin
- * - Consecutive failure tracking to distinguish transient vs persistent errors
+ * - Admin reset of source health tracking
  */
 
 /** Shape of an rss_sources row returned by health queries */
@@ -87,98 +89,6 @@ const THRESHOLDS = {
 
 export class SourceHealthService {
   constructor(private db: D1Database) {}
-
-  /**
-   * Record the result of a source fetch attempt.
-   * Called after each RSS feed fetch (success or failure).
-   */
-  async recordFetchResult(
-    sourceId: string,
-    success: boolean,
-    errorMessage?: string
-  ): Promise<void> {
-    try {
-      if (success) {
-        await this.db
-          .prepare(`
-            UPDATE rss_sources
-            SET fetch_count = fetch_count + 1,
-                last_fetched_at = datetime('now'),
-                last_success_at = datetime('now'),
-                consecutive_failures = 0,
-                last_error = NULL,
-                updated_at = datetime('now')
-            WHERE id = ?
-          `)
-          .bind(sourceId)
-          .run();
-      } else {
-        await this.db
-          .prepare(`
-            UPDATE rss_sources
-            SET fetch_count = fetch_count + 1,
-                error_count = error_count + 1,
-                consecutive_failures = COALESCE(consecutive_failures, 0) + 1,
-                last_fetched_at = datetime('now'),
-                last_error = ?,
-                last_error_at = datetime('now'),
-                updated_at = datetime('now')
-            WHERE id = ?
-          `)
-          .bind(errorMessage || 'Unknown error', sourceId)
-          .run();
-      }
-    } catch (error) {
-      console.error(`[SourceHealth] Error recording fetch result for ${sourceId}:`, error);
-    }
-  }
-
-  /**
-   * Record health results for multiple sources in a single batch.
-   * More efficient than sequential recordFetchResult calls.
-   */
-  async recordHealthBatch(
-    results: { sourceId: string; success: boolean; error?: string }[]
-  ): Promise<void> {
-    if (results.length === 0) return;
-
-    try {
-      const statements = results.map((r) => {
-        if (r.success) {
-          return this.db
-            .prepare(`
-              UPDATE rss_sources
-              SET fetch_count = fetch_count + 1,
-                  last_fetched_at = datetime('now'),
-                  last_success_at = datetime('now'),
-                  consecutive_failures = 0,
-                  last_error = NULL,
-                  updated_at = datetime('now')
-              WHERE id = ?
-            `)
-            .bind(r.sourceId);
-        } else {
-          return this.db
-            .prepare(`
-              UPDATE rss_sources
-              SET fetch_count = fetch_count + 1,
-                  error_count = error_count + 1,
-                  consecutive_failures = COALESCE(consecutive_failures, 0) + 1,
-                  last_fetched_at = datetime('now'),
-                  last_error = ?,
-                  last_error_at = datetime('now'),
-                  updated_at = datetime('now')
-              WHERE id = ?
-            `)
-            .bind(r.error || 'Unknown error', r.sourceId);
-        }
-      });
-
-      await this.db.batch(statements);
-    } catch (error) {
-      console.error('[SourceHealth] Error recording batch health results:', error);
-    }
-  }
 
   /**
    * Classify a source's health status based on its metrics.

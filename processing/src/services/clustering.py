@@ -60,7 +60,7 @@ MAX_TITLE_LENGTH = 500
 MAX_WORDS = 50
 
 
-async def cluster_articles(articles: list[dict], config: dict = None, env=None) -> dict:
+async def cluster_articles(articles: list[dict], config: dict | None = None, env=None) -> dict:
     """
     Cluster articles by similarity.
 
@@ -207,7 +207,7 @@ def _jaccard_cluster(
     return _build_clusters(articles, sim, threshold, max_related, max_clusters)
 
 
-def _normalise_title(title: str) -> list[str]:
+def _normalise_title(title: str | None) -> list[str]:
     """
     Normalise title for comparison.
     Matches TS normalizeTitle() but uses multilingual stopwords.

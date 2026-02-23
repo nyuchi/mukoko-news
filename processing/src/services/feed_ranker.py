@@ -1,17 +1,17 @@
 """
-Personalised feed ranker — replaces backend/services/PersonalizedFeedService.ts scoring.
+Personalised feed ranker — enhanced with source quality + engagement velocity.
 
-Uses numpy for vectorised scoring (when available), replacing:
-  - Loop-based fixed-weight scoring
-  - Manual recency decay calculation
-  - Sequential diversity penalty pass
+Uses numpy for vectorised scoring (when available). Goes beyond the TS
+PersonalizedFeedService by feeding engagement data and source quality
+back into ranking decisions.
 
-TS counterpart: PersonalizedFeedService.ts lines 286-380
+New signals (not in TS):
+  - source_quality: Sources producing high-quality, high-engagement content rank higher
+  - engagement_velocity: Sources with fast-growing engagement get a boost
 """
 
 import math
 
-# TODO: confirm numpy availability in Pyodide
 try:
     import numpy as np
     HAS_NUMPY = True
@@ -19,7 +19,7 @@ except ImportError:
     HAS_NUMPY = False
 
 
-# Scoring weights — matching TS PersonalizedFeedService defaults
+# Scoring weights — extended beyond TS defaults with source quality signal
 WEIGHTS = {
     "followed_source": 50,
     "followed_author": 40,
@@ -28,6 +28,7 @@ WEIGHTS = {
     "category_interest": 20,
     "recency": 25,
     "engagement": 15,
+    "source_quality": 20,
     "diversity": -10,
 }
 
@@ -122,6 +123,12 @@ def _rank_numpy(articles: list[dict], prefs: dict) -> list[dict]:
     # Engagement: logarithmic to prevent viral bias (same formula as TS)
     engagement = np.array([_engagement_score(a) for a in articles])
 
+    # Source quality: from source-level quality scoring (0.0-1.0)
+    source_qual = np.array([
+        float(a.get("source_quality_score", 0.5))
+        for a in articles
+    ])
+
     # Weighted sum
     scores = (
         source_match * WEIGHTS["followed_source"]
@@ -131,6 +138,7 @@ def _rank_numpy(articles: list[dict], prefs: dict) -> list[dict]:
         + category_interest * WEIGHTS["category_interest"]
         + recency * WEIGHTS["recency"]
         + engagement * WEIGHTS["engagement"]
+        + source_qual * WEIGHTS["source_quality"]
     )
 
     # Diversity penalty (second pass): penalise over-representation of a category
@@ -156,6 +164,7 @@ def _rank_numpy(articles: list[dict], prefs: dict) -> list[dict]:
             "category_interest": round(float(category_interest[i] * WEIGHTS["category_interest"]), 2),
             "recency": round(float(recency[i] * WEIGHTS["recency"]), 2),
             "engagement": round(float(engagement[i] * WEIGHTS["engagement"]), 2),
+            "source_quality": round(float(source_qual[i] * WEIGHTS["source_quality"]), 2),
         }
         result.append(scored)
 
@@ -206,6 +215,11 @@ def _rank_loop(articles: list[dict], prefs: dict) -> list[dict]:
         e = _engagement_score(article)
         score += e * WEIGHTS["engagement"]
         breakdown["engagement"] = round(e * WEIGHTS["engagement"], 2)
+
+        # Source quality
+        sq = float(article.get("source_quality_score", 0.5))
+        score += sq * WEIGHTS["source_quality"]
+        breakdown["source_quality"] = round(sq * WEIGHTS["source_quality"], 2)
 
         scored = dict(article)
         scored["score"] = round(score, 2)

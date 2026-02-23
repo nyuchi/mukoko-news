@@ -6,14 +6,13 @@ requires-python = ">=3.12"
 dependencies = [
     "workers-py",
     "fastapi",
-    "feedparser",
+    "lxml",
     "beautifulsoup4",
     "bleach",
     "numpy",
-    "textstat",
 ]
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
     "pytest",
     "pytest-asyncio",
@@ -22,8 +21,12 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["src"]
 asyncio_mode = "auto"
 
 [tool.pyright]
 pythonVersion = "3.12"
 typeCheckingMode = "basic"
+extraPaths = ["src"]
+# Pyodide-only modules unavailable outside Cloudflare Workers runtime
+reportMissingImports = "warning"

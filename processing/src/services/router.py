@@ -70,6 +70,7 @@ async def handle_request(request, env):
                 title=body.get("title", ""),
                 content=body.get("content", ""),
                 existing_category=body.get("category"),
+                country_id=body.get("country_id"),
                 env=env,
             )
             return _json(result)
@@ -139,6 +140,61 @@ async def handle_request(request, env):
                 url=body.get("url", ""),
                 env=env,
             )
+            return _json(result)
+
+        # ---------------------------------------------------------------
+        # Feed collection (manual trigger for RSS batch pipeline)
+        # ---------------------------------------------------------------
+        if path == "/feed/collect" and method == "POST":
+            from services.feed_collector import collect_feeds
+            result = await collect_feeds(env)
+            return _json(result)
+
+        # ---------------------------------------------------------------
+        # Trending topics
+        # ---------------------------------------------------------------
+        if path == "/trending" and method == "GET":
+            from services.trending import get_trending
+            result = await get_trending(env)
+            return _json(result)
+
+        if path.startswith("/trending/") and method == "GET":
+            import re
+            from services.trending import get_trending
+            country = path.split("/")[-1].upper()
+            if not re.fullmatch(r"[A-Z]{2}", country):
+                return _json({"error": "Invalid country code"}, status=400)
+            result = await get_trending(env, country_id=country)
+            return _json(result)
+
+        # ---------------------------------------------------------------
+        # Analytics & insights (MongoDB aggregation)
+        # ---------------------------------------------------------------
+        if path == "/analytics/stats" and method == "GET":
+            from services.analytics import get_enhanced_stats
+            result = await get_enhanced_stats(env)
+            return _json(result)
+
+        if path == "/analytics/trending-categories" and method == "GET":
+            from services.analytics import get_trending_categories
+            result = await get_trending_categories(env)
+            return _json(result)
+
+        if path == "/analytics/insights" and method == "POST":
+            from services.analytics import get_content_insights
+            body = await _body(request)
+            result = await get_content_insights(
+                env,
+                country_id=body.get("country_id"),
+            )
+            return _json(result)
+
+        # ---------------------------------------------------------------
+        # Source health
+        # ---------------------------------------------------------------
+        if path == "/sources/health" and method == "GET":
+            from services.source_health import get_source_health_summary
+            result = await get_source_health_summary(env)
             return _json(result)
 
         # ---------------------------------------------------------------

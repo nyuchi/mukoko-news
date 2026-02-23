@@ -170,7 +170,7 @@ def _extract_title(soup: BeautifulSoup) -> str:
     # OpenGraph title (usually cleanest)
     og = soup.find("meta", property="og:title")
     if og and og.get("content"):
-        return og["content"].strip()
+        return str(og["content"]).strip()
 
     # <title> tag
     if soup.title and soup.title.string:
@@ -194,11 +194,11 @@ def _extract_meta(soup: BeautifulSoup, name: str) -> str | None:
     # Try property (OpenGraph)
     tag = soup.find("meta", property=name)
     if tag and tag.get("content"):
-        return tag["content"].strip()
+        return str(tag["content"]).strip()
     # Try name
     tag = soup.find("meta", attrs={"name": name})
     if tag and tag.get("content"):
-        return tag["content"].strip()
+        return str(tag["content"]).strip()
     return None
 
 
@@ -209,7 +209,7 @@ def _extract_image(soup: BeautifulSoup, base_url: str) -> str | None:
         if tag:
             url = tag.get(attr, "")
             if url:
-                url = _resolve_url(url, base_url)
+                url = _resolve_url(str(url), base_url)
                 if url and not url.startswith("data:"):
                     return url
     return None

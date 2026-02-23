@@ -174,9 +174,18 @@ export const api = {
     return fetchAPI<ArticlesResponse>(`/api/search?${searchParams.toString()}`);
   },
 
-  // Health check
+  // Health check — checks backend + Python Worker + D1
   health: () => {
-    return fetchAPI<{ status: string }>('/api/health');
+    return fetchAPI<{
+      status: 'healthy' | 'degraded' | 'unhealthy';
+      timestamp: string;
+      services: {
+        database: string;
+        processing_api: string;
+        analytics: boolean;
+        cache: string;
+      };
+    }>('/api/health');
   },
 
   // Insights - uses backend stats and trending endpoints
