@@ -5,6 +5,7 @@ Goes beyond the TS SourceHealthService's simple consecutive_failures counter
 by incorporating article quality, engagement data, and adaptive scheduling.
 """
 
+import math
 from datetime import datetime, timezone, timedelta
 from services.mongodb import MongoDBClient
 
@@ -114,33 +115,36 @@ async def check_source_health(env) -> dict:
             {"$set": item["update"]},
         )
 
+    counts: dict[str, int] = {"healthy": 0, "degraded": 0, "failing": 0, "critical": 0}
+    for item in updates:
+        counts[item["update"]["health_status"]] = counts.get(item["update"]["health_status"], 0) + 1
+
     return {
         "sources": len(sources),
         "alerts": alerts,
-        "healthy": sum(1 for s in sources if classify_health(s.get("consecutive_failures", 0)) == "healthy"),
-        "degraded": sum(1 for s in sources if classify_health(s.get("consecutive_failures", 0)) == "degraded"),
-        "failing": sum(1 for s in sources if classify_health(s.get("consecutive_failures", 0)) == "failing"),
-        "critical": sum(1 for s in sources if classify_health(s.get("consecutive_failures", 0)) == "critical"),
+        **counts,
     }
 
 
 async def get_source_health_summary(env) -> dict:
     """Get health summary for all sources (used by /sources/health route)."""
     db = MongoDBClient(env)
+    # published_at is stored as ISO strings throughout this codebase
     raw = await db.find(
         "rss_sources",
         {"enabled": True},
         projection={
-            "name": 1, "url": 1, "country_id": 1,
-            "health_status": 1, "consecutive_failures": 1,
-            "source_quality_score": 1, "last_successful_fetch": 1,
+            "name": 1,
+            "consecutive_failures": 1,
+            "source_quality_score": 1,
+            "last_successful_fetch": 1,
         },
-        sort={"health_status": 1, "source_quality_score": -1},
         limit=500,
     )
 
     sources = []
     summary = {"healthy": 0, "degraded": 0, "failing": 0, "critical": 0}
+    _rank = {"healthy": 0, "degraded": 1, "failing": 2, "critical": 3}
 
     for s in raw:
         failures = s.get("consecutive_failures", 0)
@@ -156,6 +160,8 @@ async def get_source_health_summary(env) -> dict:
             "quality_score": s.get("source_quality_score", 0.5),
         })
 
+    # Sort by recomputed status (worst first) then quality descending
+    sources.sort(key=lambda s: (_rank.get(s["status"], 0), -s["quality_score"]), reverse=False)
     return {"sources": sources, "summary": summary}
 
 
@@ -190,7 +196,6 @@ async def _compute_source_quality(db: MongoDBClient, source_id) -> dict:
             count = r.get("count", 0)
 
             # Composite score: 60% quality + 30% engagement + 10% volume
-            import math
             eng_score = min(math.log10(max(avg_engagement, 1) + 1) / 3, 1.0)
             vol_score = min(count / 50, 1.0)
             score = round(avg_quality * 0.6 + eng_score * 0.3 + vol_score * 0.1, 2)

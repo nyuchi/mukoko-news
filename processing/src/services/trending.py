@@ -75,7 +75,7 @@ async def get_trending(env, country_id: str | None = None) -> dict:
                     return {"topics": data["global"], "cached": True}
                 # Country cache format: {"topics": [...], "updated_at": "..."}
                 if "topics" in data:
-                    return {**data, "cached": True}
+                    return {"topics": data["topics"], "cached": True}
         except Exception:
             pass
 

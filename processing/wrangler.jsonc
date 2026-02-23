@@ -21,7 +21,10 @@
     /**
      * Custom Domain
      * Production traffic routed through news-api.mukoko.com
-     * DNS: CNAME news-api.mukoko.com -> mukoko-news-api.<account>.workers.dev
+     *
+     * With custom_domains, Cloudflare manages DNS automatically (AAAA + proxied
+     * CNAME on Cloudflare's nameservers). Do NOT add a manual CNAME pointing to
+     * the .workers.dev subdomain — the platform handles DNS directly.
      *
      * Using custom_domains instead of routes to avoid Wrangler 4.x route
      * registration conflicts (error 10020) on repeated deploys.

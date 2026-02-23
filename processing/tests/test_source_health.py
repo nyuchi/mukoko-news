@@ -1,12 +1,14 @@
 """
 Tests for source health service.
 
-Covers: health classification, adaptive scheduling, should_fetch logic.
+Covers: health classification, adaptive scheduling, should_fetch logic,
+and get_source_health_summary response shape.
 """
 
 import pytest
 from datetime import datetime, timezone, timedelta
-from services.source_health import classify_health, should_fetch, FETCH_INTERVALS
+from unittest.mock import AsyncMock, patch
+from services.source_health import classify_health, should_fetch, FETCH_INTERVALS, get_source_health_summary
 
 
 class TestClassifyHealth:
@@ -88,3 +90,73 @@ class TestFetchIntervals:
 
     def test_critical_no_interval(self):
         assert FETCH_INTERVALS["critical"] is None
+
+
+class TestGetSourceHealthSummary:
+    @pytest.mark.asyncio
+    async def test_returns_sources_and_summary_keys(self):
+        mock_raw = [
+            {"_id": "abc123", "name": "Herald", "consecutive_failures": 0, "source_quality_score": 0.9, "last_successful_fetch": None},
+            {"_id": "def456", "name": "Daily News", "consecutive_failures": 5, "source_quality_score": 0.4, "last_successful_fetch": None},
+        ]
+        with patch("services.source_health.MongoDBClient") as MockDB:
+            MockDB.return_value.find = AsyncMock(return_value=mock_raw)
+            result = await get_source_health_summary(env=None)
+
+        assert "sources" in result
+        assert "summary" in result
+
+    @pytest.mark.asyncio
+    async def test_summary_counts_match_classified_status(self):
+        mock_raw = [
+            {"_id": "a", "name": "A", "consecutive_failures": 0, "source_quality_score": 0.8, "last_successful_fetch": None},
+            {"_id": "b", "name": "B", "consecutive_failures": 2, "source_quality_score": 0.6, "last_successful_fetch": None},
+            {"_id": "c", "name": "C", "consecutive_failures": 5, "source_quality_score": 0.5, "last_successful_fetch": None},
+            {"_id": "d", "name": "D", "consecutive_failures": 10, "source_quality_score": 0.2, "last_successful_fetch": None},
+        ]
+        with patch("services.source_health.MongoDBClient") as MockDB:
+            MockDB.return_value.find = AsyncMock(return_value=mock_raw)
+            result = await get_source_health_summary(env=None)
+
+        assert result["summary"]["healthy"] == 1
+        assert result["summary"]["degraded"] == 1
+        assert result["summary"]["failing"] == 1
+        assert result["summary"]["critical"] == 1
+
+    @pytest.mark.asyncio
+    async def test_source_id_coerced_from_object_id(self):
+        mock_raw = [
+            {"_id": "507f1f77bcf86cd799439011", "name": "Herald", "consecutive_failures": 0, "source_quality_score": 0.9, "last_successful_fetch": None},
+        ]
+        with patch("services.source_health.MongoDBClient") as MockDB:
+            MockDB.return_value.find = AsyncMock(return_value=mock_raw)
+            result = await get_source_health_summary(env=None)
+
+        assert result["sources"][0]["source_id"] == "507f1f77bcf86cd799439011"
+        assert isinstance(result["sources"][0]["source_id"], str)
+
+    @pytest.mark.asyncio
+    async def test_status_uses_recomputed_classify_health(self):
+        # consecutive_failures=5 → failing, regardless of any stored health_status field
+        mock_raw = [
+            {"_id": "x", "name": "X", "consecutive_failures": 5, "health_status": "healthy", "source_quality_score": 0.5, "last_successful_fetch": None},
+        ]
+        with patch("services.source_health.MongoDBClient") as MockDB:
+            MockDB.return_value.find = AsyncMock(return_value=mock_raw)
+            result = await get_source_health_summary(env=None)
+
+        assert result["sources"][0]["status"] == "failing"
+
+    @pytest.mark.asyncio
+    async def test_sources_sorted_worst_first(self):
+        mock_raw = [
+            {"_id": "a", "name": "A", "consecutive_failures": 0, "source_quality_score": 0.9, "last_successful_fetch": None},
+            {"_id": "b", "name": "B", "consecutive_failures": 10, "source_quality_score": 0.2, "last_successful_fetch": None},
+            {"_id": "c", "name": "C", "consecutive_failures": 4, "source_quality_score": 0.5, "last_successful_fetch": None},
+        ]
+        with patch("services.source_health.MongoDBClient") as MockDB:
+            MockDB.return_value.find = AsyncMock(return_value=mock_raw)
+            result = await get_source_health_summary(env=None)
+
+        statuses = [s["status"] for s in result["sources"]]
+        assert statuses == ["healthy", "failing", "critical"]
