@@ -115,6 +115,8 @@ async def check_source_health(env) -> dict:
             {"$set": item["update"]},
         )
 
+    # Every source in `sources` unconditionally appends to `updates` in the loop above,
+    # so iterating updates is equivalent to iterating sources for counting purposes.
     counts: dict[str, int] = {"healthy": 0, "degraded": 0, "failing": 0, "critical": 0}
     for item in updates:
         counts[item["update"]["health_status"]] += 1

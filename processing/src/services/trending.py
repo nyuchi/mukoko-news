@@ -70,12 +70,18 @@ async def get_trending(env, country_id: str | None = None) -> dict:
             raw = await env.CACHE_STORAGE.get(cache_key)
             if raw:
                 data = json.loads(raw)
-                # Global cache format: {"global": [...], "countries": {...}, "updated_at": "..."}
-                if country_id is None and "global" in data:
-                    return {"topics": data["global"], "cached": True}
-                # Country cache format: {"topics": [...], "updated_at": "..."}
-                if "topics" in data:
-                    return {"topics": data["topics"], "cached": True}
+                if country_id is None:
+                    # Global cache format: {"global": [...], "countries": {...}, "updated_at": "..."}
+                    # Scoped to the None branch so a stale/mismatched payload can't fall through
+                    # to the country branch and return wrong data.
+                    if "global" in data:
+                        return {"topics": data["global"], "cached": True}
+                    # "global" key absent — unexpected format, fall through to live compute
+                else:
+                    # Country cache format: {"topics": [...], "updated_at": "..."}
+                    if "topics" in data:
+                        return {"topics": data["topics"], "cached": True}
+                    # "topics" key absent — stale/unexpected format, fall through to live compute
         except Exception:
             pass
 
