@@ -144,7 +144,6 @@ async def get_source_health_summary(env) -> dict:
 
     sources = []
     summary = {"healthy": 0, "degraded": 0, "failing": 0, "critical": 0}
-    _rank = {"healthy": 0, "degraded": 1, "failing": 2, "critical": 3}
 
     for s in raw:
         failures = s.get("consecutive_failures", 0)
@@ -161,7 +160,7 @@ async def get_source_health_summary(env) -> dict:
         })
 
     # Sort worst-first (critical → failing → degraded → healthy), then quality descending within tier
-    sources.sort(key=lambda s: (_rank.get(s["status"], 0), s["quality_score"]), reverse=True)
+    sources.sort(key=lambda s: (_health_rank(s["status"]), s["quality_score"]), reverse=True)
     return {"sources": sources, "summary": summary}
 
 
