@@ -168,10 +168,11 @@ Services follow a class-based pattern with D1 database access:
 ## Deployment
 
 - **Frontend**: Auto-deploys to Vercel on push to main
-- **Python Worker**: Deployed via GitHub Actions on push to main (pytest → pywrangler deploy). Deploys **before** backend (service binding dependency). Manual: `cd processing && uv run pywrangler deploy`
-- **Backend**: Deployed via GitHub Actions after Python Worker (tests → migrations → wrangler deploy → health check). Manual: `cd backend && npm run deploy`
-- **Cloudflare Workers native CI/CD is disabled** — only GitHub Actions deploys
-- See `.github/workflows/deploy.yml` for full pipeline
+- **Python Worker** (`mukoko-news-api`): Deployed by Cloudflare GitHub App on push to main. Manual: `cd processing && uv run pywrangler deploy`
+- **MongoDB Proxy Worker** (`mukoko-mongo-proxy`): Deployed by Cloudflare GitHub App on push to main. Manual: `cd processing/mongo-proxy && npx wrangler deploy`
+- **Backend** (`mukoko-news-backend`): Deployed by Cloudflare GitHub App on push to main. Manual: `cd backend && npm run deploy`
+- **Cloudflare GitHub App** manages all three Workers — configure each worker's root directory in the Cloudflare dashboard (Workers & Pages → Settings → Build). Deploy order must be: mongo-proxy → Python Worker → backend (service binding dependency).
+- `.github/workflows/deploy.yml` runs tests only (CI); deployment is handled by Cloudflare
 
 ## Environment Variables
 
