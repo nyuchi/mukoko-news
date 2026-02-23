@@ -161,7 +161,7 @@ async def get_source_health_summary(env) -> dict:
         })
 
     # Sort worst-first (critical → failing → degraded → healthy), then quality descending within tier
-    sources.sort(key=lambda s: (_rank.get(s["status"], 0), -s["quality_score"]), reverse=True)
+    sources.sort(key=lambda s: (_rank.get(s["status"], 0), s["quality_score"]), reverse=True)
     return {"sources": sources, "summary": summary}
 
 
