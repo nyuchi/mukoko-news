@@ -5,7 +5,7 @@ Goes beyond the TS SourceHealthService's simple consecutive_failures counter
 by incorporating article quality, engagement data, and adaptive scheduling.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from services.mongodb import MongoDBClient
 
 
@@ -127,7 +127,7 @@ async def check_source_health(env) -> dict:
 async def get_source_health_summary(env) -> dict:
     """Get health summary for all sources (used by /sources/health route)."""
     db = MongoDBClient(env)
-    sources = await db.find(
+    raw = await db.find(
         "rss_sources",
         {"enabled": True},
         projection={
@@ -138,15 +138,34 @@ async def get_source_health_summary(env) -> dict:
         sort={"health_status": 1, "source_quality_score": -1},
         limit=500,
     )
-    return {"sources": sources}
+
+    sources = []
+    summary = {"healthy": 0, "degraded": 0, "failing": 0, "critical": 0}
+
+    for s in raw:
+        failures = s.get("consecutive_failures", 0)
+        status = classify_health(failures)
+        if status in summary:
+            summary[status] += 1
+        sources.append({
+            "source_id": str(s.get("_id") or s.get("id", "")),
+            "name": s.get("name", ""),
+            "status": status,
+            "consecutive_failures": failures,
+            "last_successful_fetch": s.get("last_successful_fetch"),
+            "quality_score": s.get("source_quality_score", 0.5),
+        })
+
+    return {"sources": sources, "summary": summary}
 
 
 async def _compute_source_quality(db: MongoDBClient, source_id) -> dict:
     """Compute quality metrics for a source from its recent articles."""
+    week_ago = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
     pipeline = [
         {"$match": {
             "source_id": source_id,
-            "published_at": {"$gte": {"$date": {"$subtract": ["$$NOW", 604800000]}}},
+            "published_at": {"$gte": week_ago},
         }},
         {"$group": {
             "_id": None,

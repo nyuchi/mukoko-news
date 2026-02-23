@@ -8,7 +8,6 @@ Supports country-specific trending via country_id filtering.
 """
 
 import json
-import time
 from services.mongodb import MongoDBClient
 
 
@@ -68,16 +67,22 @@ async def get_trending(env, country_id: str | None = None) -> dict:
     # Try KV cache first
     if env and hasattr(env, "CACHE_STORAGE"):
         try:
-            cached = await env.CACHE_STORAGE.get(cache_key)
-            if cached:
-                return json.loads(cached)
+            raw = await env.CACHE_STORAGE.get(cache_key)
+            if raw:
+                data = json.loads(raw)
+                # Global cache format: {"global": [...], "countries": {...}, "updated_at": "..."}
+                if country_id is None and "global" in data:
+                    return {"topics": data["global"], "cached": True}
+                # Country cache format: {"topics": [...], "updated_at": "..."}
+                if "topics" in data:
+                    return {**data, "cached": True}
         except Exception:
             pass
 
     # Cache miss — compute live
     db = MongoDBClient(env)
     topics = await _compute_trending(db, country_id=country_id)
-    return {"topics": topics, "updated_at": _now_iso()}
+    return {"topics": topics, "cached": False}
 
 
 async def _compute_trending(db: MongoDBClient, country_id: str | None = None) -> list[dict]:
@@ -159,9 +164,8 @@ async def _compute_trending(db: MongoDBClient, country_id: str | None = None) ->
         return [
             {
                 "keyword": r.get("keyword", ""),
-                "article_count": r.get("article_count", 0),
-                "engagement_score": round(r.get("engagement_score", 0), 1),
-                "score": round(r.get("weighted_score", 0), 2),
+                "count": r.get("article_count", 0),
+                "velocity": round(r.get("weighted_score", 0), 2),
             }
             for r in results
         ]
