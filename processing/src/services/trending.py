@@ -126,13 +126,6 @@ async def _compute_trending(db: MongoDBClient, country_id: str | None = None) ->
             "avg_relevance": {"$avg": "$keyword_links.relevance_score"},
         }},
         {"$addFields": {
-            "engagement_score": {
-                "$add": [
-                    "$total_views",
-                    {"$multiply": ["$total_likes", 3]},
-                    {"$multiply": ["$total_bookmarks", 2]},
-                ]
-            },
             "weighted_score": {
                 "$multiply": [
                     "$article_count",

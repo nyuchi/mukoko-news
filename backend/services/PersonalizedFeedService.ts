@@ -54,6 +54,39 @@ interface PersonalizedFeedOptions {
   countries?: string[] | null; // Pan-African support: override user's country preferences
 }
 
+// Shape of each article returned by the Python Worker's /feed/rank endpoint.
+// Fields mirror the Python feed_ranker.py output (snake_case).
+interface PythonRankedArticle {
+  id: number;
+  title: string;
+  slug: string;
+  description: string;
+  content_snippet: string;
+  author: string;
+  source: string;
+  source_id: string;
+  published_at: string;
+  image_url: string;
+  original_url: string;
+  category_id: string;
+  country_id: string;
+  view_count: number;
+  like_count: number;
+  bookmark_count: number;
+  score: number;
+  score_breakdown: {
+    followed_source: number;
+    followed_author: number;
+    followed_category: number;
+    category_interest: number;
+    primary_country: number;
+    recency: number;
+    engagement: number;
+    source_quality: number;
+    diversity: number;
+  };
+}
+
 // Minimal interface for the Python Worker ranking call (subset of ProcessingClient)
 interface RankFeedClient {
   rankFeed(
@@ -163,23 +196,40 @@ export class PersonalizedFeedService {
             categoryInterests: Object.fromEntries(preferences.categoryInterests),
           }
         );
-        // Python returns snake_case score_breakdown keys — map to camelCase ScoredArticle fields
-        scoredArticles = rankResult.articles.map(a => {
-          const sb = a.score_breakdown as Record<string, number> | undefined;
+        // Explicitly map PythonRankedArticle (snake_case) → ScoredArticle (camelCase).
+        // Single assertion to PythonRankedArticle gives us typed field access;
+        // the explicit mapping below replaces the previous `as unknown as ScoredArticle[]` cast.
+        scoredArticles = rankResult.articles.map((a): ScoredArticle => {
+          const p = a as unknown as PythonRankedArticle;
           return {
-            ...a,
-            score: a.score,
-            scoreBreakdown: sb ? {
-              followedSource: sb.followed_source ?? 0,
-              followedAuthor: sb.followed_author ?? 0,
-              followedCategory: sb.followed_category ?? 0,
-              categoryInterest: sb.category_interest ?? 0,
-              primaryCountry: sb.primary_country ?? 0,
-              recency: sb.recency ?? 0,
-              engagement: sb.engagement ?? 0,
-              diversity: sb.diversity ?? 0,
-            } : undefined,
-          } as unknown as ScoredArticle;
+          id: p.id,
+          title: p.title,
+          slug: p.slug,
+          description: p.description,
+          content_snippet: p.content_snippet,
+          author: p.author,
+          source: p.source,
+          source_id: p.source_id,
+          published_at: p.published_at,
+          image_url: p.image_url,
+          original_url: p.original_url,
+          category_id: p.category_id,
+          country_id: p.country_id,
+          view_count: p.view_count,
+          like_count: p.like_count,
+          bookmark_count: p.bookmark_count,
+          score: p.score,
+          scoreBreakdown: {
+            followedSource: p.score_breakdown.followed_source,
+            followedAuthor: p.score_breakdown.followed_author,
+            followedCategory: p.score_breakdown.followed_category,
+            categoryInterest: p.score_breakdown.category_interest,
+            primaryCountry: p.score_breakdown.primary_country,
+            recency: p.score_breakdown.recency,
+            engagement: p.score_breakdown.engagement,
+            diversity: p.score_breakdown.diversity,
+          },
+        };
         });
       } catch (err) {
         console.error('[PersonalizedFeedService] Python ranking failed, using TS fallback:', err);
