@@ -5,7 +5,8 @@ Goes beyond the TS SourceHealthService's simple consecutive_failures counter
 by incorporating article quality, engagement data, and adaptive scheduling.
 """
 
-from datetime import datetime, timezone
+import math
+from datetime import datetime, timezone, timedelta
 from services.mongodb import MongoDBClient
 
 
@@ -114,39 +115,80 @@ async def check_source_health(env) -> dict:
             {"$set": item["update"]},
         )
 
+    # Every source in `sources` unconditionally appends to `updates` in the loop above,
+    # so iterating updates is equivalent to iterating sources for counting purposes.
+    # classify_health() always returns one of the four known keys, so counts[status] += 1
+    # would be safe here. The .get() fallback is purely defensive for hypothetical future
+    # callers that pass raw MongoDB health_status strings (which may not have been
+    # re-classified through classify_health first).
+    counts: dict[str, int] = {"healthy": 0, "degraded": 0, "failing": 0, "critical": 0}
+    for item in updates:
+        status = item["update"]["health_status"]
+        counts[status] = counts.get(status, 0) + 1
+
     return {
         "sources": len(sources),
         "alerts": alerts,
-        "healthy": sum(1 for s in sources if classify_health(s.get("consecutive_failures", 0)) == "healthy"),
-        "degraded": sum(1 for s in sources if classify_health(s.get("consecutive_failures", 0)) == "degraded"),
-        "failing": sum(1 for s in sources if classify_health(s.get("consecutive_failures", 0)) == "failing"),
-        "critical": sum(1 for s in sources if classify_health(s.get("consecutive_failures", 0)) == "critical"),
+        **counts,
     }
 
 
 async def get_source_health_summary(env) -> dict:
     """Get health summary for all sources (used by /sources/health route)."""
     db = MongoDBClient(env)
-    sources = await db.find(
+    # published_at is stored as ISO strings throughout this codebase
+    raw = await db.find(
         "rss_sources",
         {"enabled": True},
         projection={
-            "name": 1, "url": 1, "country_id": 1,
-            "health_status": 1, "consecutive_failures": 1,
-            "source_quality_score": 1, "last_successful_fetch": 1,
+            "name": 1,
+            "url": 1,
+            "country_id": 1,
+            "consecutive_failures": 1,
+            "source_quality_score": 1,
+            "last_successful_fetch": 1,
         },
-        sort={"health_status": 1, "source_quality_score": -1},
         limit=500,
     )
-    return {"sources": sources}
+
+    sources = []
+    summary = {"healthy": 0, "degraded": 0, "failing": 0, "critical": 0}
+
+    for s in raw:
+        failures = s.get("consecutive_failures", 0)
+        status = classify_health(failures)
+        if status in summary:
+            summary[status] += 1
+        sources.append({
+            "source_id": str(s.get("_id") or s.get("id", "")),
+            "name": s.get("name", ""),
+            "url": s.get("url"),
+            "country_id": s.get("country_id"),
+            "status": status,
+            "consecutive_failures": failures,
+            "last_successful_fetch": s.get("last_successful_fetch"),
+            "quality_score": s.get("source_quality_score", 0.5),
+        })
+
+    # Sort worst-first (critical → failing → degraded → healthy), then quality descending within tier
+    sources.sort(key=lambda s: (_health_rank(s["status"]), s["quality_score"]), reverse=True)
+    return {"sources": sources, "summary": summary}
 
 
 async def _compute_source_quality(db: MongoDBClient, source_id) -> dict:
     """Compute quality metrics for a source from its recent articles."""
+    # Use Z-suffix ISO string for the $gte comparison.
+    # ASSUMPTION: published_at is stored as an ISO string (e.g. "2026-02-24T12:00:00Z"),
+    # not as a BSON Date / {$date: ...} object. MongoDB does not compare strings against
+    # BSON dates — a mismatch silently returns zero results instead of an error.
+    # All ingestion paths in this codebase store published_at as ISO strings
+    # (see rss_parser.py, article_ai.py). If a future ingestion path uses native BSON dates,
+    # this query must be updated to use {$date: ...} syntax instead.
+    week_ago = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat().replace("+00:00", "Z")
     pipeline = [
         {"$match": {
             "source_id": source_id,
-            "published_at": {"$gte": {"$date": {"$subtract": ["$$NOW", 604800000]}}},
+            "published_at": {"$gte": week_ago},
         }},
         {"$group": {
             "_id": None,
@@ -171,7 +213,6 @@ async def _compute_source_quality(db: MongoDBClient, source_id) -> dict:
             count = r.get("count", 0)
 
             # Composite score: 60% quality + 30% engagement + 10% volume
-            import math
             eng_score = min(math.log10(max(avg_engagement, 1) + 1) / 3, 1.0)
             vol_score = min(count / 50, 1.0)
             score = round(avg_quality * 0.6 + eng_score * 0.3 + vol_score * 0.1, 2)
@@ -189,5 +230,9 @@ async def _compute_source_quality(db: MongoDBClient, source_id) -> dict:
 
 
 def _health_rank(status: str) -> int:
-    """Rank health status (higher = worse)."""
-    return {"healthy": 0, "degraded": 1, "failing": 2, "critical": 3}.get(status, 0)
+    """Rank health status (higher = worse). Logs a warning for unrecognised values."""
+    rank = {"healthy": 0, "degraded": 1, "failing": 2, "critical": 3}.get(status)
+    if rank is None:
+        print(f"[SOURCE_HEALTH] Unknown health status: {status!r}, treating as healthy")
+        return 0
+    return rank

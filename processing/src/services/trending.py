@@ -8,7 +8,7 @@ Supports country-specific trending via country_id filtering.
 """
 
 import json
-import time
+from datetime import datetime, timezone, timedelta
 from services.mongodb import MongoDBClient
 
 
@@ -68,16 +68,28 @@ async def get_trending(env, country_id: str | None = None) -> dict:
     # Try KV cache first
     if env and hasattr(env, "CACHE_STORAGE"):
         try:
-            cached = await env.CACHE_STORAGE.get(cache_key)
-            if cached:
-                return json.loads(cached)
-        except Exception:
-            pass
+            raw = await env.CACHE_STORAGE.get(cache_key)
+            if raw:
+                data = json.loads(raw)
+                if country_id is None:
+                    # Global cache format: {"global": [...], "countries": {...}, "updated_at": "..."}
+                    # Scoped to the None branch so a stale/mismatched payload can't fall through
+                    # to the country branch and return wrong data.
+                    if "global" in data:
+                        return {"topics": data["global"], "cached": True}
+                    # "global" key absent — unexpected format, fall through to live compute
+                else:
+                    # Country cache format: {"topics": [...], "updated_at": "..."}
+                    if "topics" in data:
+                        return {"topics": data["topics"], "cached": True}
+                    # "topics" key absent — stale/unexpected format, fall through to live compute
+        except Exception as e:
+            print(f"[TRENDING] KV read failed for {cache_key}: {e}")
 
     # Cache miss — compute live
     db = MongoDBClient(env)
     topics = await _compute_trending(db, country_id=country_id)
-    return {"topics": topics, "updated_at": _now_iso()}
+    return {"topics": topics, "cached": False}
 
 
 async def _compute_trending(db: MongoDBClient, country_id: str | None = None) -> list[dict]:
@@ -115,13 +127,6 @@ async def _compute_trending(db: MongoDBClient, country_id: str | None = None) ->
             "avg_relevance": {"$avg": "$keyword_links.relevance_score"},
         }},
         {"$addFields": {
-            "engagement_score": {
-                "$add": [
-                    "$total_views",
-                    {"$multiply": ["$total_likes", 3]},
-                    {"$multiply": ["$total_bookmarks", 2]},
-                ]
-            },
             "weighted_score": {
                 "$multiply": [
                     "$article_count",
@@ -149,7 +154,6 @@ async def _compute_trending(db: MongoDBClient, country_id: str | None = None) ->
         {"$project": {
             "keyword": {"$ifNull": ["$keyword_info.name", "$_id"]},
             "article_count": 1,
-            "engagement_score": 1,
             "weighted_score": 1,
         }},
     ]
@@ -159,9 +163,8 @@ async def _compute_trending(db: MongoDBClient, country_id: str | None = None) ->
         return [
             {
                 "keyword": r.get("keyword", ""),
-                "article_count": r.get("article_count", 0),
-                "engagement_score": round(r.get("engagement_score", 0), 1),
-                "score": round(r.get("weighted_score", 0), 2),
+                "count": r.get("article_count", 0),
+                "velocity": round(r.get("weighted_score", 0), 2),
             }
             for r in results
         ]
@@ -171,10 +174,8 @@ async def _compute_trending(db: MongoDBClient, country_id: str | None = None) ->
 
 
 def _now_iso() -> str:
-    from datetime import datetime, timezone
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def _hours_ago_iso(hours: int) -> str:
-    from datetime import datetime, timezone, timedelta
-    return (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+    return (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat().replace("+00:00", "Z")

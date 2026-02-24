@@ -19,6 +19,46 @@
 
 type ServiceBinding = { fetch(input: RequestInfo, init?: RequestInit): Promise<Response> };
 
+/**
+ * Shape of each article returned by the Python Worker's /feed/rank endpoint.
+ * Fields mirror feed_ranker.py output (snake_case). Exported so PersonalizedFeedService
+ * can use it as the canonical type without duplicating the definition.
+ *
+ * Note: score_breakdown includes source_quality (a new signal not in the TS scorer).
+ * It is mapped to ScoredArticle.scoreBreakdown.sourceQuality; the TS scorer always
+ * sets sourceQuality to 0, ensuring scoreBreakdown values sum to score on both paths.
+ */
+export interface PythonRankedArticle {
+  id: number;
+  title: string;
+  slug: string;
+  description: string;
+  content_snippet: string;
+  author: string;
+  source: string;
+  source_id: string;
+  published_at: string;
+  image_url: string;
+  original_url: string;
+  category_id: string;
+  country_id: string;
+  view_count: number;
+  like_count: number;
+  bookmark_count: number;
+  score: number;
+  score_breakdown: {
+    followed_source: number;
+    followed_author: number;
+    followed_category: number;
+    category_interest: number;
+    primary_country: number;
+    recency: number;
+    engagement: number;
+    source_quality: number; // Python-only signal; not mapped to ScoredArticle.scoreBreakdown
+    diversity: number;
+  };
+}
+
 export class ProcessingClient {
   private binding: ServiceBinding;
 
@@ -202,9 +242,7 @@ export class ProcessingClient {
       categoryInterests?: Record<string, number>;
     }
   ) {
-    return this._post<{
-      articles: Array<Record<string, unknown> & { score: number; score_breakdown: Record<string, number> }>;
-    }>('/feed/rank', { articles, preferences });
+    return this._post<{ articles: PythonRankedArticle[] }>('/feed/rank', { articles, preferences });
   }
 
   // ---------------------------------------------------------------------------
@@ -248,8 +286,10 @@ export class ProcessingClient {
   async getSourceHealth() {
     return this._get<{
       sources: Array<{
-        source_id: number;
+        source_id: string; // Python coerces MongoDB _id to str() — never a number
         name: string;
+        url: string | null;
+        country_id: string | null;
         status: string;
         consecutive_failures: number;
         last_successful_fetch: string | null;

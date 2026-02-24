@@ -924,17 +924,19 @@ app.get("/api/feeds/personalized", async (c) => {
     // Get user ID from header or session
     const userId = c.req.header("x-user-id") || c.req.header("x-session-id") || null;
 
-    // Initialize personalized feed service
     const feedService = new PersonalizedFeedService(c.env.DB);
 
-    // Get personalized feed (will use user's country preferences if no override)
+    // Pass ProcessingClient so the service can try Python numpy ranking.
+    // PersonalizedFeedService.getPersonalizedFeed() catches rankFeed() failures
+    // internally and falls back to the built-in TS scorer — no outer fallback needed.
+    const processingClient = new ProcessingClient(c.env.DATA_PROCESSOR);
     const result = await feedService.getPersonalizedFeed(userId, {
       limit,
       offset,
       excludeRead,
       diversityFactor,
       countries,  // Pan-African: pass country override
-    });
+    }, processingClient);
 
     // Fetch keywords for each article
     for (const article of result.articles) {
@@ -1043,9 +1045,6 @@ app.get("/api/feeds/sectioned", async (c) => {
           .filter(cat => VALID_CATEGORIES.has(cat))
       : [];
 
-    // normalizeTitle and titleSimilarity imported from StoryClusteringService
-    // with DoS prevention (title length limit: 500 chars, word limit: 50)
-
     // Build country filter clause
     let countryClause = '';
     const countryParams: string[] = [];
@@ -1097,42 +1096,50 @@ app.get("/api/feeds/sectioned", async (c) => {
       articleCount: number;
     }
 
-    const clusters: StoryCluster[] = [];
-    const clusteredIds = new Set<string>();
-
-    for (const article of topStoriesRaw) {
-      if (clusteredIds.has(article.id)) continue;
-
-      const articleWords = normalizeTitle(article.title);
-      const cluster: StoryCluster = {
-        id: `cluster-${article.id}`,
-        primaryArticle: article,
-        relatedArticles: [],
-        articleCount: 1,
-      };
-
-      clusteredIds.add(article.id);
-
-      // Find related articles (same story from different sources)
-      for (const other of topStoriesRaw) {
-        if (clusteredIds.has(other.id)) continue;
-        if (article.source === other.source) continue; // Must be different sources
-
-        const otherWords = normalizeTitle(other.title);
-        const similarity = titleSimilarity(articleWords, otherWords);
-
-        // Group stories that exceed similarity threshold
-        if (similarity > CLUSTERING_CONFIG.SIMILARITY_THRESHOLD) {
-          cluster.relatedArticles.push(other);
-          cluster.articleCount++;
-          clusteredIds.add(other.id);
-
-          if (cluster.relatedArticles.length >= CLUSTERING_CONFIG.MAX_RELATED_PER_CLUSTER) break;
+    // Cluster similar stories — try Python Worker first, fall back to Jaccard TS
+    let clusters: StoryCluster[];
+    try {
+      const processingClient = new ProcessingClient(c.env.DATA_PROCESSOR);
+      const clusterResult = await processingClient.clusterArticles(topStoriesRaw, {
+        similarityThreshold: CLUSTERING_CONFIG.SIMILARITY_THRESHOLD,
+        maxRelatedPerCluster: CLUSTERING_CONFIG.MAX_RELATED_PER_CLUSTER,
+        maxClusters: CLUSTERING_CONFIG.MAX_CLUSTERS,
+      });
+      // Map snake_case Python response to camelCase for frontend compatibility
+      clusters = clusterResult.clusters.map(cl => ({
+        id: cl.id,
+        primaryArticle: cl.primary_article,
+        relatedArticles: cl.related_articles,
+        articleCount: cl.article_count,
+      }));
+    } catch (clusterErr) {
+      console.error('[feeds/sectioned] Python clustering failed, using Jaccard fallback:', clusterErr);
+      // TS Jaccard fallback
+      clusters = [];
+      const clusteredIds = new Set<string>();
+      for (const article of topStoriesRaw) {
+        if (clusteredIds.has(article.id)) continue;
+        const articleWords = normalizeTitle(article.title);
+        const cluster: StoryCluster = {
+          id: `cluster-${article.id}`,
+          primaryArticle: article,
+          relatedArticles: [],
+          articleCount: 1,
+        };
+        clusteredIds.add(article.id);
+        for (const other of topStoriesRaw) {
+          if (clusteredIds.has(other.id)) continue;
+          if (article.source === other.source) continue;
+          if (titleSimilarity(articleWords, normalizeTitle(other.title)) > CLUSTERING_CONFIG.SIMILARITY_THRESHOLD) {
+            cluster.relatedArticles.push(other);
+            cluster.articleCount++;
+            clusteredIds.add(other.id);
+            if (cluster.relatedArticles.length >= CLUSTERING_CONFIG.MAX_RELATED_PER_CLUSTER) break;
+          }
         }
+        clusters.push(cluster);
+        if (clusters.length >= CLUSTERING_CONFIG.MAX_CLUSTERS) break;
       }
-
-      clusters.push(cluster);
-      if (clusters.length >= CLUSTERING_CONFIG.MAX_CLUSTERS) break;
     }
 
     // Phase 2: Fetch category-based content with batch query (fixes N+1 pattern)
