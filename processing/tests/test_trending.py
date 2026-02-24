@@ -95,6 +95,17 @@ class TestCachePaths:
         assert result["topics"] == []
 
     @pytest.mark.asyncio
+    async def test_country_cache_topics_key_absent_falls_through_to_live(self):
+        """Symmetric to global 'global key absent' case: stale country payload falls through."""
+        from services.trending import get_trending
+        # Payload has no "topics" key — should fall through to live compute
+        env = self._make_env({"stale_key": [], "updated_at": "2026-01-01T00:00:00Z"})
+        with patch("services.trending.MongoDBClient") as MockDB:
+            MockDB.return_value.aggregate = AsyncMock(return_value=[])
+            result = await get_trending(env, country_id="ZW")
+        assert result["cached"] is False
+
+    @pytest.mark.asyncio
     async def test_field_names_are_count_and_velocity(self):
         from services.trending import get_trending
         env = self._make_env(None)

@@ -175,8 +175,13 @@ async def get_source_health_summary(env) -> dict:
 
 async def _compute_source_quality(db: MongoDBClient, source_id) -> dict:
     """Compute quality metrics for a source from its recent articles."""
-    # Use Z-suffix to match the ISO storage format produced by datetime.isoformat() callers
-    # that normalize with .replace('+00:00', 'Z') — ensures consistent lexicographic $gte comparison.
+    # Use Z-suffix ISO string for the $gte comparison.
+    # ASSUMPTION: published_at is stored as an ISO string (e.g. "2026-02-24T12:00:00Z"),
+    # not as a BSON Date / {$date: ...} object. MongoDB does not compare strings against
+    # BSON dates — a mismatch silently returns zero results instead of an error.
+    # All ingestion paths in this codebase store published_at as ISO strings
+    # (see rss_parser.py, article_ai.py). If a future ingestion path uses native BSON dates,
+    # this query must be updated to use {$date: ...} syntax instead.
     week_ago = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat().replace("+00:00", "Z")
     pipeline = [
         {"$match": {
