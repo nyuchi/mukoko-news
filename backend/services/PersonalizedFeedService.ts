@@ -54,6 +54,21 @@ interface PersonalizedFeedOptions {
   countries?: string[] | null; // Pan-African support: override user's country preferences
 }
 
+// Minimal interface for the Python Worker ranking call (subset of ProcessingClient)
+interface RankFeedClient {
+  rankFeed(
+    articles: Array<Record<string, unknown>>,
+    preferences: {
+      followedSources?: string[];
+      followedAuthors?: string[];
+      followedCategories?: string[];
+      preferredCountries?: string[];
+      primaryCountry?: string | null;
+      categoryInterests?: Record<string, number>;
+    }
+  ): Promise<{ articles: Array<Record<string, unknown> & { score: number; score_breakdown: Record<string, number> }> }>;
+}
+
 // Scoring weights
 const WEIGHTS = {
   FOLLOWED_SOURCE: 50,      // Strong boost for followed sources
@@ -77,11 +92,15 @@ export class PersonalizedFeedService {
   }
 
   /**
-   * Get personalized feed for a user
+   * Get personalized feed for a user.
+   * When processingClient is provided, ranking is delegated to the Python Worker
+   * (numpy-vectorised scoring with source-quality signal). Falls back to the
+   * built-in TS scorer if the Python call fails.
    */
   async getPersonalizedFeed(
     userId: string | null,
-    options: PersonalizedFeedOptions = {}
+    options: PersonalizedFeedOptions = {},
+    processingClient?: RankFeedClient
   ): Promise<{
     articles: ScoredArticle[];
     total: number;
@@ -129,13 +148,29 @@ export class PersonalizedFeedService {
       effectiveCountries.length > 0 ? effectiveCountries : null  // Pan-African: pass countries
     );
 
-    // Score and rank articles
-    const scoredArticles = this.scoreArticles(
-      candidates,
-      preferences,
-      recencyWeight,
-      diversityFactor
-    );
+    // Score and rank articles — try Python Worker first, fall back to TS scorer
+    let scoredArticles: ScoredArticle[];
+    if (processingClient) {
+      try {
+        const rankResult = await processingClient.rankFeed(
+          candidates as unknown as Array<Record<string, unknown>>,
+          {
+            followedSources: preferences.followedSources,
+            followedAuthors: preferences.followedAuthors,
+            followedCategories: preferences.followedCategories,
+            preferredCountries: preferences.preferredCountries,
+            primaryCountry: preferences.primaryCountry,
+            categoryInterests: Object.fromEntries(preferences.categoryInterests),
+          }
+        );
+        scoredArticles = rankResult.articles as unknown as ScoredArticle[];
+      } catch (err) {
+        console.error('[PersonalizedFeedService] Python ranking failed, using TS fallback:', err);
+        scoredArticles = this.scoreArticles(candidates, preferences, recencyWeight, diversityFactor);
+      }
+    } else {
+      scoredArticles = this.scoreArticles(candidates, preferences, recencyWeight, diversityFactor);
+    }
 
     // Apply pagination
     const paginatedArticles = scoredArticles.slice(offset, offset + limit);
