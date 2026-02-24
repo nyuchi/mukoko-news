@@ -924,11 +924,12 @@ app.get("/api/feeds/personalized", async (c) => {
     // Get user ID from header or session
     const userId = c.req.header("x-user-id") || c.req.header("x-session-id") || null;
 
-    // Initialize personalized feed service
     const feedService = new PersonalizedFeedService(c.env.DB);
-    const processingClient = new ProcessingClient(c.env.DATA_PROCESSOR);
 
-    // Get personalized feed — Python Worker handles ranking (numpy vectorised)
+    // Pass ProcessingClient so the service can try Python numpy ranking.
+    // PersonalizedFeedService.getPersonalizedFeed() catches rankFeed() failures
+    // internally and falls back to the built-in TS scorer — no outer fallback needed.
+    const processingClient = new ProcessingClient(c.env.DATA_PROCESSOR);
     const result = await feedService.getPersonalizedFeed(userId, {
       limit,
       offset,

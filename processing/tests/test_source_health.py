@@ -8,7 +8,21 @@ and get_source_health_summary response shape.
 import pytest
 from datetime import datetime, timezone, timedelta
 from unittest.mock import AsyncMock, patch
-from services.source_health import classify_health, should_fetch, FETCH_INTERVALS, get_source_health_summary
+from services.source_health import classify_health, should_fetch, FETCH_INTERVALS, get_source_health_summary, _health_rank
+
+
+class TestHealthRank:
+    def test_known_statuses_rank_in_order(self):
+        assert _health_rank("healthy") == 0
+        assert _health_rank("degraded") == 1
+        assert _health_rank("failing") == 2
+        assert _health_rank("critical") == 3
+
+    def test_unknown_status_returns_zero_and_logs(self, capsys):
+        rank = _health_rank("unknown_status")
+        assert rank == 0
+        captured = capsys.readouterr()
+        assert "unknown_status" in captured.out
 
 
 class TestClassifyHealth:
@@ -146,6 +160,40 @@ class TestGetSourceHealthSummary:
             result = await get_source_health_summary(env=None)
 
         assert result["sources"][0]["status"] == "failing"
+
+    @pytest.mark.asyncio
+    async def test_url_and_country_id_included_in_response(self):
+        mock_raw = [
+            {
+                "_id": "abc",
+                "name": "Herald",
+                "url": "https://herald.co.zw/feed",
+                "country_id": "ZW",
+                "consecutive_failures": 0,
+                "source_quality_score": 0.9,
+                "last_successful_fetch": None,
+            },
+        ]
+        with patch("services.source_health.MongoDBClient") as MockDB:
+            MockDB.return_value.find = AsyncMock(return_value=mock_raw)
+            result = await get_source_health_summary(env=None)
+
+        source = result["sources"][0]
+        assert source["url"] == "https://herald.co.zw/feed"
+        assert source["country_id"] == "ZW"
+
+    @pytest.mark.asyncio
+    async def test_url_and_country_id_none_when_absent(self):
+        mock_raw = [
+            {"_id": "abc", "name": "Unknown", "consecutive_failures": 0, "source_quality_score": 0.5, "last_successful_fetch": None},
+        ]
+        with patch("services.source_health.MongoDBClient") as MockDB:
+            MockDB.return_value.find = AsyncMock(return_value=mock_raw)
+            result = await get_source_health_summary(env=None)
+
+        source = result["sources"][0]
+        assert source["url"] is None
+        assert source["country_id"] is None
 
     @pytest.mark.asyncio
     async def test_sources_sorted_critical_first(self):

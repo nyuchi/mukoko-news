@@ -370,6 +370,72 @@ describe('PersonalizedFeedService', () => {
     });
   });
 
+  describe('Python Worker ranking integration', () => {
+    // Mock DB returning a user with preferences and candidate articles
+    const setupPreferenceMocks = (db: ReturnType<typeof createMockD1>) => {
+      db._statement.all
+        .mockResolvedValueOnce({ results: [{ follow_id: 'herald' }] })      // sources
+        .mockResolvedValueOnce({ results: [{ follow_id: 'John Doe' }] })    // authors
+        .mockResolvedValueOnce({ results: [{ follow_id: 'politics' }] })    // categories
+        .mockResolvedValueOnce({ results: [{ country_id: 'ZW', is_primary: true }] }) // countries
+        .mockResolvedValueOnce({ results: [] })                             // history
+        .mockResolvedValueOnce({ results: [] })                             // recent reads
+        .mockResolvedValue({ results: sampleArticles });                    // candidates
+      db._statement.first.mockResolvedValue({ total: 3 });
+    };
+
+    it('uses Python rankFeed when processingClient is provided (happy path)', async () => {
+      setupPreferenceMocks(mockDb);
+
+      const rankedArticles = [
+        { ...sampleArticles[1], score: 95.5, score_breakdown: { followed_source: 0, followed_author: 0, followed_category: 0, category_interest: 0, primary_country: 0, recency: 25, engagement: 15, diversity: 0, source_quality: 10 } },
+        { ...sampleArticles[0], score: 80.0, score_breakdown: { followed_source: 50, followed_author: 40, followed_category: 30, category_interest: 0, primary_country: 35, recency: 24, engagement: 12, diversity: 0, source_quality: 9 } },
+        { ...sampleArticles[2], score: 10.0, score_breakdown: { followed_source: 0, followed_author: 0, followed_category: 0, category_interest: 0, primary_country: 0, recency: 10, engagement: 8, diversity: -10, source_quality: 5 } },
+      ];
+
+      const mockProcessingClient = {
+        rankFeed: vi.fn().mockResolvedValue({ articles: rankedArticles }),
+      };
+
+      const result = await service.getPersonalizedFeed('user-123', {}, mockProcessingClient);
+
+      expect(mockProcessingClient.rankFeed).toHaveBeenCalledOnce();
+      expect(result.isPersonalized).toBe(true);
+      // Python-ranked order: sports (95.5) first
+      expect(result.articles[0].category_id).toBe('sports');
+      // snake_case score_breakdown mapped to camelCase scoreBreakdown
+      expect(result.articles[0].scoreBreakdown?.recency).toBe(25);
+      expect(result.articles[1].scoreBreakdown?.followedSource).toBe(50);
+    });
+
+    it('falls back to TS scorer when Python rankFeed throws', async () => {
+      setupPreferenceMocks(mockDb);
+
+      const mockProcessingClient = {
+        rankFeed: vi.fn().mockRejectedValue(new Error('Python Worker unavailable')),
+      };
+
+      const result = await service.getPersonalizedFeed('user-123', {}, mockProcessingClient);
+
+      expect(mockProcessingClient.rankFeed).toHaveBeenCalledOnce();
+      expect(result.isPersonalized).toBe(true);
+      // TS scorer still produces results
+      expect(result.articles.length).toBeGreaterThan(0);
+      // TS scorer sets camelCase scoreBreakdown directly
+      expect(result.articles[0].scoreBreakdown).toBeDefined();
+    });
+
+    it('uses TS scorer when no processingClient provided', async () => {
+      setupPreferenceMocks(mockDb);
+
+      // No processingClient — pure TS path
+      const result = await service.getPersonalizedFeed('user-123');
+
+      expect(result.isPersonalized).toBe(true);
+      expect(result.articles.length).toBeGreaterThan(0);
+    });
+  });
+
   describe('getFeedExplanation', () => {
     it('should return explanation of why articles are recommended', async () => {
       mockDb._statement.all

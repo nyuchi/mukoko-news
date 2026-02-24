@@ -163,7 +163,24 @@ export class PersonalizedFeedService {
             categoryInterests: Object.fromEntries(preferences.categoryInterests),
           }
         );
-        scoredArticles = rankResult.articles as unknown as ScoredArticle[];
+        // Python returns snake_case score_breakdown keys — map to camelCase ScoredArticle fields
+        scoredArticles = rankResult.articles.map(a => {
+          const sb = a.score_breakdown as Record<string, number> | undefined;
+          return {
+            ...a,
+            score: a.score,
+            scoreBreakdown: sb ? {
+              followedSource: sb.followed_source ?? 0,
+              followedAuthor: sb.followed_author ?? 0,
+              followedCategory: sb.followed_category ?? 0,
+              categoryInterest: sb.category_interest ?? 0,
+              primaryCountry: sb.primary_country ?? 0,
+              recency: sb.recency ?? 0,
+              engagement: sb.engagement ?? 0,
+              diversity: sb.diversity ?? 0,
+            } : undefined,
+          } as unknown as ScoredArticle;
+        });
       } catch (err) {
         console.error('[PersonalizedFeedService] Python ranking failed, using TS fallback:', err);
         scoredArticles = this.scoreArticles(candidates, preferences, recencyWeight, diversityFactor);

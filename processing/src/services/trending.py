@@ -181,7 +181,7 @@ async def _compute_trending(db: MongoDBClient, country_id: str | None = None) ->
 
 def _now_iso() -> str:
     from datetime import datetime, timezone
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def _hours_ago_iso(hours: int) -> str:

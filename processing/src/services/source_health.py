@@ -137,6 +137,8 @@ async def get_source_health_summary(env) -> dict:
         {"enabled": True},
         projection={
             "name": 1,
+            "url": 1,
+            "country_id": 1,
             "consecutive_failures": 1,
             "source_quality_score": 1,
             "last_successful_fetch": 1,
@@ -155,6 +157,8 @@ async def get_source_health_summary(env) -> dict:
         sources.append({
             "source_id": str(s.get("_id") or s.get("id", "")),
             "name": s.get("name", ""),
+            "url": s.get("url"),
+            "country_id": s.get("country_id"),
             "status": status,
             "consecutive_failures": failures,
             "last_successful_fetch": s.get("last_successful_fetch"),
@@ -216,5 +220,9 @@ async def _compute_source_quality(db: MongoDBClient, source_id) -> dict:
 
 
 def _health_rank(status: str) -> int:
-    """Rank health status (higher = worse)."""
-    return {"healthy": 0, "degraded": 1, "failing": 2, "critical": 3}.get(status, 0)
+    """Rank health status (higher = worse). Logs a warning for unrecognised values."""
+    rank = {"healthy": 0, "degraded": 1, "failing": 2, "critical": 3}.get(status)
+    if rank is None:
+        print(f"[SOURCE_HEALTH] Unknown health status: {status!r}, treating as healthy")
+        return 0
+    return rank

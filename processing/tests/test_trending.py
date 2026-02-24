@@ -14,7 +14,7 @@ class TestISOHelpers:
     def test_now_iso_format(self):
         result = _now_iso()
         assert "T" in result
-        assert "+" in result or "Z" in result
+        assert result.endswith("Z"), f"_now_iso() should use Z suffix for consistent MongoDB range queries, got: {result}"
 
     def test_hours_ago_returns_past(self):
         now = _now_iso()
