@@ -44,6 +44,7 @@ interface ScoredArticle {
     recency: number;
     engagement: number;
     diversity: number;
+    sourceQuality: number;  // Python Worker signal; 0 when TS scorer is used
   };
 }
 
@@ -169,9 +170,9 @@ export class PersonalizedFeedService {
         );
         // Map PythonRankedArticle (snake_case) → ScoredArticle (camelCase).
         // RankFeedClient now returns PythonRankedArticle[] so no cast is needed here.
-        // source_quality is intentionally excluded from scoreBreakdown: ScoredArticle
-        // doesn't model this signal (TS scorer doesn't produce it). See PythonRankedArticle
-        // in ProcessingClient.ts for the full breakdown including source_quality.
+        // sourceQuality is populated from the Python Worker; the TS scorer sets it to 0.
+        // This ensures scoreBreakdown values always sum to score regardless of which
+        // path produced the ranking.
         scoredArticles = rankResult.articles.map((a): ScoredArticle => ({
           id: a.id,
           title: a.title,
@@ -199,6 +200,7 @@ export class PersonalizedFeedService {
             recency: a.score_breakdown.recency,
             engagement: a.score_breakdown.engagement,
             diversity: a.score_breakdown.diversity,
+            sourceQuality: a.score_breakdown.source_quality,
           },
         }));
       } catch (err) {
@@ -212,7 +214,11 @@ export class PersonalizedFeedService {
     // Apply pagination
     const paginatedArticles = scoredArticles.slice(offset, offset + limit);
 
-    // Get total count (filtered by countries if applicable)
+    // Get total count from D1 (filtered by countries if applicable).
+    // NOTE: total reflects published articles in D1, not the number of Python-ranked
+    // candidates. When Python ranking is active it scores a candidateLimit-sized sample
+    // (up to 200), so total may exceed the actual rankable set. This is a known limitation
+    // of the in-memory scoring pattern shared by both the TS and Python paths.
     let countQuery = 'SELECT COUNT(*) as total FROM articles WHERE status = \'published\'';
     const countParams: string[] = [];
     if (effectiveCountries.length > 0) {
@@ -376,6 +382,7 @@ export class PersonalizedFeedService {
         recency: 0,
         engagement: 0,
         diversity: 0,
+        sourceQuality: 0,   // Python Worker only; TS scorer does not compute this
       };
 
       // Followed source boost

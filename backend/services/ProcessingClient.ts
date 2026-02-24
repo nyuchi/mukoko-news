@@ -25,9 +25,8 @@ type ServiceBinding = { fetch(input: RequestInfo, init?: RequestInit): Promise<R
  * can use it as the canonical type without duplicating the definition.
  *
  * Note: score_breakdown includes source_quality (a new signal not in the TS scorer).
- * That field is intentionally excluded from ScoredArticle.scoreBreakdown because the
- * TS scorer doesn't produce it — adding it to ScoredArticle would require a broader
- * schema change. Consumers wanting the full breakdown should use PythonRankedArticle directly.
+ * It is mapped to ScoredArticle.scoreBreakdown.sourceQuality; the TS scorer always
+ * sets sourceQuality to 0, ensuring scoreBreakdown values sum to score on both paths.
  */
 export interface PythonRankedArticle {
   id: number;
@@ -287,8 +286,10 @@ export class ProcessingClient {
   async getSourceHealth() {
     return this._get<{
       sources: Array<{
-        source_id: number;
+        source_id: string; // Python coerces MongoDB _id to str() — never a number
         name: string;
+        url: string | null;
+        country_id: string | null;
         status: string;
         consecutive_failures: number;
         last_successful_fetch: string | null;

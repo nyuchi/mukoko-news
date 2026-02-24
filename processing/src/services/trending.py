@@ -8,6 +8,7 @@ Supports country-specific trending via country_id filtering.
 """
 
 import json
+from datetime import datetime, timezone, timedelta
 from services.mongodb import MongoDBClient
 
 
@@ -82,8 +83,8 @@ async def get_trending(env, country_id: str | None = None) -> dict:
                     if "topics" in data:
                         return {"topics": data["topics"], "cached": True}
                     # "topics" key absent — stale/unexpected format, fall through to live compute
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[TRENDING] KV read failed for {cache_key}: {e}")
 
     # Cache miss — compute live
     db = MongoDBClient(env)
@@ -173,10 +174,8 @@ async def _compute_trending(db: MongoDBClient, country_id: str | None = None) ->
 
 
 def _now_iso() -> str:
-    from datetime import datetime, timezone
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def _hours_ago_iso(hours: int) -> str:
-    from datetime import datetime, timezone, timedelta
     return (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat().replace("+00:00", "Z")
