@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { COUNTRIES, CATEGORY_META, getCategoryEmoji, BASE_URL, getArticleUrl, getFullUrl } from '../constants';
+import { COUNTRIES, SECTION_META, getCategoryEmoji, BASE_URL, getArticleUrl, getFullUrl } from '../constants';
 
 describe('COUNTRIES', () => {
   it('should have all 16 Pan-African countries', () => {
@@ -39,20 +39,20 @@ describe('COUNTRIES', () => {
   });
 });
 
-describe('CATEGORY_META', () => {
+describe('SECTION_META', () => {
   it('should have emoji and color for common categories', () => {
     const commonCategories = ['politics', 'economy', 'technology', 'sports', 'health'];
 
     commonCategories.forEach((category) => {
-      expect(CATEGORY_META[category]).toBeDefined();
-      expect(CATEGORY_META[category].emoji).toBeTruthy();
-      expect(CATEGORY_META[category].color).toMatch(/^bg-/);
+      expect(SECTION_META[category]).toBeDefined();
+      expect(SECTION_META[category].emoji).toBeTruthy();
+      expect(SECTION_META[category].color).toMatch(/^bg-/);
     });
   });
 
   it('should have a fallback "all" category', () => {
-    expect(CATEGORY_META['all']).toBeDefined();
-    expect(CATEGORY_META['all'].emoji).toBe('📰');
+    expect(SECTION_META['all']).toBeDefined();
+    expect(SECTION_META['all'].emoji).toBe('📰');
   });
 });
 
