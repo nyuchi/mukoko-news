@@ -42,6 +42,7 @@ import { normalizeTitle, titleSimilarity, clusterArticles, STOP_WORDS } from "./
 // Infrastructure
 import { InfrastructureRegistry } from "./services/infrastructure/index.js";
 import { DataSyncService } from "./services/infrastructure/DataSyncService.js";
+import { createD1Cache } from "./services/infrastructure/D1KeyValueAdapter.js";
 // Platform services
 import { ContentModerationService } from "./services/platform/ContentModerationService.js";
 import { DynamicDataService } from "./services/platform/DynamicDataService.js";
@@ -136,6 +137,19 @@ app.use("*", cors({
 }));
 app.use("*", logger());
 
+// Replace KV bindings with D1-backed adapters for strong consistency at scale.
+// KV is eventually consistent and breaks under 10K+ articles / 1K+ users.
+// D1 gives us: SQL queries, atomic writes, strong consistency, edge-native.
+app.use("*", async (c, next) => {
+  const authAdapter = createD1Cache(c.env.DB, 'auth');
+  const cacheAdapter = createD1Cache(c.env.DB, 'cache');
+  // Override KV bindings so all downstream code (AuthProviderService, RateLimitService, etc.)
+  // automatically uses D1 instead of KV — zero code changes in services.
+  (c.env as any).AUTH_STORAGE = authAdapter;
+  (c.env as any).CACHE_STORAGE = cacheAdapter;
+  return await next();
+});
+
 // Protect all /api/* routes with API key (except /health and /api/admin/*)
 // Public API requires bearer token from authorized clients (Vercel frontend)
 app.use("/api/*", async (c, next) => {
@@ -199,9 +213,11 @@ function initializeServices(env: Bindings) {
     env.SEARCH_ANALYTICS
   );
 
-  // Initialize Security Services
-  const rateLimitService = new RateLimitService(env.CACHE_STORAGE);
-  const csrfService = new CSRFService(env.CACHE_STORAGE);
+  // Initialize Security Services — backed by D1 instead of KV for strong consistency
+  const authCache = createD1Cache(env.DB, 'auth');
+  const cacheStore = createD1Cache(env.DB, 'cache');
+  const rateLimitService = new RateLimitService(cacheStore as unknown as KVNamespace);
+  const csrfService = new CSRFService(cacheStore as unknown as KVNamespace);
 
   // Initialize CloudflareImagesService if available
   let imagesService = null;
@@ -229,7 +245,7 @@ function initializeServices(env: Bindings) {
   const moderationService = new ContentModerationService(env.AI, env.DB);
   const dynamicDataService = new DynamicDataService(env.DB);
   const feedOutputService = new FeedOutputService(env.DB);
-  const apiKeyService = new APIKeyService(env.DB, env.CACHE_STORAGE);
+  const apiKeyService = new APIKeyService(env.DB, cacheStore as unknown as KVNamespace);
   const publisherService = new PublisherService(env.DB);
   const webhookService = new WebhookService(env.DB);
   const sseStreamService = new SSEStreamService(env.DB);
@@ -255,6 +271,8 @@ function initializeServices(env: Bindings) {
     aiSearchService,
     rateLimitService,
     csrfService,
+    authCache,
+    cacheStore,
     sourceHealthService,
     // Platform services
     infra,
@@ -7037,6 +7055,14 @@ const scheduledHandler = async (
       seoResult.errors,
       seoDuration
     ).run();
+
+    // 3. Clean up expired D1 key-value entries (sessions, rate limits, CSRF tokens)
+    console.log('[CRON] Cleaning up expired kv_store entries...');
+    const authCleanup = createD1Cache(env.DB, 'auth');
+    const cacheCleanup = createD1Cache(env.DB, 'cache');
+    const authCleaned = await authCleanup.cleanup();
+    const cacheCleaned = await cacheCleanup.cleanup();
+    console.log(`[CRON] Cleaned up ${authCleaned} expired auth entries, ${cacheCleaned} expired cache entries`);
 
   } catch (error: any) {
     console.error('[CRON] Scheduled task failed:', error);

@@ -36,6 +36,9 @@ export type { MeilisearchConfig, MeilisearchSearchResult, MeilisearchDocument } 
 export { DragonflyCacheClient, CacheError } from './DragonflyCacheClient.js';
 export type { DragonflyCacheConfig } from './DragonflyCacheClient.js';
 
+export { D1KeyValueAdapter, createD1Cache } from './D1KeyValueAdapter.js';
+export type { KVCompatible } from './D1KeyValueAdapter.js';
+
 import { PostgresClient, type PostgresConfig } from './PostgresClient.js';
 import { CouchDBClient, type CouchDBConfig } from './CouchDBClient.js';
 import { DorisClient, type DorisConfig } from './DorisClient.js';
