@@ -36,12 +36,12 @@ function formatDate(dateString: string): { day: string; month: string; time: str
 }
 
 export function ArticleCard({ article }: ArticleCardProps) {
-  const hasImage = article.image_url && isValidImageUrl(article.image_url);
-  const dateInfo = formatDate(article.published_at);
+  const hasImage = article.image && isValidImageUrl(article.image);
+  const dateInfo = formatDate(article.date_published);
 
   const coverStyle = hasImage
     ? {
-        background: `linear-gradient(135deg, rgba(0,0,0,0.3), rgba(0,0,0,0.6)), ${safeCssUrl(article.image_url!)} center/cover`,
+        background: `linear-gradient(135deg, rgba(0,0,0,0.3), rgba(0,0,0,0.6)), ${safeCssUrl(article.image!)} center/cover`,
       }
     : { background: "linear-gradient(135deg, var(--primary), var(--secondary))" };
 
@@ -61,9 +61,9 @@ export function ArticleCard({ article }: ArticleCardProps) {
           </div>
 
           {/* Category Badge */}
-          {(article.category_id || article.category) && (
+          {(article.article_section_id || article.category) && (
             <div className="absolute top-4 right-4 bg-secondary text-white px-3 py-1.5 rounded-full text-[11px] font-bold uppercase">
-              {article.category_id || article.category}
+              {article.article_section_id || article.category}
             </div>
           )}
         </div>
@@ -71,7 +71,7 @@ export function ArticleCard({ article }: ArticleCardProps) {
         {/* Info */}
         <div className="p-5">
           <h3 className="text-lg font-bold mb-2.5 leading-tight line-clamp-2">
-            {article.title}
+            {article.headline}
           </h3>
 
           {article.description && (
@@ -81,7 +81,7 @@ export function ArticleCard({ article }: ArticleCardProps) {
           )}
 
           <div className="flex items-center justify-between">
-            <SourceBadge source={article.source} iconSize={18} />
+            <SourceBadge source={article.publisher_name} iconSize={18} />
 
             <div className="flex items-center gap-1.5 text-xs text-text-tertiary">
               <Clock className="w-3.5 h-3.5 text-text-tertiary" />
@@ -90,11 +90,11 @@ export function ArticleCard({ article }: ArticleCardProps) {
           </div>
 
           {/* Engagement */}
-          {(article.likesCount !== undefined || article.commentsCount !== undefined) && (
+          {(article.like_count !== undefined || article.comment_count !== undefined) && (
             <div className="mt-3 pt-3 border-t border-elevated">
               <InlineEngagement
-                likesCount={article.likesCount || 0}
-                commentsCount={article.commentsCount || 0}
+                likesCount={article.like_count || 0}
+                commentsCount={article.comment_count || 0}
                 isLiked={article.isLiked}
               />
             </div>

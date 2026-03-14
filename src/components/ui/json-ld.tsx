@@ -109,18 +109,18 @@ function safeJsonLdStringify(obj: unknown): string {
 
 export function ArticleJsonLd({ article, url }: { article: Article; url: string }) {
   // Determine author type: if author field differs from source, treat as Person
-  const authorName = article.author || article.source;
-  const isPersonAuthor = article.author && article.author !== article.source;
+  const authorName = article.author_name || article.publisher_name;
+  const isPersonAuthor = article.author_name && article.author_name !== article.publisher_name;
 
   const schema: NewsArticleSchema = {
     "@context": "https://schema.org",
     "@type": "NewsArticle",
-    headline: article.title,
+    headline: article.headline,
     description: article.description,
-    articleBody: article.content || article.description,
-    image: article.image_url,
-    datePublished: article.published_at,
-    dateModified: article.updated_at || article.published_at,
+    articleBody: article.article_body || article.description,
+    image: article.image,
+    datePublished: article.date_published,
+    dateModified: article.date_modified || article.date_published,
     author: {
       "@type": isPersonAuthor ? "Person" : "Organization",
       name: authorName,
@@ -140,7 +140,7 @@ export function ArticleJsonLd({ article, url }: { article: Article; url: string 
     isAccessibleForFree: true,
     inLanguage: "en",
     keywords: article.keywords?.map((k) => k.name).join(", ") || undefined,
-    articleSection: article.category_id || article.category || undefined,
+    articleSection: article.article_section_id || article.category || undefined,
     wordCount: article.word_count || undefined,
   };
 
@@ -263,14 +263,14 @@ export function ItemListJsonLd({
       item: {
         "@type": "NewsArticle",
         "@id": getArticleUrl(article.id),
-        headline: article.title,
+        headline: article.headline,
         description: article.description,
-        image: article.image_url,
-        datePublished: article.published_at,
-        author: article.source
+        image: article.image,
+        datePublished: article.date_published,
+        author: article.publisher_name
           ? {
               "@type": "Organization",
-              name: article.source,
+              name: article.publisher_name,
             }
           : undefined,
         publisher: {

@@ -21,8 +21,8 @@ export const COUNTRIES = [
 
 export type CountryCode = (typeof COUNTRIES)[number]["code"];
 
-// Category emoji and color mapping
-export const CATEGORY_META: Record<string, { emoji: string; color: string }> = {
+// Section (category) emoji and color mapping
+export const SECTION_META: Record<string, { emoji: string; color: string }> = {
   all: { emoji: "📰", color: "bg-gray-500" },
   politics: { emoji: "🏛️", color: "bg-red-500" },
   economy: { emoji: "💰", color: "bg-emerald-500" },
@@ -39,10 +39,10 @@ export const CATEGORY_META: Record<string, { emoji: string; color: string }> = {
   environment: { emoji: "🌍", color: "bg-green-600" },
 };
 
-// Category emoji helper
+// Section (category) emoji helper
 export function getCategoryEmoji(slug: string): string {
   if (!slug) return "📰";
-  return CATEGORY_META[slug.toLowerCase()]?.emoji || "📰";
+  return SECTION_META[slug.toLowerCase()]?.emoji || "📰";
 }
 
 // Base URL for the application

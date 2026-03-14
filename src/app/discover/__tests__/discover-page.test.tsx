@@ -24,8 +24,8 @@ vi.mock("next/navigation", () => ({
 }));
 
 vi.mock("@/components/article-card", () => ({
-  ArticleCard: ({ article }: { article: { title: string } }) => (
-    <div data-testid="article-card">{article.title}</div>
+  ArticleCard: ({ article }: { article: { headline: string } }) => (
+    <div data-testid="article-card">{article.headline}</div>
   ),
 }));
 

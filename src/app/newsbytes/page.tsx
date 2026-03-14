@@ -44,14 +44,14 @@ export default function NewsBytesPage() {
       const articles = data.articles || [];
 
       // Filter to only articles with valid image URLs
-      const withImages = articles.filter((a) => isValidImageUrl(a.image_url));
+      const withImages = articles.filter((a) => isValidImageUrl(a.image));
 
       const initialState: Record<string, { isLiked: boolean; isSaved: boolean; likesCount: number }> = {};
       withImages.forEach((byte) => {
         initialState[byte.id] = {
           isLiked: byte.isLiked || false,
           isSaved: byte.isSaved || false,
-          likesCount: byte.likesCount || 0,
+          likesCount: byte.like_count || 0,
         };
       });
 
@@ -169,8 +169,8 @@ export default function NewsBytesPage() {
     if (navigator.share) {
       try {
         await navigator.share({
-          title: byte.title,
-          text: byte.description || byte.title,
+          title: byte.headline,
+          text: byte.description || byte.headline,
           url: `/article/${byte.id}`,
         });
       } catch (err) {
@@ -273,7 +273,7 @@ export default function NewsBytesPage() {
               ref={(el) => setItemRef(el, index)}
               className="relative w-full h-full snap-start snap-always"
               style={{
-                backgroundImage: `linear-gradient(135deg, rgba(0,0,0,0.3), rgba(0,0,0,0.7)), ${safeCssUrl(byte.image_url ?? "")}`,
+                backgroundImage: `linear-gradient(135deg, rgba(0,0,0,0.3), rgba(0,0,0,0.7)), ${safeCssUrl(byte.image ?? "")}`,
                 backgroundSize: "cover",
                 backgroundPosition: "center",
               }}
@@ -284,15 +284,15 @@ export default function NewsBytesPage() {
               {/* Content */}
               <div className="absolute bottom-0 left-4 right-16 sm:left-6 sm:right-20 z-10 pb-6">
                 {/* Category Badge */}
-                {(byte.category_id || byte.category) && (
+                {(byte.article_section_id || byte.category) && (
                   <span className="inline-block px-3 py-1 bg-primary text-black text-xs font-bold uppercase rounded-lg mb-3">
-                    {byte.category_id || byte.category}
+                    {byte.article_section_id || byte.category}
                   </span>
                 )}
 
                 {/* Title */}
                 <h1 className="font-serif text-xl sm:text-2xl md:text-3xl font-bold text-white mb-3 leading-tight">
-                  {byte.title}
+                  {byte.headline}
                 </h1>
 
                 {/* Description */}
@@ -304,9 +304,9 @@ export default function NewsBytesPage() {
 
                 {/* Source & Date */}
                 <div className="flex items-center gap-2 text-sm text-white/70">
-                  <span className="font-bold text-primary">{byte.source}</span>
+                  <span className="font-bold text-primary">{byte.publisher_name}</span>
                   <span>•</span>
-                  <span>{formatDate(byte.published_at)}</span>
+                  <span>{formatDate(byte.date_published)}</span>
                 </div>
 
                 {/* Read More Button */}

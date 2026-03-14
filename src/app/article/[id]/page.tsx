@@ -30,27 +30,27 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const articleUrl = getArticleUrl(id);
   const description =
     article.description ||
-    `Read "${article.title}" — latest news from ${article.source} on Mukoko News.`;
+    `Read "${article.headline}" — latest news from ${article.publisher_name} on Mukoko News.`;
 
-  const hasValidImage = isValidImageUrl(article.image_url);
+  const hasValidImage = isValidImageUrl(article.image);
 
   return {
-    title: article.title,
+    title: article.headline,
     description,
-    authors: article.source ? [{ name: article.source }] : undefined,
+    authors: article.publisher_name ? [{ name: article.publisher_name }] : undefined,
     openGraph: {
-      title: article.title,
+      title: article.headline,
       description,
       url: articleUrl,
       type: "article",
-      publishedTime: article.published_at,
-      section: article.category_id || article.category || undefined,
+      publishedTime: article.date_published,
+      section: article.article_section_id || undefined,
       siteName: "Mukoko News",
       images: hasValidImage
         ? [
             {
-              url: article.image_url!,
-              alt: article.title,
+              url: article.image!,
+              alt: article.headline,
             },
           ]
         : [
@@ -64,10 +64,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     },
     twitter: {
       card: hasValidImage ? "summary_large_image" : "summary",
-      title: article.title,
+      title: article.headline,
       description,
       site: "@mukokoafrica",
-      images: hasValidImage ? [article.image_url!] : undefined,
+      images: hasValidImage ? [article.image!] : undefined,
       creator: "@mukokoafrica",
     },
     alternates: {

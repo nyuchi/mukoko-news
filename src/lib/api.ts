@@ -2,28 +2,53 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://mukoko-news-backend.
 
 interface Article {
   id: string;
-  title: string;
+  // schema:headline
+  headline: string;
+  // schema:description
   description?: string;
-  content?: string;
-  source: string;
-  source_id?: string;
+  // schema:articleBody
+  article_body?: string;
+  // schema:url (slug)
   slug: string;
-  category?: string;
-  category_id?: string;  // API returns category_id
-  country?: string;
-  country_id?: string;   // API returns country_id
-  image_url?: string;
-  original_url?: string;
-  published_at: string;
-  updated_at?: string;
-  author?: string;
-  keywords?: Array<{ id: string; name: string; slug: string }>;
+  // schema:mainEntityOfPage (original source URL)
+  main_entity_of_page?: string;
+  // schema:image
+  image?: string;
+  // schema:author (denormalized name)
+  author_name?: string;
+  // schema:publisher
+  publisher_id?: string;
+  publisher_name?: string;
+  // schema:articleSection
+  article_section_id?: string;
+  // schema:about (country)
+  about_country_id?: string;
+  // schema:datePublished
+  date_published: string;
+  // schema:dateModified
+  date_modified?: string;
+  // schema:wordCount
   word_count?: number;
-  reading_time?: number;
-  likesCount?: number;
-  commentsCount?: number;
+  reading_time_minutes?: number;
+  // schema:inLanguage
+  in_language?: string;
+  // schema:keywords (JSON array)
+  keywords?: Array<{ id: string; name: string; slug: string }>;
+  // schema:interactionStatistic
+  view_count?: number;
+  like_count?: number;
+  bookmark_count?: number;
+  comment_count?: number;
+  // Engagement state (user-specific)
   isLiked?: boolean;
   isSaved?: boolean;
+  // Scores
+  quality_score?: number;
+  engagement_score?: number;
+  // Content classification
+  content_type?: string;
+  urgency?: string;
+  status?: string;
 }
 
 // Story cluster - groups related articles from different sources
@@ -235,12 +260,14 @@ export const api = {
         id: string;
         name: string;
         url?: string;
-        category?: string;
-        country_id?: string;
+        rss_feed_url?: string;
+        area_served?: string;
+        article_section_id?: string;
+        health_status?: string;
         priority?: number;
         last_fetched_at?: string;
-        fetch_count?: number;
-        error_count?: number;
+        total_fetch_count?: number;
+        total_error_count?: number;
         last_error?: string;
         article_count?: number;
         latest_article_at?: string;
@@ -259,7 +286,7 @@ export const api = {
     return fetchAPI<{
       stories: Array<{
         id: string;
-        title: string;
+        headline: string;
         article_count: number;
         latest_article?: Article;
       }>;

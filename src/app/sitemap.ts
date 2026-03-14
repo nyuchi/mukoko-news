@@ -1,12 +1,12 @@
 import { MetadataRoute } from 'next';
-import { BASE_URL, COUNTRIES, CATEGORY_META, getArticleUrl } from '@/lib/constants';
+import { BASE_URL, COUNTRIES, SECTION_META, getArticleUrl } from '@/lib/constants';
 import { api } from '@/lib/api';
 
 // Revalidate sitemap every hour to pick up new articles
 export const revalidate = 3600;
 
-// Derive category slugs from CATEGORY_META (single source of truth), excluding "all"
-const CATEGORIES = Object.keys(CATEGORY_META).filter((slug) => slug !== 'all');
+// Derive category slugs from SECTION_META (single source of truth), excluding "all"
+const CATEGORIES = Object.keys(SECTION_META).filter((slug) => slug !== 'all');
 
 // Static pages
 const STATIC_PAGES = [
@@ -55,7 +55,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     const data = await api.getArticles({ limit: 200, sort: 'latest' });
     articleUrls = (data.articles || []).map((article) => ({
       url: getArticleUrl(article.id),
-      lastModified: article.published_at || now,
+      lastModified: article.date_published || now,
       changeFrequency: 'weekly' as const,
       priority: 0.7,
     }));

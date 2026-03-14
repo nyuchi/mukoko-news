@@ -32,7 +32,7 @@ export function ShareModal({ article, isOpen, onClose }: ShareModalProps) {
   if (!isOpen || !article) return null;
 
   const shareUrl = `${window.location.origin}/article/${article.id}`;
-  const shareTitle = article.title;
+  const shareTitle = article.headline;
   const shareText = `${shareTitle}\n\nRead on Mukoko News`;
 
   const handleCopyLink = async () => {
@@ -120,8 +120,8 @@ export function ShareModal({ article, isOpen, onClose }: ShareModalProps) {
 
         {/* Article Preview */}
         <div className="p-4 border-b border-elevated">
-          <p className="font-medium text-foreground line-clamp-2">{article.title}</p>
-          <p className="text-sm text-text-secondary mt-1">{article.source}</p>
+          <p className="font-medium text-foreground line-clamp-2">{article.headline}</p>
+          <p className="text-sm text-text-secondary mt-1">{article.publisher_name}</p>
         </div>
 
         {/* Share Options */}

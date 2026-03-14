@@ -8,7 +8,7 @@ import { ArticleCard } from "@/components/article-card";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { DiscoverPageSkeleton } from "@/components/ui/discover-skeleton";
 import { api, type Article, type Category } from "@/lib/api";
-import { COUNTRIES, CATEGORY_META, getFullUrl } from "@/lib/constants";
+import { COUNTRIES, SECTION_META, getFullUrl } from "@/lib/constants";
 import { WebPageJsonLd } from "@/components/ui/json-ld";
 
 interface Source {
@@ -97,13 +97,13 @@ export default function DiscoverPage() {
   // Client-side filter for source and search (server doesn't support these yet)
   const filteredArticles = useMemo(() => {
     return articles.filter((a) => {
-      if (activeSource && a.source !== activeSource) return false;
+      if (activeSource && a.publisher_name !== activeSource) return false;
       if (searchQuery) {
         const query = searchQuery.toLowerCase();
         return (
-          a.title.toLowerCase().includes(query) ||
+          a.headline.toLowerCase().includes(query) ||
           a.description?.toLowerCase().includes(query) ||
-          a.source?.toLowerCase().includes(query)
+          a.publisher_name?.toLowerCase().includes(query)
         );
       }
       return true;
@@ -219,7 +219,7 @@ export default function DiscoverPage() {
             <h2 className="text-xl font-bold text-foreground mb-6">Browse by Category</h2>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
               {categories.map((category) => {
-                const meta = CATEGORY_META[category.id] || { emoji: "📰", color: "bg-gray-500" };
+                const meta = SECTION_META[category.id] || { emoji: "📰", color: "bg-gray-500" };
                 return (
                   <Link
                     key={category.id}
@@ -248,7 +248,7 @@ export default function DiscoverPage() {
             <h2 className="text-xl font-bold text-foreground mb-6">Browse by Country</h2>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
               {COUNTRIES.map((country) => {
-                const articleCount = articles.filter(a => (a.country_id || a.country) === country.code).length;
+                const articleCount = articles.filter(a => (a.about_country_id || a.country) === country.code).length;
                 return (
                   <Link
                     key={country.code}

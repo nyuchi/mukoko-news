@@ -36,7 +36,7 @@ export default function ArticleDetailClient({
   const [error, setError] = useState<string | null>(null);
   const [isLiked, setIsLiked] = useState(initialArticle?.isLiked || false);
   const [isSaved, setIsSaved] = useState(initialArticle?.isSaved || false);
-  const [likesCount, setLikesCount] = useState(initialArticle?.likesCount || 0);
+  const [likesCount, setLikesCount] = useState(initialArticle?.like_count || 0);
 
   const loadArticle = useCallback(async () => {
     setLoading(true);
@@ -48,7 +48,7 @@ export default function ArticleDetailClient({
         setArticle(data.article);
         setIsLiked(data.article.isLiked || false);
         setIsSaved(data.article.isSaved || false);
-        setLikesCount(data.article.likesCount || 0);
+        setLikesCount(data.article.like_count || 0);
       } else {
         setError("Article not found");
       }
@@ -138,8 +138,8 @@ export default function ArticleDetailClient({
     if (navigator.share) {
       try {
         await navigator.share({
-          title: article.title,
-          text: article.description || article.title,
+          title: article.headline,
+          text: article.description || article.headline,
           url: articleUrl,
         });
       } catch (err) {
@@ -229,7 +229,7 @@ export default function ArticleDetailClient({
     );
   }
 
-  const category = article.category_id || article.category;
+  const section = article.article_section_id;
 
   return (
     <ErrorBoundary fallback={<div className="p-8 text-center text-text-secondary">Failed to render article content</div>}>
@@ -239,8 +239,8 @@ export default function ArticleDetailClient({
         <div className="max-w-[800px] mx-auto px-6 py-3">
           <Breadcrumb
             items={[
-              ...(category ? [{ label: category, href: `/discover?category=${category}` }] : []),
-              { label: (article.title || "Article").substring(0, 100) },
+              ...(section ? [{ label: section, href: `/discover?category=${section}` }] : []),
+              { label: (article.headline || "Article").substring(0, 100) },
             ]}
           />
         </div>
@@ -264,39 +264,39 @@ export default function ArticleDetailClient({
         </button>
 
         <div className="max-w-[800px] mx-auto pt-12">
-          {/* Category Badge */}
-          {(article.category_id || article.category) && (
+          {/* Section Badge */}
+          {section && (
             <div className="flex items-center gap-2 mb-4">
               <Tag className="w-4 h-4" />
               <span className="text-sm font-bold uppercase tracking-wider">
-                {article.category_id || article.category}
+                {section}
               </span>
             </div>
           )}
 
-          {/* Title */}
+          {/* Headline */}
           <h1 className="font-serif text-3xl md:text-4xl font-bold leading-tight mb-6">
-            {article.title}
+            {article.headline}
           </h1>
 
           {/* Source and Date */}
           <div className="flex items-center gap-4 text-white/80">
-            <span className="font-medium">{article.source}</span>
+            <span className="font-medium">{article.publisher_name}</span>
             <span className="flex items-center gap-1">
               <Clock className="w-4 h-4" />
-              {formatDate(article.published_at)}
+              {formatDate(article.date_published)}
             </span>
           </div>
         </div>
       </div>
 
       {/* Article Image */}
-      {article.image_url && isValidImageUrl(article.image_url) && (
+      {article.image && isValidImageUrl(article.image) && (
         <div className="max-w-[900px] mx-auto px-6 -mt-6">
           <div className="rounded-2xl overflow-hidden shadow-xl">
             <img
-              src={article.image_url}
-              alt={article.title}
+              src={article.image}
+              alt={article.headline}
               className="w-full aspect-video object-cover"
             />
           </div>
@@ -313,9 +313,9 @@ export default function ArticleDetailClient({
         )}
 
         {/* Content */}
-        {article.content && (
+        {article.article_body && (
           <div className="prose prose-lg dark:prose-invert max-w-none mb-8">
-            {article.content.split("\n").map((paragraph, index) => (
+            {article.article_body.split("\n").map((paragraph, index) => (
               <p key={`${article.id}-p-${index}`} className="mb-4 leading-relaxed">
                 {paragraph}
               </p>
