@@ -38,6 +38,23 @@ import { AuthProviderService, UserRole } from "./services/AuthProviderService.js
 // Story clustering for feed sections
 import { normalizeTitle, titleSimilarity, clusterArticles, STOP_WORDS } from "./services/StoryClusteringService.js";
 
+// === Platform Services (Phases 1-4: Leapfrog competitors) ===
+// Infrastructure
+import { InfrastructureRegistry } from "./services/infrastructure/index.js";
+import { DataSyncService } from "./services/infrastructure/DataSyncService.js";
+// Platform services
+import { ContentModerationService } from "./services/platform/ContentModerationService.js";
+import { DynamicDataService } from "./services/platform/DynamicDataService.js";
+import { FeedOutputService } from "./services/platform/FeedOutputService.js";
+import { APIKeyService, TIER_CONFIGS } from "./services/platform/APIKeyService.js";
+import { PublisherService } from "./services/platform/PublisherService.js";
+import { WebhookService } from "./services/platform/WebhookService.js";
+import { SSEStreamService } from "./services/platform/SSEStreamService.js";
+import { SmartHomeBriefingService } from "./services/platform/SmartHomeBriefingService.js";
+import { OpenDataService } from "./services/platform/OpenDataService.js";
+// Pipeline services
+import { PIIRemovalService } from "./services/pipeline/PIIRemovalService.js";
+
 // Import admin interface
 import { getAdminHTML, getLoginHTML } from "./admin/index.js";
 
@@ -75,6 +92,25 @@ type Bindings = {
   AUTH_ISSUER_URL: string; // OIDC issuer URL (id.mukoko.com)
   RESEND_API_KEY?: string; // Set via wrangler secret for email
   EMAIL_FROM?: string; // Default sender email address
+  // Infrastructure bindings (Fly.io services)
+  POSTGRES_URL?: string;
+  POSTGRES_AUTH_TOKEN?: string;
+  COUCHDB_URL?: string;
+  COUCHDB_USERNAME?: string;
+  COUCHDB_PASSWORD?: string;
+  COUCHDB_DATABASE?: string;
+  DORIS_HTTP_URL?: string;
+  DORIS_USERNAME?: string;
+  DORIS_PASSWORD?: string;
+  DORIS_DATABASE?: string;
+  NATS_HTTP_URL?: string;
+  NATS_AUTH_TOKEN?: string;
+  KAFKA_REST_PROXY_URL?: string;
+  KAFKA_AUTH_TOKEN?: string;
+  MEILISEARCH_URL?: string;
+  MEILISEARCH_API_KEY?: string;
+  DRAGONFLY_URL?: string;
+  DRAGONFLY_AUTH_TOKEN?: string;
 };
 
 // Export Durable Object classes for Cloudflare
@@ -109,8 +145,14 @@ app.use("/api/*", async (c, next) => {
     '/api/health',
   ];
 
-  // Check if this is an admin route, auth route, or bypass path
+  // Check if this is an admin route, auth route, bypass path, or public platform route
   if (c.req.path.startsWith('/api/admin/') || c.req.path.startsWith('/api/auth/') || bypassPaths.includes(c.req.path)) {
+    return await next();
+  }
+
+  // Public v1 routes that don't require API key auth
+  const publicV1Paths = ['/api/v1/open-data/', '/api/v1/briefing/', '/api/v1/keys/tiers', '/api/v1/stream'];
+  if (publicV1Paths.some(p => c.req.path.startsWith(p))) {
     return await next();
   }
 
@@ -181,7 +223,22 @@ function initializeServices(env: Bindings) {
   // Initialize SourceHealthService for monitoring and alerting
   const sourceHealthService = new SourceHealthService(env.DB);
 
+  // === Platform Services ===
+  const infra = new InfrastructureRegistry(env);
+  const dataSyncService = new DataSyncService(env.DB, infra);
+  const moderationService = new ContentModerationService(env.AI, env.DB);
+  const dynamicDataService = new DynamicDataService(env.DB);
+  const feedOutputService = new FeedOutputService(env.DB);
+  const apiKeyService = new APIKeyService(env.DB, env.CACHE_STORAGE);
+  const publisherService = new PublisherService(env.DB);
+  const webhookService = new WebhookService(env.DB);
+  const sseStreamService = new SSEStreamService(env.DB);
+  const briefingService = new SmartHomeBriefingService(env.DB);
+  const openDataService = new OpenDataService(env.DB);
+  const piiService = new PIIRemovalService(env.DB);
+
   console.log('[INIT] All services initialized - using SimpleRSSService for RSS processing');
+  console.log('[INIT] Platform services initialized - infrastructure:', infra.status);
 
   return {
     d1Service,
@@ -198,7 +255,20 @@ function initializeServices(env: Bindings) {
     aiSearchService,
     rateLimitService,
     csrfService,
-    sourceHealthService
+    sourceHealthService,
+    // Platform services
+    infra,
+    dataSyncService,
+    moderationService,
+    dynamicDataService,
+    feedOutputService,
+    apiKeyService,
+    publisherService,
+    webhookService,
+    sseStreamService,
+    briefingService,
+    openDataService,
+    piiService,
   };
 }
 
@@ -6550,6 +6620,360 @@ Crawl-delay: 1
   });
 });
 
+// ============================================================
+// PLATFORM API ROUTES (v1) - Phases 1-4: Leapfrog competitors
+// ============================================================
+
+// --- Feed Output (RSS, Atom, JSON Feed) - PUBLIC ---
+app.get("/feeds/:format", async (c) => {
+  try {
+    const format = c.req.param("format") as 'rss' | 'atom' | 'json';
+    if (!['rss', 'atom', 'json'].includes(format)) {
+      return c.json({ error: "Invalid format. Use: rss, atom, json" }, 400);
+    }
+    const { feedOutputService } = initializeServices(c.env);
+    const options = {
+      format,
+      country: c.req.query("country"),
+      category: c.req.query("category"),
+      source: c.req.query("source"),
+      limit: c.req.query("limit") ? parseInt(c.req.query("limit")!) : undefined,
+      language: c.req.query("language"),
+    };
+    const ifNoneMatch = c.req.header("if-none-match");
+    const result = await feedOutputService.generateFeed(options);
+    if (ifNoneMatch && ifNoneMatch === result.etag) {
+      return new Response(null, { status: 304 });
+    }
+    return new Response(result.content, {
+      headers: {
+        "Content-Type": result.contentType,
+        "ETag": result.etag,
+        "Last-Modified": new Date(result.lastModified).toUTCString(),
+        "Cache-Control": "public, max-age=900, s-maxage=300",
+        "X-Mukoko-Platform": "1.0",
+      },
+    });
+  } catch (error: any) {
+    return c.json({ error: "Feed generation failed", message: error.message }, 500);
+  }
+});
+
+// --- API Key Management ---
+app.post("/api/v1/keys", async (c) => {
+  try {
+    const { apiKeyService } = initializeServices(c.env);
+    const body = await c.req.json() as { name: string; tier?: string; email: string };
+    const userId = getCurrentUserId(c) || crypto.randomUUID();
+    const result = await apiKeyService.createKey({
+      name: body.name, owner_id: userId, owner_email: body.email,
+      tier: (body.tier as any) || 'free',
+    });
+    return c.json({
+      api_key: result.rawKey, key_id: result.apiKey.id, tier: result.apiKey.tier,
+      permissions: result.apiKey.permissions, rate_limit: result.apiKey.rate_limit,
+      message: "Save your API key now. It will not be shown again.",
+    }, 201);
+  } catch (error: any) {
+    return c.json({ error: "Failed to create API key", message: error.message }, 500);
+  }
+});
+
+app.get("/api/v1/keys/tiers", (c) => c.json(TIER_CONFIGS));
+
+// --- Dynamic Data ---
+app.get("/api/v1/dynamic/categories", async (c) => {
+  const { dynamicDataService } = initializeServices(c.env);
+  const categories = await dynamicDataService.getCategories({ withArticleCount: true });
+  return c.json({ categories, total: categories.length });
+});
+
+app.post("/api/v1/admin/categories", async (c) => {
+  const { dynamicDataService } = initializeServices(c.env);
+  const category = await dynamicDataService.createCategory(await c.req.json());
+  return c.json(category, 201);
+});
+
+app.get("/api/v1/dynamic/keywords", async (c) => {
+  const { dynamicDataService } = initializeServices(c.env);
+  const result = await dynamicDataService.getKeywords({
+    limit: c.req.query("limit") ? parseInt(c.req.query("limit")!) : 50,
+    trending: c.req.query("trending") === "true",
+    search: c.req.query("search"),
+  });
+  return c.json(result);
+});
+
+app.get("/api/v1/dynamic/tags", async (c) => {
+  const { dynamicDataService } = initializeServices(c.env);
+  const tags = await dynamicDataService.getTags({
+    type: c.req.query("type") as any,
+    trending: c.req.query("trending") === "true",
+    limit: c.req.query("limit") ? parseInt(c.req.query("limit")!) : 50,
+  });
+  return c.json({ tags, total: tags.length });
+});
+
+app.get("/api/v1/dynamic/sources", async (c) => {
+  const { dynamicDataService } = initializeServices(c.env);
+  const result = await dynamicDataService.getSources({
+    country: c.req.query("country"), search: c.req.query("search"),
+    status: c.req.query("status"),
+  });
+  return c.json(result);
+});
+
+app.get("/api/v1/dynamic/countries", async (c) => {
+  const { dynamicDataService } = initializeServices(c.env);
+  const countries = await dynamicDataService.getCountries({ activeOnly: true });
+  return c.json({ countries, total: countries.length });
+});
+
+// --- Content Moderation (Admin) ---
+app.post("/api/v1/admin/moderate", async (c) => {
+  const { moderationService } = initializeServices(c.env);
+  return c.json(await moderationService.moderateArticle(await c.req.json()));
+});
+
+app.post("/api/v1/admin/moderate/batch", async (c) => {
+  const { moderationService } = initializeServices(c.env);
+  const body = await c.req.json() as { articles: any[] };
+  const results = await moderationService.moderateBatch(body.articles);
+  return c.json({ results, total: results.length });
+});
+
+app.get("/api/v1/admin/moderation/stats", async (c) => {
+  const { moderationService } = initializeServices(c.env);
+  return c.json(await moderationService.getStats(parseInt(c.req.query("days") || '30')));
+});
+
+// --- Publisher Platform ---
+app.post("/api/v1/publishers/register", async (c) => {
+  try {
+    const { publisherService } = initializeServices(c.env);
+    const publisher = await publisherService.register(await c.req.json());
+    return c.json({
+      publisher,
+      verification_instructions: {
+        method: "DNS TXT record",
+        record: `mukoko-verify=${publisher.verification_token}`,
+        domain: publisher.domain,
+      },
+    }, 201);
+  } catch (error: any) {
+    return c.json({ error: error.message, code: error.code }, error.code === 'DUPLICATE_DOMAIN' ? 409 : 500);
+  }
+});
+
+app.post("/api/v1/publishers/:id/verify", async (c) => {
+  const { publisherService } = initializeServices(c.env);
+  return c.json(await publisherService.verifyDomain(c.req.param("id")));
+});
+
+app.post("/api/v1/publishers/:id/articles", async (c) => {
+  try {
+    const { publisherService, webhookService } = initializeServices(c.env);
+    const body = await c.req.json();
+    const result = await publisherService.submitArticle(c.req.param("id"), body);
+    if (result.status === 'accepted') {
+      webhookService.dispatch('publisher.article_submitted', {
+        publisher_id: c.req.param("id"), article_id: result.articleId, ...body,
+      }).catch(e => console.error('[WEBHOOK]', e));
+    }
+    return c.json(result, result.status === 'accepted' ? 201 : 200);
+  } catch (error: any) {
+    const statusMap: Record<string, number> = { NOT_FOUND: 404, SUSPENDED: 403, UNVERIFIED: 403 };
+    return c.json({ error: error.message }, statusMap[error.code] || 500);
+  }
+});
+
+app.get("/api/v1/publishers/:id/analytics", async (c) => {
+  const { publisherService } = initializeServices(c.env);
+  return c.json(await publisherService.getAnalytics(c.req.param("id"), parseInt(c.req.query("days") || '30')));
+});
+
+app.get("/api/v1/publishers", async (c) => {
+  const { publisherService } = initializeServices(c.env);
+  return c.json(await publisherService.listPublishers({
+    country: c.req.query("country"), search: c.req.query("search"),
+    limit: c.req.query("limit") ? parseInt(c.req.query("limit")!) : 50,
+  }));
+});
+
+// --- Webhooks ---
+app.post("/api/v1/webhooks", async (c) => {
+  try {
+    const { webhookService } = initializeServices(c.env);
+    const body = await c.req.json();
+    return c.json(await webhookService.createSubscription({
+      api_key_id: body.api_key_id || 'default', url: body.url,
+      events: body.events, description: body.description, filters: body.filters,
+    }), 201);
+  } catch (error: any) {
+    return c.json({ error: error.message }, error.code === 'INVALID_URL' ? 400 : 500);
+  }
+});
+
+app.get("/api/v1/webhooks", async (c) => {
+  const { webhookService } = initializeServices(c.env);
+  const subs = await webhookService.listSubscriptions(c.req.query("api_key_id") || 'default');
+  return c.json({ subscriptions: subs, total: subs.length });
+});
+
+app.put("/api/v1/webhooks/:id", async (c) => {
+  const { webhookService } = initializeServices(c.env);
+  const sub = await webhookService.updateSubscription(c.req.param("id"), await c.req.json());
+  return sub ? c.json(sub) : c.json({ error: "Not found" }, 404);
+});
+
+app.delete("/api/v1/webhooks/:id", async (c) => {
+  const { webhookService } = initializeServices(c.env);
+  await webhookService.deleteSubscription(c.req.param("id"));
+  return c.json({ ok: true });
+});
+
+app.post("/api/v1/webhooks/:id/test", async (c) => {
+  const { webhookService } = initializeServices(c.env);
+  return c.json(await webhookService.test(c.req.param("id")));
+});
+
+app.get("/api/v1/webhooks/:id/deliveries", async (c) => {
+  const { webhookService } = initializeServices(c.env);
+  const deliveries = await webhookService.getDeliveryHistory(c.req.param("id"), parseInt(c.req.query("limit") || '50'));
+  return c.json({ deliveries, total: deliveries.length });
+});
+
+// --- SSE Streaming ---
+app.get("/api/v1/stream", async (c) => {
+  const { sseStreamService } = initializeServices(c.env);
+  const { stream } = sseStreamService.createStream({
+    events: c.req.query("events")?.split(",") as any[],
+    countries: c.req.query("countries")?.split(","),
+    categories: c.req.query("categories")?.split(","),
+  });
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream", "Cache-Control": "no-cache",
+      "Connection": "keep-alive", "X-Accel-Buffering": "no",
+    },
+  });
+});
+
+app.get("/api/v1/stream/status", async (c) => {
+  const { sseStreamService } = initializeServices(c.env);
+  return c.json(sseStreamService.getStreamInfo());
+});
+
+// --- Smart Home Briefings - PUBLIC ---
+app.get("/api/v1/briefing/:format", async (c) => {
+  const format = c.req.param("format") as 'alexa' | 'google' | 'apple' | 'generic';
+  if (!['alexa', 'google', 'apple', 'generic'].includes(format)) {
+    return c.json({ error: "Invalid format" }, 400);
+  }
+  const { briefingService } = initializeServices(c.env);
+  const briefing = await briefingService.generateBriefing({
+    format, country: c.req.query("country"), category: c.req.query("category"),
+    limit: c.req.query("limit") ? parseInt(c.req.query("limit")!) : 5,
+    timezone: c.req.query("timezone"), language: c.req.query("language"),
+  });
+  return c.json(briefing, 200, { "Cache-Control": "public, max-age=1800" });
+});
+
+// --- Open Data API - PUBLIC ---
+app.get("/api/v1/open-data/manifesto", (c) => {
+  const { openDataService } = initializeServices(c.env);
+  return c.json(openDataService.getManifesto());
+});
+
+app.get("/api/v1/open-data/articles", async (c) => {
+  const { openDataService } = initializeServices(c.env);
+  const format = (c.req.query("format") || 'json') as 'json' | 'csv' | 'jsonl';
+  const result = await openDataService.getArticles({
+    country: c.req.query("country"), category: c.req.query("category"),
+    since: c.req.query("since"), until: c.req.query("until"),
+    limit: c.req.query("limit") ? parseInt(c.req.query("limit")!) : 100,
+    cursor: c.req.query("cursor"), format,
+  });
+  if (format === 'csv') {
+    return new Response(openDataService.formatAsCSV(result.data), {
+      headers: { "Content-Type": "text/csv", "Content-Disposition": "attachment; filename=mukoko-articles.csv" },
+    });
+  }
+  if (format === 'jsonl') {
+    return new Response(openDataService.formatAsJSONL(result.data), {
+      headers: { "Content-Type": "application/x-ndjson" },
+    });
+  }
+  return c.json(result, 200, { "Cache-Control": "public, max-age=3600", "X-License": "CC BY 4.0" });
+});
+
+app.get("/api/v1/open-data/sources", async (c) => {
+  const { openDataService } = initializeServices(c.env);
+  return c.json(await openDataService.getSources(), 200, { "Cache-Control": "public, max-age=86400" });
+});
+
+app.get("/api/v1/open-data/categories", async (c) => {
+  const { openDataService } = initializeServices(c.env);
+  return c.json(await openDataService.getCategories(), 200, { "Cache-Control": "public, max-age=3600" });
+});
+
+app.get("/api/v1/open-data/keywords", async (c) => {
+  const { openDataService } = initializeServices(c.env);
+  return c.json(await openDataService.getKeywords({
+    limit: c.req.query("limit") ? parseInt(c.req.query("limit")!) : 100,
+    trending: c.req.query("trending") === "true",
+  }), 200, { "Cache-Control": "public, max-age=3600" });
+});
+
+app.get("/api/v1/open-data/analytics", async (c) => {
+  const { openDataService } = initializeServices(c.env);
+  return c.json(await openDataService.getAnalytics(parseInt(c.req.query("days") || '30')), 200, {
+    "Cache-Control": "public, max-age=86400",
+  });
+});
+
+// --- PII Admin ---
+app.post("/api/v1/admin/pii/scan", async (c) => {
+  const { piiService } = initializeServices(c.env);
+  return c.json(piiService.scanForPII(await c.req.json()));
+});
+
+app.post("/api/v1/admin/pii/remove", async (c) => {
+  const { piiService } = initializeServices(c.env);
+  const result = piiService.removePII(await c.req.json());
+  return c.json({ clean: result.clean, removed_count: result.removed.length, audit: result.auditLog });
+});
+
+// --- Infrastructure Health (Admin) ---
+app.get("/api/v1/admin/infrastructure/health", async (c) => {
+  const { infra } = initializeServices(c.env);
+  return c.json({ status: infra.status, health: await infra.healthCheck(), timestamp: new Date().toISOString() });
+});
+
+// --- Batch Operations ---
+app.post("/api/v1/batch/articles", async (c) => {
+  const body = await c.req.json() as { ids: string[] };
+  if (!body.ids?.length) return c.json({ error: "ids required" }, 400);
+  if (body.ids.length > 100) return c.json({ error: "Max 100 articles" }, 400);
+  const placeholders = body.ids.map(() => '?').join(',');
+  const result = await c.env.DB.prepare(`SELECT * FROM articles WHERE id IN (${placeholders})`).bind(...body.ids).all();
+  return c.json({ articles: result.results ?? [], total: result.results?.length ?? 0 });
+});
+
+app.post("/api/v1/batch/search", async (c) => {
+  const body = await c.req.json() as { queries: Array<{ q: string; limit?: number }> };
+  if (!body.queries?.length) return c.json({ error: "queries required" }, 400);
+  if (body.queries.length > 10) return c.json({ error: "Max 10 queries" }, 400);
+  const results = await Promise.all(body.queries.map(async (q) => {
+    const r = await c.env.DB.prepare(
+      `SELECT * FROM articles WHERE title LIKE ? OR description LIKE ? ORDER BY published_at DESC LIMIT ?`
+    ).bind(`%${q.q}%`, `%${q.q}%`, Math.min(q.limit ?? 10, 50)).all();
+    return { query: q.q, results: r.results ?? [], total: r.results?.length ?? 0 };
+  }));
+  return c.json({ results });
+});
+
+// ============================================================
 // Scheduled handler for cron jobs with rotating batch processing
 // Cron runs every 6 hours (0, 6, 12, 18 UTC), rotating through batches
 const scheduledHandler = async (
