@@ -10,37 +10,11 @@ import {
   Clock,
   AlertCircle,
 } from "lucide-react";
-import { fetchAPI } from "@/lib/api";
-import { isValidImageUrl } from "@/lib/utils";
+import { api, type Article } from "@/lib/api";
+import { isValidImageUrl, formatTimeAgo } from "@/lib/utils";
 import { SourceIcon } from "@/components/ui/source-icon";
 
-interface FeedArticle {
-  id: string;
-  headline: string;
-  article_body?: string;
-  image?: string;
-  publisher_name?: string;
-  publisher_id?: string;
-  article_section_id?: string;
-  date_published?: string;
-  main_entity_of_page?: string;
-  about_country_id?: string;
-}
-
-function formatTimeAgo(dateString: string): string {
-  const now = new Date();
-  const date = new Date(dateString);
-  const diffMs = now.getTime() - date.getTime();
-  const diffMins = Math.floor(diffMs / 60000);
-  if (diffMins < 1) return "just now";
-  if (diffMins < 60) return `${diffMins}m ago`;
-  const diffHours = Math.floor(diffMins / 60);
-  if (diffHours < 24) return `${diffHours}h ago`;
-  const diffDays = Math.floor(diffHours / 24);
-  return `${diffDays}d ago`;
-}
-
-function FeedItem({ article }: { article: FeedArticle }) {
+function FeedItem({ article }: { article: Article }) {
   const hasImage = article.image && isValidImageUrl(article.image);
   const snippet = article.article_body
     ? article.article_body.slice(0, 160).replace(/<[^>]*>/g, "") + "..."
@@ -112,7 +86,7 @@ function FeedItem({ article }: { article: FeedArticle }) {
 }
 
 export default function PlatformFeedPage() {
-  const [articles, setArticles] = useState<FeedArticle[]>([]);
+  const [articles, setArticles] = useState<Article[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -120,9 +94,7 @@ export default function PlatformFeedPage() {
     try {
       setLoading(true);
       setError(null);
-      const data = await fetchAPI<{ articles: FeedArticle[] }>(
-        "/api/feeds?limit=30"
-      );
+      const data = await api.getArticles({ limit: 30 });
       setArticles(data.articles || []);
     } catch {
       setError("Failed to load feed");

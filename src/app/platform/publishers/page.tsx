@@ -18,17 +18,18 @@ import {
   Zap,
   Globe,
 } from "lucide-react";
-import { fetchAPI } from "@/lib/api";
+import { api } from "@/lib/api";
 import { SourceIcon } from "@/components/ui/source-icon";
 
 interface NewsSource {
   id: string;
   name: string;
-  url: string;
-  about_country_id?: string;
+  url?: string;
+  rss_feed_url?: string;
+  area_served?: string;
   article_section_id?: string;
   article_count?: number;
-  is_active?: boolean;
+  health_status?: string;
   claimed?: boolean;
 }
 
@@ -88,8 +89,8 @@ export default function PublishersPage() {
   const loadSources = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await fetchAPI<{ sources: NewsSource[] }>("/api/sources");
-      setSources(data.sources || []);
+      const data = await api.getSources();
+      setSources((data.sources || []) as NewsSource[]);
     } catch {
       // Sources may fail to load - that's ok
     } finally {
@@ -104,7 +105,7 @@ export default function PublishersPage() {
   const filteredSources = sources.filter(
     (s) =>
       s.name.toLowerCase().includes(search.toLowerCase()) ||
-      s.url.toLowerCase().includes(search.toLowerCase())
+      (s.url || s.rss_feed_url || "").toLowerCase().includes(search.toLowerCase())
   );
 
   return (
@@ -239,7 +240,7 @@ export default function PublishersPage() {
                     )}
                   </div>
                   <div className="flex items-center gap-2 text-xs text-text-tertiary mt-0.5">
-                    <span className="truncate">{source.url}</span>
+                    <span className="truncate">{source.url || source.rss_feed_url}</span>
                     {source.article_count !== undefined && (
                       <>
                         <span className="text-border">·</span>

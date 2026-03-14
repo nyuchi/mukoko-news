@@ -1,0 +1,19 @@
+{
+  "name": "@mukoko/mcp-server",
+  "version": "1.0.0",
+  "description": "Mukoko News MCP Server — Model Context Protocol server for Pan-African news",
+  "type": "module",
+  "main": "src/index.js",
+  "bin": {
+    "mukoko-mcp": "src/index.js"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1"
+  },
+  "keywords": ["mcp", "mukoko", "news", "africa", "model-context-protocol"],
+  "license": "MIT"
+}
