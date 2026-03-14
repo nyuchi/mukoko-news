@@ -93,38 +93,50 @@ const tools = [
   {
     name: "search_articles",
     icon: Search,
-    description: "Search articles by keyword, country, and category",
+    description: "Search articles — returns SearchResponse",
     params: "query, country?, category?, limit?",
   },
   {
     name: "get_latest_articles",
     icon: Newspaper,
-    description: "Get the latest news articles with optional filters",
-    params: "country?, category?, limit?",
+    description: "List articles — returns ArticleListResponse",
+    params: "country?, category?, sort?, limit?",
   },
   {
     name: "get_article",
     icon: BookOpen,
-    description: "Get a specific article by ID with full content",
-    params: "id",
+    description: "Get full article — returns ArticleFull",
+    params: "articleId",
   },
   {
     name: "get_trending",
     icon: TrendingUp,
-    description: "Get trending stories and topics",
-    params: "country?, limit?",
+    description: "Trending story clusters — returns TrendingResponse",
+    params: "country?, limit?, hours?",
   },
   {
     name: "get_news_bytes",
     icon: Zap,
-    description: "Get short-form NewsBytes for quick reading",
-    params: "country?, limit?",
+    description: "Short-form news — returns ArticleListResponse",
+    params: "country?, category?, limit?",
   },
   {
     name: "get_related_articles",
     icon: Database,
-    description: "Get articles related to a specific article",
+    description: "Related articles — returns RelatedArticlesResponse",
     params: "articleId",
+  },
+  {
+    name: "list_sources",
+    icon: Radio,
+    description: "All news sources — returns SourcesResponse",
+    params: "(none)",
+  },
+  {
+    name: "get_stats",
+    icon: TrendingUp,
+    description: "Platform statistics — returns StatsResponse",
+    params: "(none)",
   },
   {
     name: "get_keywords",
@@ -136,24 +148,29 @@ const tools = [
 
 const resources = [
   {
+    uri: "mukoko://openapi",
+    icon: Code2,
+    description: "OpenAPI 3.0 schema reference — all models and endpoints",
+  },
+  {
     uri: "mukoko://countries",
     icon: Globe,
-    description: "All 16 supported African countries with codes and flags",
+    description: "CountriesResponse — all 16 supported African countries",
   },
   {
     uri: "mukoko://categories",
     icon: Tag,
-    description: "News categories (politics, sports, technology, etc.)",
+    description: "CategoriesResponse — news categories with article counts",
   },
   {
     uri: "mukoko://sources",
     icon: Radio,
-    description: "All registered news sources with article counts",
+    description: "SourcesResponse — all news sources with health status",
   },
   {
     uri: "mukoko://keywords",
     icon: TrendingUp,
-    description: "Trending keywords and topics",
+    description: "KeywordsResponse — trending keywords and topics",
   },
 ];
 

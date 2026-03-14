@@ -1,436 +1,664 @@
 openapi: 3.0.3
 info:
-  title: Harare Metro News API
+  title: Mukoko News API
   description: |
-    Zimbabwe News Aggregation API that fetches and categorizes news from multiple local sources.
-    
-    Features:
-    - Real-time RSS feed aggregation
-    - Enhanced categorization with Zimbabwe-specific keywords
-    - Priority detection for Zimbabwe-relevant content
-    - Multiple news sources from Herald, NewsDay, Chronicle, ZBC, and more
-  version: 2.0.0
+    Pan-African digital news aggregation API. Mukoko means "Beehive" in Shona —
+    where community gathers and stores knowledge. Aggregates news from 56+ sources
+    across 16 African countries with AI-powered categorization, semantic search,
+    and story clustering.
+
+    All article fields follow [Schema.org NewsArticle](https://schema.org/NewsArticle) naming conventions.
+
+    ## Authentication
+
+    Public read endpoints require a bearer token (`API_SECRET`). Set it via the
+    `Authorization: Bearer <token>` header. User-specific endpoints additionally
+    accept OIDC JWTs from `id.mukoko.com`.
+
+    ## Rate Limits
+
+    Rate limits are enforced per-IP via KV-backed sliding windows.
+
+    ## MCP Server
+
+    An [MCP server](https://modelcontextprotocol.io) is available at
+    `mcp-server/` for AI-powered news workflows.
+  version: 4.0.0
   contact:
-    name: Nyuchi Web Services
+    name: Nyuchi Africa
     url: https://www.nyuchi.com
   license:
     name: MIT
     url: https://opensource.org/licenses/MIT
 
 servers:
-  - url: https://www.hararemetro.co.zw/api
-    description: Production server
-  - url: https://staging.hararemetro.co.zw/api
-    description: Staging server
+  - url: https://mukoko-news-backend.nyuchi.workers.dev/api
+    description: Production (Cloudflare Workers)
   - url: http://localhost:8787/api
-    description: Development server
+    description: Local development
+
+tags:
+  - name: Articles
+    description: News article retrieval and feeds
+  - name: Search
+    description: Full-text and semantic search
+  - name: Discovery
+    description: Trending topics, categories, keywords
+  - name: Sources
+    description: News source directory
+  - name: Countries
+    description: Pan-African country data
+  - name: Authors
+    description: Author profiles
+  - name: Engagement
+    description: Article interactions (like, save, view)
+  - name: User
+    description: User profile and preferences
+  - name: System
+    description: Health and platform stats
+
+security:
+  - BearerAuth: []
 
 paths:
+  # ─── System ───────────────────────────────────────────────────────────
+
   /health:
     get:
-      summary: Health check endpoint
-      description: Returns API health status and configuration information
+      summary: Health check
       operationId: getHealth
-      tags:
-        - System
+      tags: [System]
+      security: []
       responses:
         '200':
-          description: API is healthy
+          description: API health status
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/HealthResponse'
 
+  /stats:
+    get:
+      summary: Platform statistics
+      operationId: getStats
+      tags: [System]
+      responses:
+        '200':
+          description: Aggregate platform stats
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatsResponse'
+
+  # ─── Articles ─────────────────────────────────────────────────────────
+
   /feeds:
     get:
-      summary: Get all news feeds
+      summary: List articles
       description: |
-        Fetches and aggregates news from all enabled RSS sources. 
-        Articles are automatically categorized and prioritized based on Zimbabwe relevance.
-      operationId: getAllFeeds
-      tags:
-        - News
+        Paginated article feed with optional filtering by category, country,
+        and sort order. Returns articles with engagement counts and keywords.
+      operationId: listArticles
+      tags: [Articles]
       parameters:
-        - name: category
+        - $ref: '#/components/parameters/LimitParam'
+        - $ref: '#/components/parameters/OffsetParam'
+        - $ref: '#/components/parameters/CategoryParam'
+        - $ref: '#/components/parameters/CountriesParam'
+        - name: sort
           in: query
-          description: Filter by category
-          required: false
           schema:
             type: string
-            enum: 
-              - politics
-              - economy
-              - business
-              - sports
-              - harare
-              - agriculture
-              - technology
-              - health
-              - education
-              - entertainment
-              - environment
-              - crime
-              - international
-              - lifestyle
-              - finance
-              - general
+            enum: [latest, trending, popular]
+            default: latest
+      responses:
+        '200':
+          description: Paginated article list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArticleListResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /feeds/sectioned:
+    get:
+      summary: Sectioned feed
+      description: |
+        Returns articles grouped into sections: top stories (clustered),
+        personalised "your news", by-category sections, and latest.
+        Used by the main app home page.
+      operationId: getSectionedFeed
+      tags: [Articles]
+      parameters:
+        - $ref: '#/components/parameters/CountriesParam'
+        - name: categories
+          in: query
+          description: Comma-separated category slugs
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Sectioned feed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SectionedFeedResponse'
+
+  /article/{articleId}:
+    get:
+      summary: Get article
+      description: Returns full article content including body, word count, and reading time.
+      operationId: getArticle
+      tags: [Articles]
+      parameters:
+        - $ref: '#/components/parameters/ArticleIdParam'
+      responses:
+        '200':
+          description: Full article
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [article]
+                properties:
+                  article:
+                    $ref: '#/components/schemas/ArticleFull'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /article/{articleId}/related:
+    get:
+      summary: Related articles
+      description: Returns articles related to the given article via story clustering.
+      operationId: getRelatedArticles
+      tags: [Articles]
+      parameters:
+        - $ref: '#/components/parameters/ArticleIdParam'
         - name: limit
           in: query
-          description: Maximum number of articles to return
-          required: false
           schema:
             type: integer
+            default: 6
+            minimum: 1
+            maximum: 20
+      responses:
+        '200':
+          description: Related articles
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RelatedArticlesResponse'
+
+  /news-bytes:
+    get:
+      summary: NewsBytes feed
+      description: Short-form news articles optimised for vertical/TikTok-style consumption.
+      operationId: getNewsBytes
+      tags: [Articles]
+      parameters:
+        - $ref: '#/components/parameters/LimitParam'
+        - $ref: '#/components/parameters/OffsetParam'
+        - $ref: '#/components/parameters/CategoryParam'
+      responses:
+        '200':
+          description: NewsBytes articles
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArticleListResponse'
+
+  # ─── Search ───────────────────────────────────────────────────────────
+
+  /search:
+    get:
+      summary: Search articles
+      description: |
+        Full-text and semantic search. When AI search is enabled, uses Vectorize
+        for semantic matching; falls back to keyword search otherwise.
+      operationId: searchArticles
+      tags: [Search]
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: Search query
+          schema:
+            type: string
+            minLength: 1
+        - $ref: '#/components/parameters/CategoryParam'
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
             minimum: 1
             maximum: 100
-            default: 50
-        - name: priority
+        - name: ai
           in: query
-          description: Filter by priority status
-          required: false
+          description: Enable semantic search (default true)
           schema:
             type: boolean
+            default: true
       responses:
         '200':
-          description: Successfully retrieved news feeds
-          headers:
-            Cache-Control:
-              description: Cache directive
-              schema:
-                type: string
-                example: "public, max-age=600"
+          description: Search results
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Article'
+                $ref: '#/components/schemas/SearchResponse'
         '400':
-          description: Invalid request parameters
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '500':
-          description: Server error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          $ref: '#/components/responses/BadRequest'
 
-  /feeds/cached:
+  # ─── Discovery ────────────────────────────────────────────────────────
+
+  /stories/trending:
     get:
-      summary: Get cached news feeds
-      description: Returns cached news feeds with metadata about cache status
-      operationId: getCachedFeeds
-      tags:
-        - News
+      summary: Trending stories
+      description: |
+        Returns trending story clusters — groups of articles about the same topic
+        from multiple sources, ranked by aggregate engagement.
+      operationId: getTrendingStories
+      tags: [Discovery]
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+            minimum: 1
+            maximum: 50
+        - name: hours
+          in: query
+          description: Lookback window in hours
+          schema:
+            type: integer
+            default: 24
+            minimum: 1
+            maximum: 168
+        - name: country
+          in: query
+          description: Filter by country code
+          schema:
+            type: string
       responses:
         '200':
-          description: Successfully retrieved cached feeds
+          description: Trending stories
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CachedFeedsResponse'
-
-  /feeds/sources:
-    get:
-      summary: Get RSS sources configuration
-      description: Returns list of all configured RSS sources and their status
-      operationId: getRssSources
-      tags:
-        - Configuration
-      responses:
-        '200':
-          description: Successfully retrieved RSS sources
-          headers:
-            Cache-Control:
-              description: Cache directive
-              schema:
-                type: string
-                example: "public, max-age=3600"
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/RssSource'
+                $ref: '#/components/schemas/TrendingResponse'
 
   /categories:
     get:
-      summary: Get categorization configuration
-      description: Returns available categories, keywords, and priority terms used for article classification
-      operationId: getCategories
-      tags:
-        - Configuration
+      summary: List categories
+      description: Returns all news categories with article counts.
+      operationId: listCategories
+      tags: [Discovery]
       responses:
         '200':
-          description: Successfully retrieved categorization data
+          description: Category list
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/CategoriesResponse'
 
-  /schema:
+  /keywords:
     get:
-      summary: Get OpenAPI schema
-      description: Returns the OpenAPI 3.0 schema for this API
-      operationId: getSchema
-      tags:
-        - Documentation
+      summary: Trending keywords
+      description: Returns trending keywords/topics ranked by article count.
+      operationId: listKeywords
+      tags: [Discovery]
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 32
+            minimum: 1
+            maximum: 100
       responses:
         '200':
-          description: Successfully retrieved API schema
+          description: Keyword list
           content:
-            application/yaml:
+            application/json:
               schema:
-                type: string
+                $ref: '#/components/schemas/KeywordsResponse'
+
+  # ─── Sources ──────────────────────────────────────────────────────────
+
+  /sources:
+    get:
+      summary: List news sources
+      description: |
+        Returns all enabled news sources with article counts, health status,
+        and fetch metadata.
+      operationId: listSources
+      tags: [Sources]
+      responses:
+        '200':
+          description: Source list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SourcesResponse'
+
+  # ─── Countries ────────────────────────────────────────────────────────
+
+  /countries:
+    get:
+      summary: List countries
+      description: Returns all 16 supported African countries.
+      operationId: listCountries
+      tags: [Countries]
+      parameters:
+        - name: withStats
+          in: query
+          description: Include article count stats per country
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: Country list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CountriesResponse'
+
+  /countries/{countryId}:
+    get:
+      summary: Get country
+      operationId: getCountry
+      tags: [Countries]
+      parameters:
+        - name: countryId
+          in: path
+          required: true
+          description: ISO 3166-1 alpha-2 country code
+          schema:
+            type: string
+            minLength: 2
+            maxLength: 2
+            example: ZW
+      responses:
+        '200':
+          description: Country details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  country:
+                    $ref: '#/components/schemas/Country'
+
+  /countries/stats/articles:
+    get:
+      summary: Article counts by country
+      operationId: getCountryArticleStats
+      tags: [Countries]
+      responses:
+        '200':
+          description: Article counts per country
+          content:
             application/json:
               schema:
                 type: object
 
+  # ─── Authors ──────────────────────────────────────────────────────────
+
+  /authors:
+    get:
+      summary: List authors
+      operationId: listAuthors
+      tags: [Authors]
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: outlet
+          in: query
+          description: Filter by publication
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Author list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthorsResponse'
+
+  /author/{slug}:
+    get:
+      summary: Get author profile
+      operationId: getAuthor
+      tags: [Authors]
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Author profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthorProfileResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /featured-authors:
+    get:
+      summary: Featured authors
+      operationId: getFeaturedAuthors
+      tags: [Authors]
+      responses:
+        '200':
+          description: Featured author list
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /trending-authors:
+    get:
+      summary: Trending authors
+      operationId: getTrendingAuthors
+      tags: [Authors]
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 5
+      responses:
+        '200':
+          description: Trending author list
+          content:
+            application/json:
+              schema:
+                type: object
+
+  # ─── Engagement ───────────────────────────────────────────────────────
+
+  /articles/{articleId}/like:
+    post:
+      summary: Like an article
+      operationId: likeArticle
+      tags: [Engagement]
+      parameters:
+        - $ref: '#/components/parameters/ArticleIdParam'
+      responses:
+        '200':
+          description: Like toggled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  liked:
+                    type: boolean
+                  like_count:
+                    type: integer
+
+  /articles/{articleId}/save:
+    post:
+      summary: Save/bookmark an article
+      operationId: saveArticle
+      tags: [Engagement]
+      parameters:
+        - $ref: '#/components/parameters/ArticleIdParam'
+      responses:
+        '200':
+          description: Save toggled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  saved:
+                    type: boolean
+                  bookmark_count:
+                    type: integer
+
+  /articles/{articleId}/view:
+    post:
+      summary: Record article view
+      operationId: viewArticle
+      tags: [Engagement]
+      parameters:
+        - $ref: '#/components/parameters/ArticleIdParam'
+      responses:
+        '200':
+          description: View recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  view_count:
+                    type: integer
+
+  # ─── User ─────────────────────────────────────────────────────────────
+
+  /user/me/preferences:
+    get:
+      summary: Get user preferences
+      operationId: getUserPreferences
+      tags: [User]
+      responses:
+        '200':
+          description: User preferences
+          content:
+            application/json:
+              schema:
+                type: object
+    post:
+      summary: Update user preferences
+      operationId: updateUserPreferences
+      tags: [User]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Preferences updated
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /user/bookmarks:
+    get:
+      summary: Get bookmarked articles
+      operationId: getUserBookmarks
+      tags: [User]
+      responses:
+        '200':
+          description: Bookmarked articles
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArticleListResponse'
+
+  /user/history:
+    get:
+      summary: Get reading history
+      operationId: getUserHistory
+      tags: [User]
+      responses:
+        '200':
+          description: Reading history
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArticleListResponse'
+
+# ═══════════════════════════════════════════════════════════════════════
+# Components
+# ═══════════════════════════════════════════════════════════════════════
+
 components:
-  schemas:
-    Article:
-      type: object
-      required:
-        - title
-        - link
-        - pubDate
-        - source
-        - category
-        - priority
-        - guid
-      properties:
-        title:
-          type: string
-          description: Article headline
-          example: "Zimbabwe Economy Shows Signs of Recovery"
-          minLength: 1
-          maxLength: 500
-        description:
-          type: string
-          nullable: true
-          description: Article summary or excerpt
-          example: "Latest economic indicators suggest Zimbabwe's economy is stabilizing..."
-          maxLength: 1000
-        link:
-          type: string
-          format: uri
-          description: URL to the full article
-          example: "https://www.herald.co.zw/economy-recovery-signs/"
-        pubDate:
-          type: string
-          format: date-time
-          description: Publication date in ISO 8601 format
-          example: "2024-01-15T10:30:00Z"
-        source:
-          type: string
-          description: News source name
-          example: "Herald Zimbabwe"
-          minLength: 1
-          maxLength: 100
-        category:
-          type: string
-          enum: 
-            - politics
-            - economy
-            - business
-            - sports
-            - harare
-            - agriculture
-            - technology
-            - health
-            - education
-            - entertainment
-            - environment
-            - crime
-            - international
-            - lifestyle
-            - finance
-            - general
-          description: Auto-detected article category
-          example: "economy"
-        priority:
-          type: boolean
-          description: Whether article contains Zimbabwe-priority keywords
-          example: true
-        relevanceScore:
-          type: number
-          description: Relevance score for Zimbabwe content (higher = more relevant)
-          example: 5
-          minimum: 0
-        guid:
-          type: string
-          description: Unique identifier for the article
-          example: "herald-zimbabwe-2024-01-15-economy"
-          minLength: 1
-          maxLength: 200
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: |
+        API secret token (for frontend/server clients) or OIDC JWT from id.mukoko.com (for authenticated users).
 
-    RssSource:
-      type: object
-      required:
-        - name
-        - url
-        - category
-        - enabled
-      properties:
-        name:
-          type: string
-          description: Display name of the news source
-          example: "Herald Zimbabwe"
-          minLength: 1
-          maxLength: 100
-        url:
-          type: string
-          format: uri
-          description: RSS feed URL
-          example: "https://www.herald.co.zw/feed/"
-        category:
-          type: string
-          description: Default category for this source
-          example: "general"
-          minLength: 1
-          maxLength: 50
-        enabled:
-          type: boolean
-          description: Whether this source is currently active
-          example: true
+  parameters:
+    ArticleIdParam:
+      name: articleId
+      in: path
+      required: true
+      description: Article UUID
+      schema:
+        type: string
+        format: uuid
 
-    HealthResponse:
-      type: object
-      required:
-        - status
-        - timestamp
-        - sources
-        - totalSources
-        - categories
-        - message
-        - features
-      properties:
-        status:
-          type: string
-          enum: [ok, error]
-          example: "ok"
-        timestamp:
-          type: string
-          format: date-time
-          example: "2024-01-15T10:30:00Z"
-        sources:
-          type: integer
-          description: Number of enabled RSS sources
-          example: 8
-          minimum: 0
-        totalSources:
-          type: integer
-          description: Total number of configured RSS sources
-          example: 10
-          minimum: 0
-        categories:
-          type: integer
-          description: Number of available categories
-          example: 16
-          minimum: 0
-        message:
-          type: string
-          example: "Harare Metro API is healthy!"
-          minLength: 1
-        features:
-          type: array
-          items:
-            type: string
-          example: ["enhanced-categorization", "priority-detection", "zimbabwe-focus", "global-categories"]
+    LimitParam:
+      name: limit
+      in: query
+      description: Maximum items to return
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 50
 
-    CachedFeedsResponse:
-      type: object
-      required:
-        - feeds
-        - cached
-      properties:
-        feeds:
-          type: array
-          items:
-            $ref: '#/components/schemas/Article'
-        lastUpdated:
-          type: string
-          format: date-time
-          nullable: true
-          description: When feeds were last updated
-          example: "2024-01-15T10:30:00Z"
-        cached:
-          type: boolean
-          description: Whether this response came from cache
-          example: true
+    OffsetParam:
+      name: offset
+      in: query
+      description: Pagination offset
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
 
-    CategoriesResponse:
-      type: object
-      required:
-        - categories
-        - keywords
-        - priority
-        - totalCategories
-      properties:
-        categories:
-          type: array
-          items:
-            type: string
-          description: List of available category names
-          example: ["politics", "economy", "business", "sports"]
-        keywords:
-          type: object
-          additionalProperties:
-            type: array
-            items:
-              type: string
-          description: Keywords used for each category detection
-          example:
-            politics: ["parliament", "government", "election"]
-            economy: ["economy", "inflation", "currency"]
-        priority:
-          type: array
-          items:
-            type: string
-          description: Keywords that mark articles as high priority
-          example: ["harare", "zimbabwe", "parliament", "mnangagwa"]
-        totalCategories:
-          type: integer
-          description: Total number of categories
-          example: 16
-          minimum: 0
+    CategoryParam:
+      name: category
+      in: query
+      description: Filter by category slug
+      schema:
+        type: string
 
-    ErrorResponse:
-      type: object
-      required:
-        - error
-      properties:
-        error:
-          type: string
-          description: Error message
-          example: "Internal server error"
-          minLength: 1
-        message:
-          type: string
-          description: Detailed error message
-          example: "Failed to fetch RSS feeds"
-        available:
-          type: array
-          items:
-            type: string
-          description: Available endpoints (for 404 errors)
-          example: ["/health", "/feeds", "/feeds/sources"]
-        validationErrors:
-          type: array
-          items:
-            type: object
-            properties:
-              field:
-                type: string
-                description: Field that failed validation
-              message:
-                type: string
-                description: Validation error message
-              value:
-                description: Invalid value provided
-          description: Detailed validation errors (for 400 errors)
+    CountriesParam:
+      name: countries
+      in: query
+      description: Comma-separated ISO 3166-1 alpha-2 country codes
+      schema:
+        type: string
+        example: ZW,KE,NG
 
   responses:
     BadRequest:
@@ -439,14 +667,21 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
-    
-    NotFound:
-      description: Endpoint not found
+
+    Unauthorized:
+      description: Missing or invalid bearer token
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
-    
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
     ServerError:
       description: Internal server error
       content:
@@ -454,18 +689,580 @@ components:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
 
-tags:
-  - name: News
-    description: News aggregation and retrieval endpoints
-  - name: Configuration  
-    description: API configuration and metadata endpoints
-  - name: System
-    description: System health and status endpoints
-  - name: Documentation
-    description: API documentation endpoints
+  schemas:
+    # ── Core Models (Schema.org NewsArticle) ────────────────────────────
 
-security: []
+    Article:
+      type: object
+      description: |
+        A news article. Field names follow [Schema.org NewsArticle](https://schema.org/NewsArticle) conventions.
+      required:
+        - id
+        - headline
+        - slug
+        - date_published
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique article identifier
+        headline:
+          type: string
+          description: "schema:headline — Article title"
+          example: "Zimbabwe Economy Shows Signs of Recovery"
+        slug:
+          type: string
+          description: "schema:url — URL-safe slug"
+          example: "zimbabwe-economy-shows-signs-of-recovery"
+        description:
+          type: string
+          nullable: true
+          description: "schema:description — Summary or excerpt"
+        content_snippet:
+          type: string
+          nullable: true
+          description: Short preview of article body
+        author_name:
+          type: string
+          nullable: true
+          description: "schema:author name (denormalized)"
+        publisher_name:
+          type: string
+          nullable: true
+          description: "schema:publisher name (denormalized)"
+          example: "Herald Zimbabwe"
+        publisher_id:
+          type: string
+          nullable: true
+          description: Foreign key to the news source
+        date_published:
+          type: string
+          format: date-time
+          description: "schema:datePublished — ISO 8601"
+          example: "2026-03-14T10:30:00Z"
+        image:
+          type: string
+          format: uri
+          nullable: true
+          description: "schema:image — Primary article image URL"
+        main_entity_of_page:
+          type: string
+          format: uri
+          nullable: true
+          description: "schema:mainEntityOfPage — Original source URL"
+        article_section_id:
+          type: string
+          nullable: true
+          description: "schema:articleSection — Category slug"
+          example: "economy"
+        about_country_id:
+          type: string
+          nullable: true
+          description: "schema:about — ISO 3166-1 alpha-2 country code"
+          example: "ZW"
+        view_count:
+          type: integer
+          default: 0
+          description: "schema:interactionStatistic — Total views"
+        like_count:
+          type: integer
+          default: 0
+          description: "schema:interactionStatistic — Total likes"
+        bookmark_count:
+          type: integer
+          default: 0
+          description: "schema:interactionStatistic — Total bookmarks"
+        keywords:
+          type: array
+          items:
+            $ref: '#/components/schemas/Keyword'
+          description: "schema:keywords — Associated keywords"
+
+    ArticleFull:
+      description: Full article with body content. Extends Article.
+      allOf:
+        - $ref: '#/components/schemas/Article'
+        - type: object
+          properties:
+            article_body:
+              type: string
+              nullable: true
+              description: "schema:articleBody — Full HTML content"
+            date_modified:
+              type: string
+              format: date-time
+              nullable: true
+              description: "schema:dateModified"
+            word_count:
+              type: integer
+              nullable: true
+              description: "schema:wordCount"
+            reading_time_minutes:
+              type: integer
+              nullable: true
+              description: Estimated reading time in minutes
+            comment_count:
+              type: integer
+              default: 0
+            quality_score:
+              type: number
+              nullable: true
+              description: AI-computed content quality score (0-100)
+            engagement_score:
+              type: number
+              nullable: true
+              description: Computed engagement score with time decay
+            in_language:
+              type: string
+              nullable: true
+              description: "schema:inLanguage — ISO 639-1 code"
+              example: "en"
+            isLiked:
+              type: boolean
+              description: Whether the current user has liked this article
+            isSaved:
+              type: boolean
+              description: Whether the current user has bookmarked this article
+
+    Keyword:
+      type: object
+      required: [id, name, slug]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+          example: "inflation"
+        slug:
+          type: string
+          example: "inflation"
+
+    # ── Story Clustering ────────────────────────────────────────────────
+
+    StoryCluster:
+      type: object
+      description: A group of related articles from different sources covering the same story.
+      required:
+        - id
+        - primaryArticle
+        - relatedArticles
+        - articleCount
+      properties:
+        id:
+          type: string
+        primaryArticle:
+          $ref: '#/components/schemas/Article'
+        relatedArticles:
+          type: array
+          items:
+            $ref: '#/components/schemas/Article'
+        articleCount:
+          type: integer
+          minimum: 1
+
+    # ── Category ────────────────────────────────────────────────────────
+
+    Category:
+      type: object
+      required: [id, name, slug]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+          example: "Politics"
+        slug:
+          type: string
+          example: "politics"
+        description:
+          type: string
+          nullable: true
+        enabled:
+          type: boolean
+        article_count:
+          type: integer
+          default: 0
+
+    # ── Country ─────────────────────────────────────────────────────────
+
+    Country:
+      type: object
+      required: [id, name, code, flag_emoji]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+          example: "Zimbabwe"
+        code:
+          type: string
+          description: ISO 3166-1 alpha-2
+          minLength: 2
+          maxLength: 2
+          example: "ZW"
+        flag_emoji:
+          type: string
+          example: "\U0001F1FF\U0001F1FC"
+        enabled:
+          type: boolean
+
+    # ── News Source ──────────────────────────────────────────────────────
+
+    Source:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+          example: "Herald Zimbabwe"
+        url:
+          type: string
+          format: uri
+          description: Publication website URL
+        category:
+          type: string
+          description: Default category for this source
+        country_id:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: "ZW"
+        priority:
+          type: integer
+          description: Source priority (lower = higher priority)
+        last_fetched_at:
+          type: string
+          format: date-time
+          nullable: true
+        fetch_count:
+          type: integer
+        error_count:
+          type: integer
+        last_error:
+          type: string
+          nullable: true
+        article_count:
+          type: integer
+          description: Total articles from this source
+        latest_article_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    # ── Author ──────────────────────────────────────────────────────────
+
+    Author:
+      type: object
+      required: [id, name, slug]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+          description: "schema:name"
+        slug:
+          type: string
+        email:
+          type: string
+          nullable: true
+        bio:
+          type: string
+          nullable: true
+          description: "schema:description"
+        image:
+          type: string
+          format: uri
+          nullable: true
+          description: "schema:image"
+        article_count:
+          type: integer
+
+    # ── Response Wrappers ───────────────────────────────────────────────
+
+    ArticleListResponse:
+      type: object
+      required: [articles, total, limit, offset, hasMore]
+      properties:
+        articles:
+          type: array
+          items:
+            $ref: '#/components/schemas/Article'
+        total:
+          type: integer
+        limit:
+          type: integer
+        offset:
+          type: integer
+        hasMore:
+          type: boolean
+        countries:
+          type: array
+          items:
+            type: string
+          description: Country codes applied as filter (if any)
+
+    SectionedFeedResponse:
+      type: object
+      required: [topStories, yourNews, byCategory, latest, timestamp]
+      properties:
+        topStories:
+          type: array
+          items:
+            $ref: '#/components/schemas/StoryCluster'
+        yourNews:
+          type: array
+          items:
+            $ref: '#/components/schemas/Article'
+        byCategory:
+          type: array
+          items:
+            type: object
+            required: [id, name, articles]
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+              articles:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Article'
+        latest:
+          type: array
+          items:
+            $ref: '#/components/schemas/Article'
+        countries:
+          type: array
+          items:
+            type: string
+        timestamp:
+          type: string
+          format: date-time
+
+    SearchResponse:
+      type: object
+      required: [results, query, count]
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Article'
+        query:
+          type: string
+        count:
+          type: integer
+        category:
+          type: string
+        searchMethod:
+          type: string
+          enum: [semantic, keyword]
+
+    TrendingResponse:
+      type: object
+      required: [trending, period_hours]
+      properties:
+        trending:
+          type: array
+          items:
+            type: object
+            required: [topic, source_count, article_count, total_views, articles]
+            properties:
+              topic:
+                type: string
+              source_count:
+                type: integer
+              article_count:
+                type: integer
+              total_views:
+                type: integer
+              articles:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Article'
+        period_hours:
+          type: integer
+
+    RelatedArticlesResponse:
+      type: object
+      required: [related, source_article_id]
+      properties:
+        related:
+          type: array
+          items:
+            allOf:
+              - $ref: '#/components/schemas/Article'
+              - type: object
+                properties:
+                  relevance_score:
+                    type: number
+                  is_cross_source:
+                    type: integer
+        source_article_id:
+          type: string
+
+    CategoriesResponse:
+      type: object
+      required: [categories]
+      properties:
+        categories:
+          type: array
+          items:
+            $ref: '#/components/schemas/Category'
+
+    KeywordsResponse:
+      type: object
+      required: [keywords, total]
+      properties:
+        keywords:
+          type: array
+          items:
+            type: object
+            required: [id, name, slug, article_count]
+            properties:
+              id:
+                type: integer
+              name:
+                type: string
+              slug:
+                type: string
+              type:
+                type: string
+              article_count:
+                type: integer
+        total:
+          type: integer
+
+    SourcesResponse:
+      type: object
+      required: [sources, total]
+      properties:
+        sources:
+          type: array
+          items:
+            $ref: '#/components/schemas/Source'
+        total:
+          type: integer
+
+    CountriesResponse:
+      type: object
+      required: [countries]
+      properties:
+        countries:
+          type: array
+          items:
+            $ref: '#/components/schemas/Country'
+
+    AuthorsResponse:
+      type: object
+      required: [authors, total, limit]
+      properties:
+        authors:
+          type: array
+          items:
+            $ref: '#/components/schemas/Author'
+        total:
+          type: integer
+        limit:
+          type: integer
+
+    AuthorProfileResponse:
+      type: object
+      required: [author]
+      properties:
+        author:
+          $ref: '#/components/schemas/Author'
+        journalism_recognition:
+          type: string
+        profile_features:
+          type: array
+          items:
+            type: string
+
+    # ── System ──────────────────────────────────────────────────────────
+
+    HealthResponse:
+      type: object
+      required: [status, timestamp, services]
+      properties:
+        status:
+          type: string
+          enum: [healthy, unhealthy]
+          example: "healthy"
+        timestamp:
+          type: string
+          format: date-time
+        services:
+          type: object
+          properties:
+            database:
+              type: string
+              enum: [operational, error]
+            analytics:
+              type: boolean
+            cache:
+              type: string
+            articles:
+              type: string
+            newsSources:
+              type: string
+        environment:
+          type: string
+        security:
+          type: object
+          properties:
+            apiAuthEnabled:
+              type: boolean
+            authMethods:
+              type: array
+              items:
+                type: string
+            protectedRoutes:
+              type: string
+            publicRoutes:
+              type: string
+
+    StatsResponse:
+      type: object
+      required: [database, timestamp]
+      properties:
+        database:
+          type: object
+          required: [total_articles, active_sources, categories]
+          properties:
+            total_articles:
+              type: integer
+            active_sources:
+              type: integer
+            categories:
+              type: integer
+            today_articles:
+              type: integer
+        timestamp:
+          type: string
+          format: date-time
+
+    # ── Errors ──────────────────────────────────────────────────────────
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          description: Error type or summary
+          example: "Not found"
+        message:
+          type: string
+          description: Human-readable detail
+          example: "Article with ID abc123 not found"
+        details:
+          type: string
+          description: Technical detail (development only)
+        timestamp:
+          type: string
+          format: date-time
 
 externalDocs:
-  description: Harare Metro GitHub Repository
-  url: https://github.com/nyuchitech/harare-metro
+  description: Mukoko News GitHub Repository
+  url: https://github.com/nyuchitech/mukoko-news
