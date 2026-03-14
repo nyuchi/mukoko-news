@@ -61,9 +61,9 @@ export function ArticleCard({ article }: ArticleCardProps) {
           </div>
 
           {/* Category Badge */}
-          {(article.article_section_id || article.category) && (
+          {article.article_section_id && (
             <div className="absolute top-4 right-4 bg-secondary text-white px-3 py-1.5 rounded-full text-[11px] font-bold uppercase">
-              {article.article_section_id || article.category}
+              {article.article_section_id}
             </div>
           )}
         </div>
@@ -81,7 +81,7 @@ export function ArticleCard({ article }: ArticleCardProps) {
           )}
 
           <div className="flex items-center justify-between">
-            <SourceBadge source={article.publisher_name} iconSize={18} />
+            <SourceBadge source={article.publisher_name ?? ''} iconSize={18} />
 
             <div className="flex items-center gap-1.5 text-xs text-text-tertiary">
               <Clock className="w-3.5 h-3.5 text-text-tertiary" />

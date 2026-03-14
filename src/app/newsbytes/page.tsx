@@ -284,9 +284,9 @@ export default function NewsBytesPage() {
               {/* Content */}
               <div className="absolute bottom-0 left-4 right-16 sm:left-6 sm:right-20 z-10 pb-6">
                 {/* Category Badge */}
-                {(byte.article_section_id || byte.category) && (
+                {(byte.article_section_id) && (
                   <span className="inline-block px-3 py-1 bg-primary text-black text-xs font-bold uppercase rounded-lg mb-3">
-                    {byte.article_section_id || byte.category}
+                    {byte.article_section_id}
                   </span>
                 )}
 

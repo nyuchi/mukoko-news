@@ -40,15 +40,14 @@ vi.mock('@/lib/api', () => ({
 
 type Article = {
   id: string;
-  title: string;
+  headline: string;
   slug: string;
-  source: string;
-  published_at: string;
+  publisher_name: string;
+  date_published: string;
   description?: string;
-  image_url?: string;
-  category_id?: string;
-  category?: string;
-  country_id?: string;
+  image?: string;
+  article_section_id?: string;
+  about_country_id?: string;
 };
 
 import EmbedIframePage from '../iframe/page';
@@ -56,13 +55,13 @@ import EmbedIframePage from '../iframe/page';
 function createArticle(overrides: Partial<Article> = {}): Article {
   return {
     id: 'art-1',
-    title: 'Test Article Title',
+    headline: 'Test Article Title',
     slug: 'test-article',
-    source: 'The Herald',
-    published_at: new Date().toISOString(),
+    publisher_name: 'The Herald',
+    date_published: new Date().toISOString(),
     description: 'A test article description',
-    image_url: 'https://example.com/image.jpg',
-    category_id: 'politics',
+    image: 'https://example.com/image.jpg',
+    article_section_id: 'politics',
     ...overrides,
   };
 }
@@ -325,8 +324,8 @@ describe('EmbedIframePage', () => {
       setParams({ layout: 'list' });
       mockGetArticles.mockResolvedValue({
         articles: [
-          createArticle({ id: '1', title: 'Article One' }),
-          createArticle({ id: '2', title: 'Article Two' }),
+          createArticle({ id: '1', headline: 'Article One' }),
+          createArticle({ id: '2', headline: 'Article Two' }),
         ],
       });
       render(<EmbedIframePage />);
@@ -603,7 +602,7 @@ describe('EmbedIframePage', () => {
   describe('image handling', () => {
     it('should not render image for invalid URLs', async () => {
       mockGetArticles.mockResolvedValue({
-        articles: [createArticle({ image_url: 'javascript:alert(1)' })],
+        articles: [createArticle({ image: 'javascript:alert(1)' })],
       });
       setParams({ layout: 'list' });
       render(<EmbedIframePage />);
@@ -620,7 +619,7 @@ describe('EmbedIframePage', () => {
 
     it('should render articles without image_url', async () => {
       mockGetArticles.mockResolvedValue({
-        articles: [createArticle({ image_url: undefined })],
+        articles: [createArticle({ image: undefined })],
       });
       setParams({ layout: 'list' });
       render(<EmbedIframePage />);

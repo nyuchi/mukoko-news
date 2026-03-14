@@ -41,7 +41,7 @@ export function StoryCluster({ cluster }: StoryClusterProps) {
         <div className="p-4">
           {/* Source and Time */}
           <div className="flex items-center gap-2 mb-2">
-            <SourceIcon source={primaryArticle.publisher_name} size={16} showBorder={false} />
+            <SourceIcon source={primaryArticle.publisher_name ?? ''} size={16} showBorder={false} />
             <span className="text-xs font-medium text-text-secondary">{primaryArticle.publisher_name}</span>
             <span className="text-text-tertiary">·</span>
             <time className="flex items-center gap-1 text-xs text-text-tertiary" dateTime={primaryArticle.date_published}>
@@ -86,7 +86,7 @@ export function StoryCluster({ cluster }: StoryClusterProps) {
               <div className="flex-1 min-w-0">
                 {/* Source */}
                 <div className="flex items-center gap-2 mb-1">
-                  <SourceIcon source={article.publisher_name} size={12} showBorder={false} />
+                  <SourceIcon source={article.publisher_name ?? ''} size={12} showBorder={false} />
                   <span className="text-[11px] font-medium text-text-tertiary">{article.publisher_name}</span>
                 </div>
 
@@ -152,7 +152,7 @@ export function StoryClusterCompact({ cluster }: StoryClusterProps) {
       <div className="p-3">
         {/* Source */}
         <div className="flex items-center gap-2 mb-1.5">
-          <SourceIcon source={primaryArticle.publisher_name} size={14} showBorder={false} />
+          <SourceIcon source={primaryArticle.publisher_name ?? ''} size={14} showBorder={false} />
           <span className="text-[11px] font-medium text-text-tertiary">{primaryArticle.publisher_name}</span>
           <span className="text-text-tertiary">·</span>
           <span className="text-[11px] text-text-tertiary">{timeAgo}</span>

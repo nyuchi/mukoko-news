@@ -248,7 +248,7 @@ export default function DiscoverPage() {
             <h2 className="text-xl font-bold text-foreground mb-6">Browse by Country</h2>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
               {COUNTRIES.map((country) => {
-                const articleCount = articles.filter(a => (a.about_country_id || a.country) === country.code).length;
+                const articleCount = articles.filter(a => a.about_country_id === country.code).length;
                 return (
                   <Link
                     key={country.code}

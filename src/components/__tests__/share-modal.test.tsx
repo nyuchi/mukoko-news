@@ -12,10 +12,10 @@ import type { Article } from '@/lib/api';
 const mockArticle: Article = {
   id: '123',
   slug: 'test-article-title',
-  title: 'Test Article Title',
-  source: 'Test Source',
+  headline: 'Test Article Title',
+  publisher_name: 'Test Source',
   description: 'Test description',
-  published_at: '2024-01-15T10:00:00Z',
+  date_published: '2024-01-15T10:00:00Z',
 };
 
 describe('ShareModal', () => {

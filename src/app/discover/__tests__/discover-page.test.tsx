@@ -57,19 +57,19 @@ function setupDefaultMocks() {
     articles: [
       {
         id: "1",
-        title: "Test Article 1",
+        headline: "Test Article 1",
         slug: "test-1",
-        source: "Daily Maverick",
-        published_at: "2026-02-12T10:00:00Z",
-        country_id: "ZA",
+        publisher_name: "Daily Maverick",
+        date_published: "2026-02-12T10:00:00Z",
+        about_country_id: "ZA",
       },
       {
         id: "2",
-        title: "Test Article 2",
+        headline: "Test Article 2",
         slug: "test-2",
-        source: "The Herald",
-        published_at: "2026-02-12T09:00:00Z",
-        country_id: "ZW",
+        publisher_name: "The Herald",
+        date_published: "2026-02-12T09:00:00Z",
+        about_country_id: "ZW",
       },
     ],
   });

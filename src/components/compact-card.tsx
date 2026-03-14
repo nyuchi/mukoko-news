@@ -12,7 +12,7 @@ interface CompactCardProps {
 
 export function CompactCard({ article }: CompactCardProps) {
   const timeAgo = formatTimeAgo(article.date_published);
-  const category = article.article_section_id || article.category;
+  const category = article.article_section_id;
 
   return (
     <Link
@@ -35,7 +35,7 @@ export function CompactCard({ article }: CompactCardProps) {
 
         {/* Meta */}
         <div className="flex items-center gap-3 text-text-tertiary">
-          <SourceIcon source={article.publisher_name} size={14} showBorder={false} />
+          <SourceIcon source={article.publisher_name ?? ''} size={14} showBorder={false} />
           <span className="text-xs">{article.publisher_name}</span>
           <time className="flex items-center gap-1 text-xs" dateTime={article.date_published}>
             <Clock className="w-3 h-3" aria-hidden="true" />

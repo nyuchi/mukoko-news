@@ -34,7 +34,7 @@ const DEFAULT_LIMITS: Record<LayoutType, number> = {
 
 function HeroEmbed({ article }: { article: Article }) {
   const timeAgo = formatTimeAgo(article.date_published);
-  const category = article.article_section_id || article.category;
+  const category = article.article_section_id;
   const articleUrl = getArticleUrl(article.id);
   const hasImage = isValidImageUrl(article.image);
 
@@ -65,7 +65,7 @@ function HeroEmbed({ article }: { article: Article }) {
           )}
           <div className="flex items-center gap-3 mt-3 text-white/60 text-[11px]">
             <div className="flex items-center gap-1.5">
-              <SourceIcon source={article.publisher_name} size={14} showBorder={false} />
+              <SourceIcon source={article.publisher_name ?? ''} size={14} showBorder={false} />
               <span>{article.publisher_name}</span>
             </div>
             <time className="flex items-center gap-1" dateTime={article.date_published}>
@@ -81,7 +81,7 @@ function HeroEmbed({ article }: { article: Article }) {
 
 function CardEmbed({ article }: { article: Article }) {
   const timeAgo = formatTimeAgo(article.date_published);
-  const category = article.article_section_id || article.category;
+  const category = article.article_section_id;
   const articleUrl = getArticleUrl(article.id);
   const hasImage = isValidImageUrl(article.image);
 
@@ -104,7 +104,7 @@ function CardEmbed({ article }: { article: Article }) {
             {article.headline}
           </h3>
           <div className="flex items-center gap-2 mt-2 text-text-tertiary">
-            <SourceIcon source={article.publisher_name} size={12} showBorder={false} />
+            <SourceIcon source={article.publisher_name ?? ''} size={12} showBorder={false} />
             <span className="text-[11px] truncate">{article.publisher_name}</span>
             <time className="flex items-center gap-0.5 text-[11px] shrink-0 ml-auto" dateTime={article.date_published}>
               <Clock className="w-2.5 h-2.5" />
@@ -119,7 +119,7 @@ function CardEmbed({ article }: { article: Article }) {
 
 function CompactEmbed({ article }: { article: Article }) {
   const timeAgo = formatTimeAgo(article.date_published);
-  const category = article.article_section_id || article.category;
+  const category = article.article_section_id;
   const articleUrl = getArticleUrl(article.id);
 
   return (
@@ -127,7 +127,7 @@ function CompactEmbed({ article }: { article: Article }) {
       <article className="flex items-start gap-3 p-3 rounded-xl hover:bg-elevated transition-colors border border-transparent hover:border-primary/30">
         {/* Rank indicator */}
         <div className="w-6 h-6 rounded-full bg-primary/10 text-primary text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5">
-          <SourceIcon source={article.publisher_name} size={14} showBorder={false} />
+          <SourceIcon source={article.publisher_name ?? ''} size={14} showBorder={false} />
         </div>
         <div className="flex-1 min-w-0">
           {category && (
@@ -154,7 +154,7 @@ function CompactEmbed({ article }: { article: Article }) {
 
 function ListEmbed({ article }: { article: Article }) {
   const timeAgo = formatTimeAgo(article.date_published);
-  const category = article.article_section_id || article.category;
+  const category = article.article_section_id;
   const articleUrl = getArticleUrl(article.id);
   const hasImage = isValidImageUrl(article.image);
 
@@ -177,7 +177,7 @@ function ListEmbed({ article }: { article: Article }) {
             {article.headline}
           </h3>
           <div className="flex items-center gap-2 mt-1 text-text-tertiary">
-            <SourceIcon source={article.publisher_name} size={12} showBorder={false} />
+            <SourceIcon source={article.publisher_name ?? ''} size={12} showBorder={false} />
             <span className="text-[11px] truncate">{article.publisher_name}</span>
             <time className="flex items-center gap-0.5 text-[11px] shrink-0" dateTime={article.date_published}>
               <Clock className="w-2.5 h-2.5" />
@@ -196,7 +196,7 @@ function TickerEmbed({ articles }: { articles: Article[] }) {
     <div className="flex gap-3 overflow-x-auto px-3 py-2 scrollbar-hide">
       {articles.map((article) => {
         const articleUrl = getArticleUrl(article.id);
-        const category = article.article_section_id || article.category;
+        const category = article.article_section_id;
         const hasImage = isValidImageUrl(article.image);
 
         return (

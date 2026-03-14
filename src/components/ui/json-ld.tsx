@@ -109,7 +109,7 @@ function safeJsonLdStringify(obj: unknown): string {
 
 export function ArticleJsonLd({ article, url }: { article: Article; url: string }) {
   // Determine author type: if author field differs from source, treat as Person
-  const authorName = article.author_name || article.publisher_name;
+  const authorName = article.author_name || article.publisher_name || '';
   const isPersonAuthor = article.author_name && article.author_name !== article.publisher_name;
 
   const schema: NewsArticleSchema = {
@@ -140,7 +140,7 @@ export function ArticleJsonLd({ article, url }: { article: Article; url: string 
     isAccessibleForFree: true,
     inLanguage: "en",
     keywords: article.keywords?.map((k) => k.name).join(", ") || undefined,
-    articleSection: article.article_section_id || article.category || undefined,
+    articleSection: article.article_section_id || undefined,
     wordCount: article.word_count || undefined,
   };
 

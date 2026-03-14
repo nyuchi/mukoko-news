@@ -229,7 +229,7 @@ describe('API Client', () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
         json: () => Promise.resolve({
-          article: { id: '123', title: 'Test' },
+          article: { id: '123', headline: 'Test' },
         }),
       });
 

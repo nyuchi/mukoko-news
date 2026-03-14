@@ -18,13 +18,13 @@ vi.mock('next/link', () => ({
 
 const mockArticle = {
   id: 'test-article-1',
-  title: 'Test Article Title',
+  headline: 'Test Article Title',
   slug: 'test-article-title',
   description: 'Test article description for the hero card',
-  source: 'Test Source',
-  published_at: '2024-01-15T10:00:00Z',
-  image_url: 'https://example.com/image.jpg',
-  category_id: 'politics',
+  publisher_name: 'Test Source',
+  date_published: '2024-01-15T10:00:00Z',
+  image: 'https://example.com/image.jpg',
+  article_section_id: 'politics',
   url: 'https://example.com/article',
 };
 
@@ -69,7 +69,7 @@ describe('HeroCard', () => {
   });
 
   it('should render gradient fallback when no image URL', () => {
-    const articleWithoutImage = { ...mockArticle, image_url: undefined };
+    const articleWithoutImage = { ...mockArticle, image: undefined };
     render(<HeroCard article={articleWithoutImage} />);
     expect(screen.queryByTestId('hero-image')).not.toBeInTheDocument();
   });

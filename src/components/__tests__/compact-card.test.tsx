@@ -18,11 +18,11 @@ vi.mock('../ui/source-icon', () => ({
 
 const mockArticle = {
   id: 'test-article-1',
-  title: 'Test Article Title for Compact Card',
+  headline: 'Test Article Title for Compact Card',
   slug: 'test-article-title-for-compact-card',
-  source: 'Test Source',
-  published_at: '2024-01-15T10:00:00Z',
-  category_id: 'economy',
+  publisher_name: 'Test Source',
+  date_published: '2024-01-15T10:00:00Z',
+  article_section_id: 'economy',
   url: 'https://example.com/article',
 };
 

@@ -28,15 +28,15 @@ const createMockCluster = (overrides: Partial<StoryClusterType> = {}): StoryClus
   id: 'cluster-123',
   primaryArticle: {
     id: 'article-1',
-    title: 'Zimbabwe announces major economic reforms',
+    headline: 'Zimbabwe announces major economic reforms',
     slug: 'zimbabwe-economic-reforms',
     description: 'The government unveiled sweeping changes to boost the economy',
-    source: 'Herald',
-    source_id: 'herald',
-    published_at: '2024-01-15T10:00:00Z',
-    image_url: 'https://example.com/image.jpg',
-    category_id: 'politics',
-    country_id: 'ZW',
+    publisher_name: 'Herald',
+    publisher_id: 'herald',
+    date_published: '2024-01-15T10:00:00Z',
+    image: 'https://example.com/image.jpg',
+    article_section_id: 'politics',
+    about_country_id: 'ZW',
   },
   relatedArticles: [],
   articleCount: 1,
@@ -45,15 +45,15 @@ const createMockCluster = (overrides: Partial<StoryClusterType> = {}): StoryClus
 
 const createMockRelatedArticle = (id: string, source: string) => ({
   id,
-  title: `Related article about economic reforms from ${source}`,
+  headline: `Related article about economic reforms from ${source}`,
   slug: `related-${id}`,
   description: 'Another perspective on economic reforms',
-  source,
-  source_id: source.toLowerCase(),
-  published_at: '2024-01-15T09:00:00Z',
-  image_url: 'https://example.com/related.jpg',
-  category_id: 'politics',
-  country_id: 'ZW',
+  publisher_name: source,
+  publisher_id: source.toLowerCase(),
+  date_published: '2024-01-15T09:00:00Z',
+  image: 'https://example.com/related.jpg',
+  article_section_id: 'politics',
+  about_country_id: 'ZW',
 });
 
 describe('StoryCluster', () => {
@@ -76,7 +76,7 @@ describe('StoryCluster', () => {
       expect(screen.getByText('Herald')).toBeInTheDocument();
     });
 
-    it('should render category badge when category_id exists', () => {
+    it('should render category badge when article_section_id exists', () => {
       const cluster = createMockCluster();
       render(<StoryCluster cluster={cluster} />);
       expect(screen.getByText('politics')).toBeInTheDocument();
@@ -106,7 +106,7 @@ describe('StoryCluster', () => {
   });
 
   describe('Image Handling', () => {
-    it('should render image when valid image_url is provided', () => {
+    it('should render image when valid image is provided', () => {
       const cluster = createMockCluster();
       render(<StoryCluster cluster={cluster} />);
       // Image is rendered as background, check for the container
@@ -114,11 +114,11 @@ describe('StoryCluster', () => {
       expect(imageContainer).toBeInTheDocument();
     });
 
-    it('should not render image section when image_url is empty', () => {
+    it('should not render image section when image is empty', () => {
       const cluster = createMockCluster({
         primaryArticle: {
           ...createMockCluster().primaryArticle,
-          image_url: '',
+          image: '',
         },
       });
       render(<StoryCluster cluster={cluster} />);
@@ -130,7 +130,7 @@ describe('StoryCluster', () => {
       const cluster = createMockCluster({
         primaryArticle: {
           ...createMockCluster().primaryArticle,
-          image_url: 'javascript:alert(1)',
+          image: 'javascript:alert(1)',
         },
       });
       render(<StoryCluster cluster={cluster} />);

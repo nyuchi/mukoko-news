@@ -33,11 +33,11 @@ vi.mock('@/components/ui/engagement-bar', () => ({
 describe('ArticleCard', () => {
   const baseArticle: Article = {
     id: '1',
-    title: 'Test Article Title',
+    headline: 'Test Article Title',
     description: 'Test article description',
     slug: 'test-article',
-    source: 'The Herald',
-    published_at: new Date().toISOString(),
+    publisher_name: 'The Herald',
+    date_published: new Date().toISOString(),
   };
 
   describe('rendering', () => {
@@ -66,15 +66,15 @@ describe('ArticleCard', () => {
       expect(link).toHaveAttribute('href', '/article/1');
     });
 
-    it('should render category badge when category_id is present', () => {
-      const article = { ...baseArticle, category_id: 'politics' };
+    it('should render category badge when article_section_id is present', () => {
+      const article = { ...baseArticle, article_section_id: 'politics' };
       render(<ArticleCard article={article} />);
 
       expect(screen.getByText('politics')).toBeInTheDocument();
     });
 
-    it('should render category badge when category is present', () => {
-      const article = { ...baseArticle, category: 'sports' };
+    it('should render category badge when article_section_id is present with different value', () => {
+      const article = { ...baseArticle, article_section_id: 'sports' };
       render(<ArticleCard article={article} />);
 
       expect(screen.getByText('sports')).toBeInTheDocument();
@@ -82,10 +82,10 @@ describe('ArticleCard', () => {
   });
 
   describe('image handling', () => {
-    it('should display image background when valid image_url', () => {
+    it('should display image background when valid image', () => {
       const article = {
         ...baseArticle,
-        image_url: 'https://example.com/image.jpg',
+        image: 'https://example.com/image.jpg',
       };
       render(<ArticleCard article={article} />);
 
@@ -105,7 +105,7 @@ describe('ArticleCard', () => {
     it('should not display image for invalid URLs', () => {
       const article = {
         ...baseArticle,
-        image_url: 'javascript:alert(1)',
+        image: 'javascript:alert(1)',
       };
       render(<ArticleCard article={article} />);
 
@@ -119,7 +119,7 @@ describe('ArticleCard', () => {
     it('should show "Just now" for very recent articles', () => {
       const article = {
         ...baseArticle,
-        published_at: new Date().toISOString(),
+        date_published: new Date().toISOString(),
       };
       render(<ArticleCard article={article} />);
 
@@ -130,7 +130,7 @@ describe('ArticleCard', () => {
       const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
       const article = {
         ...baseArticle,
-        published_at: twoHoursAgo.toISOString(),
+        date_published: twoHoursAgo.toISOString(),
       };
       render(<ArticleCard article={article} />);
 
@@ -141,7 +141,7 @@ describe('ArticleCard', () => {
       const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
       const article = {
         ...baseArticle,
-        published_at: threeDaysAgo.toISOString(),
+        date_published: threeDaysAgo.toISOString(),
       };
       render(<ArticleCard article={article} />);
 
@@ -151,7 +151,7 @@ describe('ArticleCard', () => {
     it('should show formatted date for older articles', () => {
       const article = {
         ...baseArticle,
-        published_at: '2023-06-15T10:00:00Z',
+        date_published: '2023-06-15T10:00:00Z',
       };
       render(<ArticleCard article={article} />);
 
@@ -162,7 +162,7 @@ describe('ArticleCard', () => {
     it('should handle invalid date gracefully', () => {
       const article = {
         ...baseArticle,
-        published_at: 'invalid-date',
+        date_published: 'invalid-date',
       };
       render(<ArticleCard article={article} />);
 
@@ -174,7 +174,7 @@ describe('ArticleCard', () => {
     it('should display day number', () => {
       const article = {
         ...baseArticle,
-        published_at: '2024-01-15T10:00:00Z',
+        date_published: '2024-01-15T10:00:00Z',
       };
       render(<ArticleCard article={article} />);
 
@@ -184,7 +184,7 @@ describe('ArticleCard', () => {
     it('should display month abbreviation', () => {
       const article = {
         ...baseArticle,
-        published_at: '2024-01-15T10:00:00Z',
+        date_published: '2024-01-15T10:00:00Z',
       };
       render(<ArticleCard article={article} />);
 
@@ -196,8 +196,8 @@ describe('ArticleCard', () => {
     it('should show engagement bar when likesCount is present', () => {
       const article = {
         ...baseArticle,
-        likesCount: 10,
-        commentsCount: 5,
+        like_count: 10,
+        comment_count: 5,
       };
       render(<ArticleCard article={article} />);
 
@@ -207,7 +207,7 @@ describe('ArticleCard', () => {
     it('should show engagement bar when commentsCount is present', () => {
       const article = {
         ...baseArticle,
-        commentsCount: 5,
+        comment_count: 5,
       };
       render(<ArticleCard article={article} />);
 
@@ -223,7 +223,7 @@ describe('ArticleCard', () => {
     it('should pass isLiked state to engagement bar', () => {
       const article = {
         ...baseArticle,
-        likesCount: 10,
+        like_count: 10,
         isLiked: true,
       };
       render(<ArticleCard article={article} />);

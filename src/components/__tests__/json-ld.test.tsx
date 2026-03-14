@@ -22,12 +22,12 @@ describe('JSON-LD Components', () => {
     it('should render valid JSON-LD script tag', () => {
       const article = {
         id: '123',
-        title: 'Test Article',
+        headline: 'Test Article',
         description: 'Test description',
-        source: 'Test Source',
+        publisher_name: 'Test Source',
         slug: 'test-article',
-        published_at: '2024-01-15T12:00:00Z',
-        image_url: 'https://example.com/image.jpg',
+        date_published: '2024-01-15T12:00:00Z',
+        image: 'https://example.com/image.jpg',
       };
 
       const { container } = render(
@@ -45,11 +45,11 @@ describe('JSON-LD Components', () => {
     it('should escape < and > characters to prevent XSS', () => {
       const article = {
         id: '123',
-        title: '</script><script>alert("XSS")</script>',
+        headline: '</script><script>alert("XSS")</script>',
         description: 'Test with <script> tags',
-        source: 'Test Source',
+        publisher_name: 'Test Source',
         slug: 'test-article',
-        published_at: '2024-01-15T12:00:00Z',
+        date_published: '2024-01-15T12:00:00Z',
       };
 
       const { container } = render(
@@ -71,11 +71,11 @@ describe('JSON-LD Components', () => {
     it('should escape & characters', () => {
       const article = {
         id: '123',
-        title: 'News & Updates',
+        headline: 'News & Updates',
         description: 'Tom & Jerry',
-        source: 'Test Source',
+        publisher_name: 'Test Source',
         slug: 'test-article',
-        published_at: '2024-01-15T12:00:00Z',
+        date_published: '2024-01-15T12:00:00Z',
       };
 
       const { container } = render(
@@ -93,10 +93,10 @@ describe('JSON-LD Components', () => {
     it('should include isAccessibleForFree and inLanguage fields', () => {
       const article = {
         id: '123',
-        title: 'Test Article',
-        source: 'Test Source',
+        headline: 'Test Article',
+        publisher_name: 'Test Source',
         slug: 'test-article',
-        published_at: '2024-01-15T12:00:00Z',
+        date_published: '2024-01-15T12:00:00Z',
       };
 
       const { container } = render(
@@ -112,11 +112,11 @@ describe('JSON-LD Components', () => {
     it('should use updated_at for dateModified when available', () => {
       const article = {
         id: '123',
-        title: 'Test Article',
-        source: 'Test Source',
+        headline: 'Test Article',
+        publisher_name: 'Test Source',
         slug: 'test-article',
-        published_at: '2024-01-15T12:00:00Z',
-        updated_at: '2024-01-16T08:00:00Z',
+        date_published: '2024-01-15T12:00:00Z',
+        date_modified: '2024-01-16T08:00:00Z',
       };
 
       const { container } = render(
@@ -130,10 +130,10 @@ describe('JSON-LD Components', () => {
     it('should fall back to published_at for dateModified when updated_at is missing', () => {
       const article = {
         id: '123',
-        title: 'Test Article',
-        source: 'Test Source',
+        headline: 'Test Article',
+        publisher_name: 'Test Source',
         slug: 'test-article',
-        published_at: '2024-01-15T12:00:00Z',
+        date_published: '2024-01-15T12:00:00Z',
       };
 
       const { container } = render(
@@ -147,11 +147,11 @@ describe('JSON-LD Components', () => {
     it('should render Person author when author differs from source', () => {
       const article = {
         id: '123',
-        title: 'Test Article',
-        source: 'Daily News',
-        author: 'John Doe',
+        headline: 'Test Article',
+        publisher_name: 'Daily News',
+        author_name: 'John Doe',
         slug: 'test-article',
-        published_at: '2024-01-15T12:00:00Z',
+        date_published: '2024-01-15T12:00:00Z',
       };
 
       const { container } = render(
@@ -166,10 +166,10 @@ describe('JSON-LD Components', () => {
     it('should render Organization author when author matches source', () => {
       const article = {
         id: '123',
-        title: 'Test Article',
-        source: 'Daily News',
+        headline: 'Test Article',
+        publisher_name: 'Daily News',
         slug: 'test-article',
-        published_at: '2024-01-15T12:00:00Z',
+        date_published: '2024-01-15T12:00:00Z',
       };
 
       const { container } = render(
@@ -184,10 +184,10 @@ describe('JSON-LD Components', () => {
     it('should include keywords when provided', () => {
       const article = {
         id: '123',
-        title: 'Test Article',
-        source: 'Test Source',
+        headline: 'Test Article',
+        publisher_name: 'Test Source',
         slug: 'test-article',
-        published_at: '2024-01-15T12:00:00Z',
+        date_published: '2024-01-15T12:00:00Z',
         keywords: [
           { id: '1', name: 'politics', slug: 'politics' },
           { id: '2', name: 'economy', slug: 'economy' },
@@ -202,14 +202,14 @@ describe('JSON-LD Components', () => {
       expect(parsed.keywords).toBe('politics, economy');
     });
 
-    it('should include articleSection from category_id', () => {
+    it('should include articleSection from article_section_id', () => {
       const article = {
         id: '123',
-        title: 'Test Article',
-        source: 'Test Source',
+        headline: 'Test Article',
+        publisher_name: 'Test Source',
         slug: 'test-article',
-        published_at: '2024-01-15T12:00:00Z',
-        category_id: 'politics',
+        date_published: '2024-01-15T12:00:00Z',
+        article_section_id: 'politics',
       };
 
       const { container } = render(
@@ -220,14 +220,14 @@ describe('JSON-LD Components', () => {
       expect(parsed.articleSection).toBe('politics');
     });
 
-    it('should include articleBody from content', () => {
+    it('should include articleBody from article_body', () => {
       const article = {
         id: '123',
-        title: 'Test Article',
-        source: 'Test Source',
+        headline: 'Test Article',
+        publisher_name: 'Test Source',
         slug: 'test-article',
-        published_at: '2024-01-15T12:00:00Z',
-        content: 'Full article body text goes here.',
+        date_published: '2024-01-15T12:00:00Z',
+        article_body: 'Full article body text goes here.',
       };
 
       const { container } = render(
@@ -241,10 +241,10 @@ describe('JSON-LD Components', () => {
     it('should include wordCount when provided', () => {
       const article = {
         id: '123',
-        title: 'Test Article',
-        source: 'Test Source',
+        headline: 'Test Article',
+        publisher_name: 'Test Source',
         slug: 'test-article',
-        published_at: '2024-01-15T12:00:00Z',
+        date_published: '2024-01-15T12:00:00Z',
         word_count: 450,
       };
 
@@ -424,18 +424,18 @@ describe('JSON-LD Components', () => {
   describe('XSS injection prevention', () => {
     const makeArticle = (overrides: Record<string, string>) => ({
       id: '123',
-      title: 'Default Title',
+      headline: 'Default Title',
       description: 'Default description',
-      source: 'Test Source',
+      publisher_name: 'Test Source',
       slug: 'test-article',
-      published_at: '2024-01-15T12:00:00Z',
+      date_published: '2024-01-15T12:00:00Z',
       ...overrides,
     });
 
     it('should escape HTML comment injection: <!-- -->', () => {
       const { container } = render(
         <ArticleJsonLd
-          article={makeArticle({ title: '<!-- <script>alert(1)</script> -->' })}
+          article={makeArticle({ headline: '<!-- <script>alert(1)</script> -->' })}
           url="https://news.mukoko.com/article/123"
         />
       );
@@ -456,10 +456,10 @@ describe('JSON-LD Components', () => {
       expect(content).not.toContain('</script>');
     });
 
-    it('should escape unicode escape sequence in source field', () => {
+    it('should escape unicode escape sequence in publisher_name field', () => {
       const { container } = render(
         <ArticleJsonLd
-          article={makeArticle({ source: '<img src=x onerror=alert(1)>' })}
+          article={makeArticle({ publisher_name: '<img src=x onerror=alert(1)>' })}
           url="https://news.mukoko.com/article/123"
         />
       );
@@ -468,10 +468,10 @@ describe('JSON-LD Components', () => {
       expect(content).toContain('\\u003c');
     });
 
-    it('should escape image_url with malicious payload', () => {
+    it('should escape image with malicious payload', () => {
       const { container } = render(
         <ArticleJsonLd
-          article={makeArticle({ image_url: 'javascript:alert(1)' })}
+          article={makeArticle({ image: 'javascript:alert(1)' })}
           url="https://news.mukoko.com/article/123"
         />
       );
@@ -496,9 +496,9 @@ describe('JSON-LD Components', () => {
       const { container } = render(
         <ArticleJsonLd
           article={makeArticle({
-            title: '"},"hack":true,"x":"',
+            headline: '"},"hack":true,"x":"',
             description: '</script><script>alert(1)</script>',
-            source: '<img/src/onerror=alert(1)>',
+            publisher_name: '<img/src/onerror=alert(1)>',
           })}
           url="https://news.mukoko.com/article/123"
         />

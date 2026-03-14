@@ -21,7 +21,7 @@ export function HeroCard({ article }: HeroCardProps) {
 
   const hasImage = isValidImageUrl(article.image) && !imageError;
   const timeAgo = formatTimeAgo(article.date_published);
-  const category = article.article_section_id || article.category;
+  const category = article.article_section_id;
 
   return (
     <Link
@@ -72,7 +72,7 @@ export function HeroCard({ article }: HeroCardProps) {
 
             <div className="flex items-center gap-4 text-white/60">
               <div className="flex items-center gap-1.5">
-                <SourceIcon source={article.publisher_name} size={20} showBorder={false} />
+                <SourceIcon source={article.publisher_name ?? ''} size={20} showBorder={false} />
                 <span className="text-sm text-white/80">{article.publisher_name}</span>
               </div>
               <time className="flex items-center gap-1.5 text-sm" dateTime={article.date_published}>
