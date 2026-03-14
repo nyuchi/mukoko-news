@@ -25,8 +25,8 @@ const MAX_WORDS = 50;
 
 export interface Article {
   id: string;
-  title: string;
-  source: string;
+  headline: string;
+  publisher_name: string;
   [key: string]: unknown;
 }
 
@@ -58,7 +58,7 @@ const DEFAULT_CONFIG: ClusteringConfig = {
  *
  * Includes DoS prevention with length limits.
  */
-export function normalizeTitle(title: string): string[] {
+export function normalizeHeadline(title: string): string[] {
   if (!title || typeof title !== 'string') {
     return [];
   }
@@ -115,7 +115,7 @@ export function clusterArticles(
   for (const article of articles) {
     if (clusteredIds.has(article.id)) continue;
 
-    const articleWords = normalizeTitle(article.title);
+    const articleWords = normalizeHeadline(article.headline);
     const cluster: StoryCluster = {
       id: `cluster-${article.id}`,
       primaryArticle: article,
@@ -128,9 +128,9 @@ export function clusterArticles(
     // Find related articles (same story from different sources)
     for (const other of articles) {
       if (clusteredIds.has(other.id)) continue;
-      if (article.source === other.source) continue; // Must be different sources
+      if (article.publisher_name === other.publisher_name) continue; // Must be different sources
 
-      const otherWords = normalizeTitle(other.title);
+      const otherWords = normalizeHeadline(other.headline);
       const similarity = titleSimilarity(articleWords, otherWords);
 
       // Group stories that exceed similarity threshold

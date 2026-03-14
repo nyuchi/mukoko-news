@@ -82,24 +82,24 @@ interface CountryKeywords {
 interface RSSSource {
   id: string;
   name: string;
-  url: string;
+  rss_feed_url: string;
   enabled: number;
-  category?: string;    // Source's configured category (used as hint)
-  country_id?: string;  // Pan-African support
+  article_section_id?: string;    // Source's configured category (used as hint)
+  area_served?: string;  // Pan-African support
 }
 
 interface Article {
-  title: string;
+  headline: string;
   description?: string;
-  content?: string;
-  author?: string;
-  source: string;
-  source_id: string;
-  category_id: string;
-  country_id?: string;  // Pan-African support
-  published_at: string;
-  image_url?: string;
-  original_url: string;
+  article_body?: string;
+  author_name?: string;
+  publisher_name: string;
+  publisher_id: string;
+  article_section_id: string;
+  about_country_id?: string;  // Pan-African support
+  date_published: string;
+  image?: string;
+  main_entity_of_page: string;
   rss_guid?: string;
 }
 
@@ -175,9 +175,9 @@ export class SimpleRSSService {
         }
       }
 
-      // Also load from keywords table
+      // Also load from defined_terms table
       const keywordsResult = await this.db
-        .prepare('SELECT name FROM keywords WHERE enabled = 1 ORDER BY usage_count DESC LIMIT 200')
+        .prepare('SELECT name FROM defined_terms WHERE enabled = 1 ORDER BY article_count DESC LIMIT 200')
         .all();
 
       if (keywordsResult.results) {
@@ -237,7 +237,7 @@ export class SimpleRSSService {
     try {
       // Get all enabled RSS sources (including category for categorization hints)
       const sources = await this.db
-        .prepare('SELECT id, name, url, enabled, category, country_id FROM rss_sources WHERE enabled = 1 ORDER BY priority DESC, id ASC')
+        .prepare('SELECT id, name, rss_feed_url, enabled, article_section_id, area_served FROM organizations WHERE enabled = 1 ORDER BY priority DESC, id ASC')
         .all<RSSSource>();
 
       if (!sources.results || sources.results.length === 0) {
@@ -265,7 +265,7 @@ export class SimpleRSSService {
       // Process each source in this batch
       for (const source of batchSources) {
         try {
-          console.log(`[SIMPLE-RSS] Fetching ${source.name} (${source.url})`);
+          console.log(`[SIMPLE-RSS] Fetching ${source.name} (${source.rss_feed_url})`);
           const articles = await this.fetchAndParseFeed(source);
 
           console.log(`[SIMPLE-RSS] Parsed ${articles.length} articles from ${source.name}`);
@@ -303,7 +303,7 @@ export class SimpleRSSService {
     const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
 
     try {
-      const response = await fetch(source.url, {
+      const response = await fetch(source.rss_feed_url, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
           'Accept': 'application/rss+xml, application/xml, text/xml, */*',
@@ -434,23 +434,23 @@ export class SimpleRSSService {
       const guid = this.extractText(item.guid) || link;
 
       // Delegate categorization to CategoryManager (single source of truth)
-      const category = await this.categoryManager.classifyContent(title, description || '', source.category);
+      const category = await this.categoryManager.classifyContent(title, description || '', source.article_section_id);
 
       // Generate slug from title
       const slug = this.generateSlug(title);
 
       return {
-        title: this.cleanText(title),
+        headline: this.cleanText(title),
         description: description ? this.cleanText(description.substring(0, 500)) : undefined,
-        content: content ? this.htmlToMarkdown(content) : undefined,
-        author: author ? this.cleanText(author) : undefined,
-        source: source.name,
-        source_id: source.id,
-        category_id: category,
-        country_id: source.country_id,  // Pan-African: inherit country from source
-        published_at: pubDate,
-        image_url: imageUrl,
-        original_url: link,
+        article_body: content ? this.htmlToMarkdown(content) : undefined,
+        author_name: author ? this.cleanText(author) : undefined,
+        publisher_name: source.name,
+        publisher_id: source.id,
+        article_section_id: category,
+        about_country_id: source.area_served,  // Pan-African: inherit country from source
+        date_published: pubDate,
+        image: imageUrl,
+        main_entity_of_page: link,
         rss_guid: guid
       };
     } catch (error) {
@@ -754,41 +754,41 @@ export class SimpleRSSService {
       try {
         // Check if article already exists
         const existing = await this.db
-          .prepare('SELECT id FROM articles WHERE original_url = ? OR rss_guid = ?')
-          .bind(article.original_url, article.rss_guid)
+          .prepare('SELECT id FROM articles WHERE main_entity_of_page = ? OR rss_guid = ?')
+          .bind(article.main_entity_of_page, article.rss_guid)
           .first();
 
         if (existing) {
-          console.log(`[SIMPLE-RSS] Skipping duplicate: ${article.title.substring(0, 50)}...`);
+          console.log(`[SIMPLE-RSS] Skipping duplicate: ${article.headline.substring(0, 50)}...`);
           continue;
         }
 
         // Generate slug
-        const slug = this.generateSlug(article.title);
+        const slug = this.generateSlug(article.headline);
 
         // Insert article
         const insertResult = await this.db
           .prepare(`
             INSERT INTO articles (
-              title, slug, description, content, author, source, source_id, source_url,
-              category_id, country_id, published_at, image_url, original_url, rss_guid,
+              headline, slug, description, article_body, author_name, publisher_name, publisher_id, source_url,
+              article_section_id, about_country_id, date_published, image, main_entity_of_page, rss_guid,
               created_at, updated_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
           `)
           .bind(
-            article.title,
+            article.headline,
             slug,
             article.description,
-            article.content,
-            article.author,
-            article.source,
-            article.source_id,
-            article.source_id, // source_url same as source_id for now
-            article.category_id,
-            article.country_id || 'ZW', // Default to Zimbabwe if not specified
-            article.published_at,
-            article.image_url,
-            article.original_url,
+            article.article_body,
+            article.author_name,
+            article.publisher_name,
+            article.publisher_id,
+            article.publisher_id, // source_url same as publisher_id for now
+            article.article_section_id,
+            article.about_country_id || 'ZW', // Default to Zimbabwe if not specified
+            article.date_published,
+            article.image,
+            article.main_entity_of_page,
             article.rss_guid
           )
           .run();
@@ -796,21 +796,21 @@ export class SimpleRSSService {
         const articleId = insertResult.meta.last_row_id;
 
         // Extract and store keywords
-        const keywords = this.extractKeywords(article.title, article.description || '');
+        const keywords = this.extractKeywords(article.headline, article.description || '');
         if (keywords.length > 0) {
           await this.storeKeywords(articleId, keywords);
         }
 
         // Create/update author profile
-        if (article.author && article.author.trim()) {
-          await this.createOrUpdateAuthor(article.author, article.source);
+        if (article.author_name && article.author_name.trim()) {
+          await this.createOrUpdateAuthor(article.author_name, article.publisher_name);
         }
 
-        console.log(`[SIMPLE-RSS] ✅ Stored: ${article.title.substring(0, 50)}... [${article.category_id}]${article.image_url ? ' 🖼️' : ''}${keywords.length > 0 ? ` [${keywords.length} keywords]` : ''}${article.author ? ` by ${article.author}` : ''}`);
+        console.log(`[SIMPLE-RSS] ✅ Stored: ${article.headline.substring(0, 50)}... [${article.article_section_id}]${article.image ? ' 🖼️' : ''}${keywords.length > 0 ? ` [${keywords.length} keywords]` : ''}${article.author_name ? ` by ${article.author_name}` : ''}`);
         newCount++;
 
       } catch (error: any) {
-        console.error(`[SIMPLE-RSS] Error storing article "${article.title}":`, error.message);
+        console.error(`[SIMPLE-RSS] Error storing article "${article.headline}":`, error.message);
       }
     }
 
@@ -849,7 +849,7 @@ export class SimpleRSSService {
 
         // Check if keyword exists in master table
         const existingKeyword = await this.db
-          .prepare('SELECT id FROM keywords WHERE id = ?')
+          .prepare('SELECT id FROM defined_terms WHERE id = ?')
           .bind(keywordId)
           .first();
 
@@ -857,8 +857,8 @@ export class SimpleRSSService {
           // Create keyword in master table
           await this.db
             .prepare(`
-              INSERT INTO keywords (id, name, slug, type, enabled, created_at, updated_at)
-              VALUES (?, ?, ?, 'general', 1, datetime('now'), datetime('now'))
+              INSERT INTO defined_terms (id, name, term_code, term_type, enabled, created_at, updated_at)
+              VALUES (?, ?, ?, 'keyword', 1, datetime('now'), datetime('now'))
             `)
             .bind(keywordId, keywordName, keywordSlug)
             .run();
@@ -867,16 +867,16 @@ export class SimpleRSSService {
         // Link keyword to article
         await this.db
           .prepare(`
-            INSERT INTO article_keyword_links (article_id, keyword_id, relevance_score, source, created_at)
+            INSERT INTO article_keywords (article_id, term_id, relevance_score, source, created_at)
             VALUES (?, ?, 1.0, 'auto', datetime('now'))
-            ON CONFLICT(article_id, keyword_id) DO NOTHING
+            ON CONFLICT(article_id, term_id) DO NOTHING
           `)
           .bind(articleId, keywordId)
           .run();
 
         // Update keyword article count
         await this.db
-          .prepare('UPDATE keywords SET article_count = article_count + 1 WHERE id = ?')
+          .prepare('UPDATE defined_terms SET article_count = article_count + 1 WHERE id = ?')
           .bind(keywordId)
           .run();
 
@@ -905,7 +905,7 @@ export class SimpleRSSService {
 
       // Check if author exists
       const existingAuthor = await this.db
-        .prepare('SELECT id, article_count, expertise_categories FROM authors WHERE normalized_name = ?')
+        .prepare('SELECT id, article_count FROM persons WHERE normalized_name = ?')
         .bind(normalizedName)
         .first();
 
@@ -913,8 +913,8 @@ export class SimpleRSSService {
         // Create new author profile
         await this.db
           .prepare(`
-            INSERT INTO authors (
-              name, normalized_name, outlet, article_count,
+            INSERT INTO persons (
+              name, normalized_name, works_for, article_count,
               created_at, updated_at
             )
             VALUES (?, ?, ?, 1, datetime('now'), datetime('now'))
@@ -927,7 +927,7 @@ export class SimpleRSSService {
         // Update existing author
         await this.db
           .prepare(`
-            UPDATE authors
+            UPDATE persons
             SET article_count = article_count + 1,
                 updated_at = datetime('now')
             WHERE id = ?

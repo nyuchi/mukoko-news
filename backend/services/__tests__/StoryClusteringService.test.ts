@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  normalizeTitle,
+  normalizeHeadline,
   titleSimilarity,
   clusterArticles,
   STOP_WORDS,
@@ -8,19 +8,19 @@ import {
 } from '../StoryClusteringService.js';
 
 describe('StoryClusteringService', () => {
-  describe('normalizeTitle', () => {
+  describe('normalizeHeadline', () => {
     it('should convert title to lowercase', () => {
-      const result = normalizeTitle('BREAKING NEWS Alert');
+      const result = normalizeHeadline('BREAKING NEWS Alert');
       expect(result.every(word => word === word.toLowerCase())).toBe(true);
     });
 
     it('should remove punctuation', () => {
-      const result = normalizeTitle("Test: Title's with, punctuation!");
+      const result = normalizeHeadline("Test: Title's with, punctuation!");
       expect(result.some(word => /[^\w]/.test(word))).toBe(false);
     });
 
     it('should split on whitespace', () => {
-      const result = normalizeTitle('word1   word2\tword3\nword4');
+      const result = normalizeHeadline('word1   word2\tword3\nword4');
       expect(result).toContain('word1');
       expect(result).toContain('word2');
       expect(result).toContain('word3');
@@ -28,7 +28,7 @@ describe('StoryClusteringService', () => {
     });
 
     it('should filter out words with 3 or fewer characters', () => {
-      const result = normalizeTitle('The big red fox ran away');
+      const result = normalizeHeadline('The big red fox ran away');
       expect(result).not.toContain('the');
       expect(result).not.toContain('big');
       expect(result).not.toContain('red');
@@ -38,7 +38,7 @@ describe('StoryClusteringService', () => {
     });
 
     it('should filter out stop words', () => {
-      const result = normalizeTitle('The president says this about that report');
+      const result = normalizeHeadline('The president says this about that report');
       expect(result).not.toContain('says');
       expect(result).not.toContain('this');
       expect(result).not.toContain('about');
@@ -48,52 +48,52 @@ describe('StoryClusteringService', () => {
     });
 
     it('should return empty array for empty string', () => {
-      expect(normalizeTitle('')).toEqual([]);
+      expect(normalizeHeadline('')).toEqual([]);
     });
 
     it('should return empty array for null/undefined input', () => {
-      expect(normalizeTitle(null as unknown as string)).toEqual([]);
-      expect(normalizeTitle(undefined as unknown as string)).toEqual([]);
+      expect(normalizeHeadline(null as unknown as string)).toEqual([]);
+      expect(normalizeHeadline(undefined as unknown as string)).toEqual([]);
     });
 
     it('should return empty array for non-string input', () => {
-      expect(normalizeTitle(123 as unknown as string)).toEqual([]);
-      expect(normalizeTitle({} as unknown as string)).toEqual([]);
+      expect(normalizeHeadline(123 as unknown as string)).toEqual([]);
+      expect(normalizeHeadline({} as unknown as string)).toEqual([]);
     });
 
     it('should handle title with only stop words', () => {
-      const result = normalizeTitle('the and or but in on at to');
+      const result = normalizeHeadline('the and or but in on at to');
       expect(result).toEqual([]);
     });
 
     it('should handle title with only short words', () => {
-      const result = normalizeTitle('a an to by is as');
+      const result = normalizeHeadline('a an to by is as');
       expect(result).toEqual([]);
     });
 
     // DoS prevention tests
     it('should limit title length to 500 characters', () => {
       const longTitle = 'abcdefghij '.repeat(100); // 1100 chars
-      const result = normalizeTitle(longTitle);
+      const result = normalizeHeadline(longTitle);
       // Should process only first 500 chars worth of words
       expect(result.length).toBeLessThanOrEqual(50);
     });
 
     it('should limit word count to 50 words', () => {
       const manyWords = Array.from({ length: 100 }, (_, i) => `word${i}abcd`).join(' ');
-      const result = normalizeTitle(manyWords);
+      const result = normalizeHeadline(manyWords);
       expect(result.length).toBeLessThanOrEqual(50);
     });
 
     it('should handle extremely long single word', () => {
       const longWord = 'a'.repeat(1000);
-      const result = normalizeTitle(longWord);
+      const result = normalizeHeadline(longWord);
       // Should be truncated but still processed
       expect(result.length).toBeLessThanOrEqual(1);
     });
 
     it('should extract meaningful words from real headline', () => {
-      const result = normalizeTitle('Zimbabwe announces new economic reforms for 2024');
+      const result = normalizeHeadline('Zimbabwe announces new economic reforms for 2024');
       expect(result).toContain('zimbabwe');
       expect(result).toContain('announces');
       expect(result).toContain('economic');
@@ -164,18 +164,18 @@ describe('StoryClusteringService', () => {
     });
 
     it('should calculate similarity for news-like titles', () => {
-      const title1Words = normalizeTitle('Zimbabwe President Announces Economic Policy');
-      const title2Words = normalizeTitle('President of Zimbabwe Announces New Economic Policy');
+      const title1Words = normalizeHeadline('Zimbabwe President Announces Economic Policy');
+      const title2Words = normalizeHeadline('President of Zimbabwe Announces New Economic Policy');
       const similarity = titleSimilarity(title1Words, title2Words);
       expect(similarity).toBeGreaterThan(0.5);
     });
   });
 
   describe('clusterArticles', () => {
-    const createArticle = (id: string, title: string, source: string): Article => ({
+    const createArticle = (id: string, headline: string, publisher_name: string): Article => ({
       id,
-      title,
-      source,
+      headline,
+      publisher_name,
     });
 
     it('should return empty array for empty input', () => {
@@ -210,7 +210,7 @@ describe('StoryClusteringService', () => {
       expect(clusters.length).toBeLessThanOrEqual(2);
 
       const economicCluster = clusters.find(c =>
-        c.primaryArticle.title.includes('economic')
+        c.primaryArticle.headline.includes('economic')
       );
       expect(economicCluster).toBeDefined();
       expect(economicCluster!.articleCount).toBe(2);
@@ -329,8 +329,8 @@ describe('StoryClusteringService', () => {
 
       // The three banking articles should cluster together
       const bankingCluster = clusters.find(c =>
-        c.primaryArticle.title.includes('interest') ||
-        c.primaryArticle.title.includes('Reserve Bank')
+        c.primaryArticle.headline.includes('interest') ||
+        c.primaryArticle.headline.includes('Reserve Bank')
       );
 
       expect(bankingCluster).toBeDefined();

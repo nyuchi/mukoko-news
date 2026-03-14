@@ -276,12 +276,12 @@ describe('ArticleService', () => {
   });
 
   describe('needsContentEnhancement', () => {
-    const needsContentEnhancement = (article: { description?: string; content?: string }): boolean => {
-      if (!article.description && !article.content) {
+    const needsContentEnhancement = (article: { description?: string; article_body?: string }): boolean => {
+      if (!article.description && !article.article_body) {
         return true;
       }
 
-      const totalContent = (article.description || '') + (article.content || '');
+      const totalContent = (article.description || '') + (article.article_body || '');
 
       if (totalContent.length < 200) {
         return true;
@@ -315,29 +315,29 @@ describe('ArticleService', () => {
     });
 
     it('should return true for content containing "read more"', () => {
-      const content = 'A'.repeat(250) + ' Read more here...';
-      expect(needsContentEnhancement({ content })).toBe(true);
+      const article_body = 'A'.repeat(250) + ' Read more here...';
+      expect(needsContentEnhancement({ article_body })).toBe(true);
     });
 
     it('should return true for content containing "click here"', () => {
-      const content = 'A'.repeat(250) + ' Click here for details';
-      expect(needsContentEnhancement({ content })).toBe(true);
+      const article_body = 'A'.repeat(250) + ' Click here for details';
+      expect(needsContentEnhancement({ article_body })).toBe(true);
     });
 
     it('should return false for adequate content', () => {
-      const content = 'This is a complete article with enough content. '.repeat(20);
-      expect(needsContentEnhancement({ content })).toBe(false);
+      const article_body = 'This is a complete article with enough content. '.repeat(20);
+      expect(needsContentEnhancement({ article_body })).toBe(false);
     });
 
     it('should return false for content at exactly 200 characters', () => {
-      const content = 'A'.repeat(200);
-      expect(needsContentEnhancement({ content })).toBe(false);
+      const article_body = 'A'.repeat(200);
+      expect(needsContentEnhancement({ article_body })).toBe(false);
     });
 
     it('should combine description and content for length check', () => {
       expect(needsContentEnhancement({
         description: 'A'.repeat(100),
-        content: 'B'.repeat(100),
+        article_body: 'B'.repeat(100),
       })).toBe(false);
     });
   });
@@ -386,7 +386,7 @@ describe('ArticleService', () => {
   });
 
   describe('getHashtags', () => {
-    const getHashtags = (article: { category?: string; tags?: string[]; title?: string }): string[] => {
+    const getHashtags = (article: { category?: string; tags?: string[]; headline?: string }): string[] => {
       const tags: string[] = [];
 
       if (article.category) {
@@ -402,10 +402,10 @@ describe('ArticleService', () => {
         });
       }
 
-      const titleLower = (article.title || '').toLowerCase();
+      const headlineLower = (article.headline || '').toLowerCase();
       const zimbabweKeywords = ['zimbabwe', 'zim', 'harare', 'bulawayo'];
       zimbabweKeywords.forEach((keyword) => {
-        if (titleLower.includes(keyword) && tags.length < 4) {
+        if (headlineLower.includes(keyword) && tags.length < 4) {
           const tag = `#${keyword}`;
           if (!tags.includes(tag)) {
             tags.push(tag);
@@ -427,8 +427,8 @@ describe('ArticleService', () => {
       expect(result).toContain('#business');
     });
 
-    it('should extract Zimbabwe keywords from title', () => {
-      const result = getHashtags({ title: 'Harare City Council News' });
+    it('should extract Zimbabwe keywords from headline', () => {
+      const result = getHashtags({ headline: 'Harare City Council News' });
       expect(result).toContain('#harare');
     });
 
@@ -436,7 +436,7 @@ describe('ArticleService', () => {
       const result = getHashtags({
         category: 'Politics',
         tags: ['Tag1', 'Tag2', 'Tag3', 'Tag4', 'Tag5'],
-        title: 'Zimbabwe News from Harare and Bulawayo',
+        headline: 'Zimbabwe News from Harare and Bulawayo',
       });
       expect(result.length).toBeLessThanOrEqual(4);
     });

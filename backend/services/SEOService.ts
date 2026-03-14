@@ -144,31 +144,30 @@ export class SEOService {
   async generateArticleSEO(article: {
     id: number;
     slug: string;
-    title: string;
+    headline: string;
     description?: string;
-    content?: string;
-    author?: string;
-    category?: string;
+    article_body?: string;
+    author_name?: string;
+    article_section_id?: string;
     tags?: string;
-    image_url?: string;
-    optimized_image_url?: string;
-    published_at: string;
-    updated_at?: string;
+    image?: string;
+    date_published: string;
+    date_modified?: string;
     word_count?: number;
     source?: string;
   }): Promise<ArticleSEO> {
     const canonicalUrl = `${this.baseUrl}/article/${article.slug}`;
-    const imageUrl = article.optimized_image_url || article.image_url || this.defaultImage;
+    const imageUrl = article.image || this.defaultImage;
 
     // Generate optimized meta description (155 chars max)
     const metaDescription = this.generateMetaDescription(
-      article.description || article.content || article.title,
+      article.description || article.article_body || article.headline,
       155
     );
 
     // Generate OG description (slightly longer, 200 chars)
     const ogDescription = this.generateMetaDescription(
-      article.description || article.content || article.title,
+      article.description || article.article_body || article.headline,
       200
     );
 
@@ -182,13 +181,13 @@ export class SEOService {
 
     return {
       // Core SEO
-      title: this.generateSEOTitle(article.title),
+      title: this.generateSEOTitle(article.headline),
       metaDescription,
       canonicalUrl,
       keywords,
 
       // Open Graph
-      ogTitle: article.title,
+      ogTitle: article.headline,
       ogDescription,
       ogImage: imageUrl,
       ogUrl: canonicalUrl,
@@ -196,15 +195,15 @@ export class SEOService {
       ogSiteName: this.siteName,
 
       // Article-specific OG
-      articlePublishedTime: article.published_at,
-      articleModifiedTime: article.updated_at,
-      articleAuthor: article.author,
-      articleSection: article.category,
+      articlePublishedTime: article.date_published,
+      articleModifiedTime: article.date_modified,
+      articleAuthor: article.author_name,
+      articleSection: article.article_section_id,
       articleTags: keywords,
 
       // Twitter Card
       twitterCard: 'summary_large_image',
-      twitterTitle: article.title,
+      twitterTitle: article.headline,
       twitterDescription: metaDescription,
       twitterImage: imageUrl,
       twitterSite: this.twitterHandle,
@@ -377,23 +376,22 @@ export class SEOService {
     let query = `
       SELECT
         slug,
-        title,
-        category,
-        tags,
-        image_url,
-        optimized_image_url,
-        published_at,
-        updated_at
+        headline,
+        article_section_id,
+        keywords,
+        image,
+        date_published,
+        date_modified
       FROM articles
       WHERE status = 'published'
-        AND published_at >= datetime('now', '-${daysBack} days')
+        AND date_published >= datetime('now', '-${daysBack} days')
     `;
 
     if (options?.category) {
-      query += ` AND category = ?`;
+      query += ` AND article_section_id = ?`;
     }
 
-    query += ` ORDER BY published_at DESC LIMIT ${limit}`;
+    query += ` ORDER BY date_published DESC LIMIT ${limit}`;
 
     const params = options?.category ? [options.category] : [];
     const result = await this.db.prepare(query).bind(...params).all();
@@ -401,7 +399,7 @@ export class SEOService {
 
     const entries: SitemapEntry[] = articles.map((article: any) => ({
       loc: `${this.baseUrl}/article/${article.slug}`,
-      lastmod: article.updated_at || article.published_at,
+      lastmod: article.date_modified || article.date_published,
       changefreq: 'daily' as const,
       priority: 0.8,
       news: {
@@ -409,13 +407,13 @@ export class SEOService {
           name: this.siteName,
           language: 'en'
         },
-        title: article.title,
-        publication_date: article.published_at,
-        keywords: article.tags
+        title: article.headline,
+        publication_date: article.date_published,
+        keywords: article.keywords
       },
-      images: article.image_url ? [{
-        loc: article.optimized_image_url || article.image_url,
-        title: article.title
+      images: article.image ? [{
+        loc: article.image,
+        title: article.headline
       }] : undefined
     }));
 
@@ -427,7 +425,7 @@ export class SEOService {
    */
   async generateSitemapIndex(): Promise<string> {
     const categories = await this.db.prepare(`
-      SELECT DISTINCT category FROM articles WHERE status = 'published'
+      SELECT DISTINCT article_section_id FROM articles WHERE status = 'published'
     `).all();
 
     const sitemaps: string[] = [];
@@ -444,7 +442,7 @@ export class SEOService {
     for (const cat of (categories.results || [])) {
       sitemaps.push(`
     <sitemap>
-      <loc>${this.baseUrl}/sitemap-${(cat as any).category}.xml</loc>
+      <loc>${this.baseUrl}/sitemap-${(cat as any).article_section_id}.xml</loc>
       <lastmod>${now}</lastmod>
     </sitemap>`);
     }
@@ -469,14 +467,14 @@ ${sitemaps.join('')}
     const result = await this.db.prepare(`
       SELECT
         slug,
-        title,
-        category,
-        tags,
-        published_at
+        headline,
+        article_section_id,
+        keywords,
+        date_published
       FROM articles
       WHERE status = 'published'
-        AND published_at >= datetime('now', '-2 days')
-      ORDER BY published_at DESC
+        AND date_published >= datetime('now', '-2 days')
+      ORDER BY date_published DESC
       LIMIT 1000
     `).all();
 
@@ -484,7 +482,7 @@ ${sitemaps.join('')}
 
     const entries: SitemapEntry[] = articles.map((article: any) => ({
       loc: `${this.baseUrl}/article/${article.slug}`,
-      lastmod: article.published_at,
+      lastmod: article.date_published,
       changefreq: 'hourly' as const,
       priority: 1.0,
       news: {
@@ -492,9 +490,9 @@ ${sitemaps.join('')}
           name: this.siteName,
           language: 'en'
         },
-        title: article.title,
-        publication_date: article.published_at,
-        keywords: article.tags
+        title: article.headline,
+        publication_date: article.date_published,
+        keywords: article.keywords
       }
     }));
 
@@ -511,8 +509,8 @@ ${sitemaps.join('')}
   }> {
     // Find articles with missing or outdated SEO data
     const result = await this.db.prepare(`
-      SELECT id, slug, title, description, content, author, category, tags,
-             image_url, optimized_image_url, published_at, updated_at, word_count
+      SELECT id, slug, headline, description, article_body, author_name, article_section_id, tags,
+             image, date_published, date_modified, word_count
       FROM articles
       WHERE status = 'published'
         AND (
@@ -521,7 +519,7 @@ ${sitemaps.join('')}
           OR seo_updated_at IS NULL
           OR seo_updated_at < datetime('now', '-7 days')
         )
-      ORDER BY published_at DESC
+      ORDER BY date_published DESC
       LIMIT ?
     `).bind(batchSize).all();
 
@@ -615,22 +613,22 @@ ${sitemaps.join('')}
     return {
       '@context': 'https://schema.org',
       '@type': 'NewsArticle',
-      headline: article.title,
-      description: article.description || this.generateMetaDescription(article.content, 200),
+      headline: article.headline,
+      description: article.description || this.generateMetaDescription(article.article_body, 200),
       image: [imageUrl],
-      datePublished: article.published_at,
-      dateModified: article.updated_at || article.published_at,
-      author: article.author ? {
+      datePublished: article.date_published,
+      dateModified: article.date_modified || article.date_published,
+      author: article.author_name ? {
         '@type': 'Person',
-        name: article.author
+        name: article.author_name
       } : this.getPublisherSchema(),
       publisher: this.getPublisherSchema(),
       mainEntityOfPage: {
         '@type': 'WebPage',
         '@id': canonicalUrl
       },
-      articleSection: article.category,
-      keywords: article.tags,
+      articleSection: article.article_section_id,
+      keywords: article.keywords,
       wordCount: article.word_count,
       isAccessibleForFree: true
     };

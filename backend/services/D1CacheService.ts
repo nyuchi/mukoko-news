@@ -39,7 +39,7 @@ export class D1CacheService {
       
       const articles = await this.d1.getArticles({
         limit: 40000, // Get all articles
-        orderBy: 'published_at',
+        orderBy: 'date_published',
         orderDirection: 'DESC'
       })
       
@@ -66,20 +66,20 @@ export class D1CacheService {
         try {
           // Map RSS article format to D1 article format
           const articleData = {
-            title: article.title,
+            headline: article.headline,
             description: article.description || article.contentSnippet || '',
             content: article.fullContent || article.content || article.contentSnippet || '',
             content_snippet: article.contentSnippet || article.description?.substring(0, 400) || '',
-            author: article.author || article.creator || '',
-            source: article.source || 'Unknown',
-            source_id: article.sourceId || null,
+            author_name: article.author_name || article.author || article.creator || '',
+            publisher_name: article.publisher_name || article.source || 'Unknown',
+            publisher_id: article.publisher_id || article.sourceId || null,
             source_url: article.sourceUrl || '',
-            category_id: article.category || 'general',
+            article_section_id: article.article_section_id || 'general',
             tags: Array.isArray(article.keywords) ? article.keywords : (article.tags || []),
-            published_at: article.pubDate || article.publishedAt || new Date().toISOString(),
-            image_url: article.imageUrl || article.image_url || '',
+            date_published: article.date_published || new Date().toISOString(),
+            image: article.image || '',
             optimized_image_url: article.optimizedImageUrl || '',
-            original_url: article.link || article.url || '',
+            main_entity_of_page: article.main_entity_of_page || article.link || '',
             rss_guid: typeof article.guid === 'object' ? 
               (article.guid['#text'] || JSON.stringify(article.guid)) : 
               (article.id || article.guid || ''),
@@ -94,7 +94,7 @@ export class D1CacheService {
             savedCount++
           }
         } catch (articleError) {
-          console.warn(`⚠️ Failed to save article "${article.title}" to D1:`, articleError.message)
+          console.warn(`⚠️ Failed to save article "${article.headline}" to D1:`, articleError.message)
           errorCount++
         }
       }
@@ -317,7 +317,7 @@ export class D1CacheService {
   async getLastFetch(sourceId: string): Promise<string | null> {
     try {
       const result = await this.d1.db.prepare(`
-        SELECT last_fetched_at FROM rss_sources WHERE id = ?
+        SELECT last_fetched_at FROM organizations WHERE id = ?
       `).bind(sourceId).first() as any;
       
       return result?.last_fetched_at || null;
@@ -443,7 +443,7 @@ export class D1CacheService {
         storage: {
           'Articles': 'Permanent storage in D1 articles table',
           'Cache Metadata': 'Temporary cache with TTL in D1 cache_metadata table',
-          'RSS Sources': 'Configuration in D1 rss_sources table',
+          'Organizations': 'Configuration in D1 organizations table',
           'Categories': 'Configuration in D1 categories table',
           'Feed Status': 'Processing status in D1 feed_status table'
         },

@@ -721,13 +721,13 @@ app.get("/api/admin/stats", async (c) => {
     
     // Get RSS source count directly from database
     const sourcesResult = await c.env.DB.prepare(
-      'SELECT COUNT(*) as count FROM rss_sources WHERE enabled = 1'
+      'SELECT COUNT(*) as count FROM organizations WHERE enabled = 1'
     ).first();
     const activeSources = sourcesResult.count;
-    
-    // Get categories count directly from database  
+
+    // Get categories count directly from database
     const categoriesResult = await c.env.DB.prepare(
-      'SELECT COUNT(*) as count FROM categories WHERE enabled = 1'
+      'SELECT COUNT(*) as count FROM article_sections WHERE enabled = 1'
     ).first();
     const categoriesCount = categoriesResult.count;
     
@@ -783,13 +783,13 @@ app.get("/api/stats", async (c) => {
 
     // Get RSS source count
     const sourcesResult = await c.env.DB.prepare(
-      'SELECT COUNT(*) as count FROM rss_sources WHERE enabled = 1'
+      'SELECT COUNT(*) as count FROM organizations WHERE enabled = 1'
     ).first();
     const activeSources = sourcesResult?.count || 0;
 
     // Get categories count
     const categoriesResult = await c.env.DB.prepare(
-      'SELECT COUNT(*) as count FROM categories WHERE enabled = 1'
+      'SELECT COUNT(*) as count FROM article_sections WHERE enabled = 1'
     ).first();
     const categoriesCount = categoriesResult?.count || 0;
 
@@ -827,8 +827,8 @@ app.get("/api/feeds", async (c) => {
 
     // Get articles directly from database
     let articlesQuery = `
-      SELECT id, title, slug, description, content_snippet, author, source, source_id,
-             published_at, image_url, original_url, category_id, country_id, view_count,
+      SELECT id, headline, slug, description, content_snippet, author_name, publisher_name, publisher_id,
+             date_published, image, main_entity_of_page, article_section_id, about_country_id, view_count,
              like_count, bookmark_count
       FROM articles
       WHERE status = 'published'
@@ -837,16 +837,16 @@ app.get("/api/feeds", async (c) => {
     let countQuery = `SELECT COUNT(*) as total FROM articles WHERE status = 'published'`;
 
     if (category && category !== 'all') {
-      articlesQuery += ` AND category_id = ?`;
-      countQuery += ` AND category_id = ?`;
+      articlesQuery += ` AND article_section_id = ?`;
+      countQuery += ` AND article_section_id = ?`;
       queryParams.push(category);
     }
 
     // Pan-African: filter by countries
     if (countries && countries.length > 0) {
       const placeholders = countries.map(() => '?').join(',');
-      articlesQuery += ` AND country_id IN (${placeholders})`;
-      countQuery += ` AND country_id IN (${placeholders})`;
+      articlesQuery += ` AND about_country_id IN (${placeholders})`;
+      countQuery += ` AND about_country_id IN (${placeholders})`;
       queryParams.push(...countries);
     }
 
@@ -856,8 +856,8 @@ app.get("/api/feeds", async (c) => {
       case 'trending':
         // Trending: recent articles with high engagement (weighted by recency)
         // Articles from last 7 days, sorted by (views + likes*3 + bookmarks*2) / age_in_hours
-        articlesQuery += ` AND published_at > datetime('now', '-7 days')`;
-        orderClause = `ORDER BY (view_count + like_count * 3 + bookmark_count * 2) DESC, published_at DESC`;
+        articlesQuery += ` AND date_published > datetime('now', '-7 days')`;
+        orderClause = `ORDER BY (view_count + like_count * 3 + bookmark_count * 2) DESC, date_published DESC`;
         break;
       case 'popular':
         // Popular: highest engagement regardless of date
@@ -865,7 +865,7 @@ app.get("/api/feeds", async (c) => {
         break;
       case 'latest':
       default:
-        orderClause = `ORDER BY published_at DESC`;
+        orderClause = `ORDER BY date_published DESC`;
         break;
     }
 
@@ -887,8 +887,8 @@ app.get("/api/feeds", async (c) => {
       try {
         const keywordsResult = await c.env.DB.prepare(`
           SELECT k.id, k.name, k.slug
-          FROM keywords k
-          INNER JOIN article_keyword_links akl ON k.id = akl.keyword_id
+          FROM defined_terms k
+          INNER JOIN article_keywords akl ON k.id = akl.keyword_id
           WHERE akl.article_id = ?
           ORDER BY akl.relevance_score DESC
           LIMIT 8
@@ -948,8 +948,8 @@ app.get("/api/feeds/personalized", async (c) => {
     for (const article of result.articles) {
       const keywordsResult = await c.env.DB.prepare(`
         SELECT k.id, k.name, k.slug
-        FROM keywords k
-        INNER JOIN article_keyword_links akl ON k.id = akl.keyword_id
+        FROM defined_terms k
+        INNER JOIN article_keywords akl ON k.id = akl.keyword_id
         WHERE akl.article_id = ?
         ORDER BY akl.relevance_score DESC
         LIMIT 8
@@ -1059,32 +1059,32 @@ app.get("/api/feeds/sectioned", async (c) => {
     const countryParams: string[] = [];
     if (countries && countries.length > 0) {
       const placeholders = countries.map(() => '?').join(',');
-      countryClause = ` AND country_id IN (${placeholders})`;
+      countryClause = ` AND about_country_id IN (${placeholders})`;
       countryParams.push(...countries);
     }
 
     // PERFORMANCE: Run independent queries in parallel
     // Phase 1: Fetch top stories and latest (independent of categories)
     const topStoriesQuery = `
-      SELECT id, title, slug, description, content_snippet, author, source, source_id,
-             published_at, image_url, original_url, category_id, country_id, view_count,
+      SELECT id, headline, slug, description, content_snippet, author_name, publisher_name, publisher_id,
+             date_published, image, main_entity_of_page, article_section_id, about_country_id, view_count,
              like_count, bookmark_count
       FROM articles
       WHERE status = 'published'
-        AND published_at > datetime('now', '-${CLUSTERING_CONFIG.TRENDING_HOURS} hours')
+        AND date_published > datetime('now', '-${CLUSTERING_CONFIG.TRENDING_HOURS} hours')
         ${countryClause}
-      ORDER BY (view_count + like_count * 3 + bookmark_count * 2) DESC, published_at DESC
+      ORDER BY (view_count + like_count * 3 + bookmark_count * 2) DESC, date_published DESC
       LIMIT ${CLUSTERING_CONFIG.TOP_STORIES_LIMIT}
     `;
 
     const latestQuery = `
-      SELECT id, title, slug, description, content_snippet, author, source, source_id,
-             published_at, image_url, original_url, category_id, country_id, view_count,
+      SELECT id, headline, slug, description, content_snippet, author_name, publisher_name, publisher_id,
+             date_published, image, main_entity_of_page, article_section_id, about_country_id, view_count,
              like_count, bookmark_count
       FROM articles
       WHERE status = 'published'
         ${countryClause}
-      ORDER BY published_at DESC
+      ORDER BY date_published DESC
       LIMIT ${CLUSTERING_CONFIG.LATEST_LIMIT}
     `;
 
@@ -1158,21 +1158,21 @@ app.get("/api/feeds/sectioned", async (c) => {
     const categoryPlaceholders = categoriesToFetch.map(() => '?').join(',');
     const batchCategoryQuery = `
       WITH ranked_articles AS (
-        SELECT id, title, slug, description, content_snippet, author, source, source_id,
-               published_at, image_url, original_url, category_id, country_id, view_count,
+        SELECT id, headline, slug, description, content_snippet, author_name, publisher_name, publisher_id,
+               date_published, image, main_entity_of_page, article_section_id, about_country_id, view_count,
                like_count, bookmark_count,
-               ROW_NUMBER() OVER (PARTITION BY category_id ORDER BY published_at DESC) as rn
+               ROW_NUMBER() OVER (PARTITION BY article_section_id ORDER BY date_published DESC) as rn
         FROM articles
         WHERE status = 'published'
-          AND category_id IN (${categoryPlaceholders})
+          AND article_section_id IN (${categoryPlaceholders})
           ${countryClause}
       )
-      SELECT id, title, slug, description, content_snippet, author, source, source_id,
-             published_at, image_url, original_url, category_id, country_id, view_count,
+      SELECT id, headline, slug, description, content_snippet, author_name, publisher_name, publisher_id,
+             date_published, image, main_entity_of_page, article_section_id, about_country_id, view_count,
              like_count, bookmark_count
       FROM ranked_articles
       WHERE rn <= ${CLUSTERING_CONFIG.CATEGORY_LIMIT}
-      ORDER BY category_id, published_at DESC
+      ORDER BY article_section_id, date_published DESC
     `;
 
     // Build "Your News" query for user preferences
@@ -1180,14 +1180,14 @@ app.get("/api/feeds/sectioned", async (c) => {
     if (preferredCategories.length > 0) {
       const catPlaceholders = preferredCategories.map(() => '?').join(',');
       const yourNewsQuery = `
-        SELECT id, title, slug, description, content_snippet, author, source, source_id,
-               published_at, image_url, original_url, category_id, country_id, view_count,
+        SELECT id, headline, slug, description, content_snippet, author_name, publisher_name, publisher_id,
+               date_published, image, main_entity_of_page, article_section_id, about_country_id, view_count,
                like_count, bookmark_count
         FROM articles
         WHERE status = 'published'
-          AND category_id IN (${catPlaceholders})
+          AND article_section_id IN (${catPlaceholders})
           ${countryClause}
-        ORDER BY published_at DESC
+        ORDER BY date_published DESC
         LIMIT ${CLUSTERING_CONFIG.YOUR_NEWS_LIMIT}
       `;
       yourNewsPromise = c.env.DB.prepare(yourNewsQuery)
@@ -1319,9 +1319,9 @@ app.get("/api/test-store", async (c) => {
     const slug = `test-article-${Date.now()}`;
     await c.env.DB.prepare(`
       INSERT INTO articles (
-        title, slug, description, content, author, source, source_id, source_url,
-        category_id, published_at, image_url, original_url, rss_guid,
-        created_at, updated_at
+        headline, slug, description, article_body, author_name, publisher_name, publisher_id, source_url,
+        article_section_id, date_published, image, main_entity_of_page, rss_guid,
+        created_at, date_modified
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
     `).bind(
       'Test Article Title',
@@ -1525,9 +1525,9 @@ app.post("/api/admin/backfill-keywords", async (c) => {
     // Get all articles that don't have keywords
     const articlesWithoutKeywords = await c.env.DB
       .prepare(`
-        SELECT a.id, a.title, a.description
+        SELECT a.id, a.headline, a.description
         FROM articles a
-        LEFT JOIN article_keyword_links akl ON a.id = akl.article_id
+        LEFT JOIN article_keywords akl ON a.id = akl.article_id
         WHERE akl.id IS NULL
         LIMIT 200
       `)
@@ -1563,7 +1563,7 @@ app.post("/api/admin/backfill-keywords", async (c) => {
 
             // Check if keyword exists
             const existingKeyword = await c.env.DB
-              .prepare('SELECT id FROM keywords WHERE id = ?')
+              .prepare('SELECT id FROM defined_terms WHERE id = ?')
               .bind(keywordId)
               .first();
 
@@ -1571,7 +1571,7 @@ app.post("/api/admin/backfill-keywords", async (c) => {
               // Create keyword
               await c.env.DB
                 .prepare(`
-                  INSERT INTO keywords (id, name, slug, type, enabled, created_at, updated_at)
+                  INSERT INTO defined_terms (id, name, slug, type, enabled, created_at, updated_at)
                   VALUES (?, ?, ?, 'general', 1, datetime('now'), datetime('now'))
                 `)
                 .bind(keywordId, keywordName, keywordSlug)
@@ -1581,7 +1581,7 @@ app.post("/api/admin/backfill-keywords", async (c) => {
             // Link keyword to article
             await c.env.DB
               .prepare(`
-                INSERT INTO article_keyword_links (article_id, keyword_id, relevance_score, source, created_at)
+                INSERT INTO article_keywords (article_id, keyword_id, relevance_score, source, created_at)
                 VALUES (?, ?, 1.0, 'auto', datetime('now'))
                 ON CONFLICT(article_id, keyword_id) DO NOTHING
               `)
@@ -1590,7 +1590,7 @@ app.post("/api/admin/backfill-keywords", async (c) => {
 
             // Update keyword article count
             await c.env.DB
-              .prepare('UPDATE keywords SET article_count = article_count + 1 WHERE id = ?')
+              .prepare('UPDATE defined_terms SET article_count = article_count + 1 WHERE id = ?')
               .bind(keywordId)
               .run();
 
@@ -1721,20 +1721,20 @@ app.post("/api/admin/migrate-article-countries", async (c) => {
     // Update articles to inherit country_id from their rss_source
     const result = await c.env.DB.prepare(`
       UPDATE articles
-      SET country_id = (
+      SET about_country_id = (
         SELECT rs.country_id
-        FROM rss_sources rs
-        WHERE rs.id = articles.source_id OR rs.name = articles.source
+        FROM organizations rs
+        WHERE rs.id = articles.publisher_id OR rs.name = articles.publisher_name
       )
-      WHERE country_id IS NULL OR country_id = ''
+      WHERE about_country_id IS NULL OR about_country_id = ''
     `).run();
 
     // Count how many were updated
     const countResult = await c.env.DB.prepare(`
       SELECT
         COUNT(*) as total,
-        COUNT(CASE WHEN country_id IS NOT NULL AND country_id != '' THEN 1 END) as with_country,
-        COUNT(CASE WHEN country_id IS NULL OR country_id = '' THEN 1 END) as without_country
+        COUNT(CASE WHEN about_country_id IS NOT NULL AND about_country_id != '' THEN 1 END) as with_country,
+        COUNT(CASE WHEN about_country_id IS NULL OR about_country_id = '' THEN 1 END) as without_country
       FROM articles
     `).first() as { total: number; with_country: number; without_country: number };
 
@@ -1810,7 +1810,7 @@ app.get("/api/admin/rss-config", async (c) => {
              daily_limit, articles_per_fetch, max_bulk_articles,
              quality_score, reliability_score, validation_status,
              last_fetched_at, fetch_count, error_count
-      FROM rss_sources 
+      FROM organizations
       ORDER BY priority DESC, name ASC
     `).all();
     
@@ -1868,7 +1868,7 @@ app.put("/api/admin/rss-source/:sourceId", async (c) => {
     
     // Update source configuration
     await services.d1Service.db.prepare(`
-      UPDATE rss_sources 
+      UPDATE organizations
       SET daily_limit = ?, 
           articles_per_fetch = ?, 
           max_bulk_articles = ?,
@@ -2036,7 +2036,7 @@ app.get("/api/admin/domains", async (c) => {
       SELECT td.id, td.domain, td.type, td.source_id, td.description, td.enabled, td.created_at,
              ns.name as source_name
       FROM trusted_domains td
-      LEFT JOIN news_sources ns ON td.source_id = ns.id
+      LEFT JOIN organizations ns ON td.source_id = ns.id
       WHERE 1=1
     `;
     const params: any[] = [];
@@ -2232,8 +2232,8 @@ app.get("/api/article/by-source-slug", async (c) => {
     // Fetch keywords for the article
     const keywordsResult = await c.env.DB.prepare(`
       SELECT k.id, k.name, k.slug
-      FROM keywords k
-      INNER JOIN article_keyword_links akl ON k.id = akl.keyword_id
+      FROM defined_terms k
+      INNER JOIN article_keywords akl ON k.id = akl.keyword_id
       WHERE akl.article_id = ?
       ORDER BY akl.relevance_score DESC
       LIMIT 10
@@ -2269,9 +2269,9 @@ app.get("/api/article/:id", async (c) => {
 
     // Fetch article by ID
     const article = await c.env.DB.prepare(`
-      SELECT id, title, slug, description, content, content_snippet, author, source, source_id,
-             published_at, updated_at, image_url, original_url, category_id, view_count,
-             like_count, bookmark_count, word_count, reading_time
+      SELECT id, headline, slug, description, article_body, content_snippet, author_name, publisher_name, publisher_id,
+             date_published, date_modified, image, main_entity_of_page, article_section_id, view_count,
+             like_count, bookmark_count, word_count, reading_time_minutes
       FROM articles
       WHERE id = ? AND status = 'published'
     `).bind(articleId).first();
@@ -2283,8 +2283,8 @@ app.get("/api/article/:id", async (c) => {
     // Fetch keywords for the article
     const keywordsResult = await c.env.DB.prepare(`
       SELECT k.id, k.name, k.slug
-      FROM keywords k
-      INNER JOIN article_keyword_links akl ON k.id = akl.keyword_id
+      FROM defined_terms k
+      INNER JOIN article_keywords akl ON k.id = akl.keyword_id
       WHERE akl.article_id = ?
       ORDER BY akl.relevance_score DESC
       LIMIT 10
@@ -2323,9 +2323,9 @@ app.get("/api/article/:id/related", async (c) => {
 
     // Get the source article's details
     const sourceArticle = await c.env.DB.prepare(`
-      SELECT id, title, category_id, source_id, published_at,
-             (SELECT GROUP_CONCAT(k.name) FROM keywords k
-              INNER JOIN article_keyword_links akl ON k.id = akl.keyword_id
+      SELECT id, headline, article_section_id, publisher_id, date_published,
+             (SELECT GROUP_CONCAT(k.name) FROM defined_terms k
+              INNER JOIN article_keywords akl ON k.id = akl.keyword_id
               WHERE akl.article_id = articles.id LIMIT 5) as keywords
       FROM articles WHERE id = ? AND status = 'published'
     `).bind(articleId).first();
@@ -2341,31 +2341,31 @@ app.get("/api/article/:id/related", async (c) => {
     // 4. Different source (cross-source coverage)
     const relatedResult = await c.env.DB.prepare(`
       WITH article_keywords AS (
-        SELECT keyword_id FROM article_keyword_links WHERE article_id = ?
+        SELECT keyword_id FROM article_keywords WHERE article_id = ?
       ),
       scored_articles AS (
         SELECT
-          a.id, a.title, a.slug, a.description, a.source, a.source_id,
-          a.published_at, a.image_url, a.category_id, a.view_count,
+          a.id, a.headline, a.slug, a.description, a.publisher_name, a.publisher_id,
+          a.date_published, a.image, a.article_section_id, a.view_count,
           -- Scoring: same category = 3pts, shared keywords = 2pts each, different source = 1pt, recency bonus
-          (CASE WHEN a.category_id = ? THEN 3 ELSE 0 END) +
-          (SELECT COUNT(*) * 2 FROM article_keyword_links akl
+          (CASE WHEN a.article_section_id = ? THEN 3 ELSE 0 END) +
+          (SELECT COUNT(*) * 2 FROM article_keywords akl
            WHERE akl.article_id = a.id AND akl.keyword_id IN (SELECT keyword_id FROM article_keywords)) +
-          (CASE WHEN a.source_id != ? THEN 1 ELSE 0 END) +
-          (CASE WHEN a.published_at > datetime('now', '-7 days') THEN 2 ELSE 0 END)
+          (CASE WHEN a.publisher_id != ? THEN 1 ELSE 0 END) +
+          (CASE WHEN a.date_published > datetime('now', '-7 days') THEN 2 ELSE 0 END)
           AS relevance_score,
           -- Flag if from different source (for "same story, different source" detection)
-          (CASE WHEN a.source_id != ? THEN 1 ELSE 0 END) AS is_cross_source
+          (CASE WHEN a.publisher_id != ? THEN 1 ELSE 0 END) AS is_cross_source
         FROM articles a
         WHERE a.id != ?
           AND a.status = 'published'
-          AND a.published_at > datetime('now', '-30 days')
+          AND a.date_published > datetime('now', '-30 days')
       )
-      SELECT id, title, slug, description, source, source_id, published_at,
-             image_url, category_id, view_count, relevance_score, is_cross_source
+      SELECT id, headline, slug, description, publisher_name, publisher_id, date_published,
+             image, article_section_id, view_count, relevance_score, is_cross_source
       FROM scored_articles
       WHERE relevance_score > 0
-      ORDER BY relevance_score DESC, published_at DESC
+      ORDER BY relevance_score DESC, date_published DESC
       LIMIT ?
     `).bind(
       articleId,
@@ -2393,7 +2393,7 @@ app.get("/api/stories/cluster/:articleId", async (c) => {
 
     // Get the source article
     const sourceArticle = await c.env.DB.prepare(`
-      SELECT id, title, category_id, source_id, published_at, content_hash
+      SELECT id, headline, article_section_id, publisher_id, date_published, content_hash
       FROM articles WHERE id = ? AND status = 'published'
     `).bind(articleId).first();
 
@@ -2407,25 +2407,25 @@ app.get("/api/stories/cluster/:articleId", async (c) => {
     // 3. Different sources to show cross-coverage
     const clusterResult = await c.env.DB.prepare(`
       WITH source_keywords AS (
-        SELECT keyword_id FROM article_keyword_links WHERE article_id = ?
+        SELECT keyword_id FROM article_keywords WHERE article_id = ?
       ),
       potential_matches AS (
         SELECT
-          a.id, a.title, a.slug, a.description, a.source, a.source_id,
-          a.published_at, a.image_url, a.category_id, a.view_count, a.content_hash,
+          a.id, a.headline, a.slug, a.description, a.publisher_name, a.publisher_id,
+          a.date_published, a.image, a.article_section_id, a.view_count, a.content_hash,
           -- Count shared keywords
-          (SELECT COUNT(*) FROM article_keyword_links akl
+          (SELECT COUNT(*) FROM article_keywords akl
            WHERE akl.article_id = a.id AND akl.keyword_id IN (SELECT keyword_id FROM source_keywords)) AS shared_keywords,
           -- Is this from a different source?
-          (CASE WHEN a.source_id != ? THEN 1 ELSE 0 END) AS is_different_source
+          (CASE WHEN a.publisher_id != ? THEN 1 ELSE 0 END) AS is_different_source
         FROM articles a
         WHERE a.id != ?
           AND a.status = 'published'
-          AND a.category_id = ?
-          AND a.published_at BETWEEN datetime(?, '-3 days') AND datetime(?, '+3 days')
+          AND a.article_section_id = ?
+          AND a.date_published BETWEEN datetime(?, '-3 days') AND datetime(?, '+3 days')
       )
-      SELECT id, title, slug, description, source, source_id, published_at,
-             image_url, category_id, view_count, shared_keywords, is_different_source,
+      SELECT id, headline, slug, description, publisher_name, publisher_id, date_published,
+             image, article_section_id, view_count, shared_keywords, is_different_source,
              (CASE WHEN content_hash = ? THEN 'duplicate' ELSE 'related' END) AS match_type
       FROM potential_matches
       WHERE shared_keywords >= 2 OR content_hash = ?
@@ -2433,7 +2433,7 @@ app.get("/api/stories/cluster/:articleId", async (c) => {
         CASE WHEN content_hash = ? THEN 0 ELSE 1 END,
         shared_keywords DESC,
         is_different_source DESC,
-        published_at DESC
+        date_published DESC
       LIMIT 10
     `).bind(
       articleId,
@@ -2480,24 +2480,24 @@ app.get("/api/stories/trending", async (c) => {
     const trendingResult = await c.env.DB.prepare(`
       WITH recent_articles AS (
         SELECT
-          a.id, a.title, a.slug, a.description, a.source, a.source_id,
-          a.published_at, a.image_url, a.category_id, a.view_count,
+          a.id, a.headline, a.slug, a.description, a.publisher_name, a.publisher_id,
+          a.date_published, a.image, a.article_section_id, a.view_count,
           a.like_count, a.bookmark_count
         FROM articles a
         WHERE a.status = 'published'
-          AND a.published_at > datetime('now', '-' || ? || ' hours')
+          AND a.date_published > datetime('now', '-' || ? || ' hours')
       ),
       keyword_groups AS (
         SELECT
           akl.keyword_id,
           k.name as keyword_name,
-          COUNT(DISTINCT ra.source_id) as source_count,
+          COUNT(DISTINCT ra.publisher_id) as source_count,
           COUNT(DISTINCT ra.id) as article_count,
           SUM(ra.view_count) as total_views,
           GROUP_CONCAT(DISTINCT ra.id) as article_ids
         FROM recent_articles ra
-        JOIN article_keyword_links akl ON ra.id = akl.article_id
-        JOIN keywords k ON akl.keyword_id = k.id
+        JOIN article_keywords akl ON ra.id = akl.article_id
+        JOIN defined_terms k ON akl.keyword_id = k.id
         WHERE k.category != 'meta'
         GROUP BY akl.keyword_id
         HAVING source_count >= 2
@@ -2517,10 +2517,10 @@ app.get("/api/stories/trending", async (c) => {
       const articleIds = t.article_ids.split(',').slice(0, 5);
 
       const articlesResult = await c.env.DB.prepare(`
-        SELECT id, title, slug, source, source_id, published_at, image_url
+        SELECT id, headline, slug, publisher_name, publisher_id, date_published, image
         FROM articles
         WHERE id IN (${articleIds.map(() => '?').join(',')})
-        ORDER BY published_at DESC
+        ORDER BY date_published DESC
       `).bind(...articleIds).all();
 
       trendingStories.push({
@@ -2552,28 +2552,28 @@ app.get("/api/news-bytes", async (c) => {
     const category = c.req.query("category");
 
     let query = `
-      SELECT id, title, slug, description, content_snippet, author, source,
-             published_at, image_url, original_url, category_id, view_count,
+      SELECT id, headline, slug, description, content_snippet, author_name, publisher_name,
+             date_published, image, main_entity_of_page, article_section_id, view_count,
              like_count, bookmark_count
       FROM articles
       WHERE status = 'published'
-      AND image_url IS NOT NULL
-      AND image_url != ''
+      AND image IS NOT NULL
+      AND image != ''
     `;
 
     let countQuery = `
       SELECT COUNT(*) as total FROM articles
       WHERE status = 'published'
-      AND image_url IS NOT NULL
-      AND image_url != ''
+      AND image IS NOT NULL
+      AND image != ''
     `;
 
     if (category && category !== 'all') {
-      query += ` AND category_id = ?`;
-      countQuery += ` AND category_id = ?`;
+      query += ` AND article_section_id = ?`;
+      countQuery += ` AND article_section_id = ?`;
     }
 
-    query += ` ORDER BY published_at DESC LIMIT ? OFFSET ?`;
+    query += ` ORDER BY date_published DESC LIMIT ? OFFSET ?`;
 
     const articlesResult = category && category !== 'all' ?
       await c.env.DB.prepare(query).bind(category, limit, offset).all() :
@@ -2638,16 +2638,16 @@ app.get("/api/search", async (c) => {
       const searchTerm = `%${query.trim()}%`;
 
       let searchQuery = `
-        SELECT DISTINCT a.id, a.title, a.slug, a.description, a.content_snippet,
-               a.author, a.source, a.published_at, a.image_url, a.original_url,
-               a.category_id, a.view_count, a.like_count, a.bookmark_count
+        SELECT DISTINCT a.id, a.headline, a.slug, a.description, a.content_snippet,
+               a.author_name, a.publisher_name, a.date_published, a.image, a.main_entity_of_page,
+               a.article_section_id, a.view_count, a.like_count, a.bookmark_count
         FROM articles a
         LEFT JOIN article_keywords ak ON a.id = ak.article_id
         WHERE a.status = 'published'
         AND (
-          a.title LIKE ? OR
+          a.headline LIKE ? OR
           a.description LIKE ? OR
-          a.content LIKE ? OR
+          a.article_body LIKE ? OR
           a.content_snippet LIKE ? OR
           ak.keyword LIKE ?
         )
@@ -2656,11 +2656,11 @@ app.get("/api/search", async (c) => {
       const params: (string | number)[] = [searchTerm, searchTerm, searchTerm, searchTerm, searchTerm];
 
       if (category && category !== 'all') {
-        searchQuery += ` AND a.category_id = ?`;
+        searchQuery += ` AND a.article_section_id = ?`;
         params.push(category);
       }
 
-      searchQuery += ` ORDER BY a.published_at DESC LIMIT ?`;
+      searchQuery += ` ORDER BY a.date_published DESC LIMIT ?`;
       params.push(limit);
 
       const results = await c.env.DB.prepare(searchQuery).bind(...params).all();
@@ -2727,14 +2727,14 @@ app.get("/api/sources", async (c) => {
         rs.last_error,
         COALESCE(counts.article_count, 0) as article_count,
         counts.latest_article_at
-      FROM rss_sources rs
+      FROM organizations rs
       LEFT JOIN (
-        SELECT source_id,
+        SELECT publisher_id,
                COUNT(*) as article_count,
-               MAX(published_at) as latest_article_at
+               MAX(date_published) as latest_article_at
         FROM articles
-        GROUP BY source_id
-      ) counts ON counts.source_id = rs.id
+        GROUP BY publisher_id
+      ) counts ON counts.publisher_id = rs.id
       WHERE rs.enabled = 1
       ORDER BY article_count DESC, rs.priority DESC, rs.name ASC
     `).all();
@@ -2757,7 +2757,7 @@ app.get("/api/keywords", async (c) => {
     // Get top keywords ordered by article_count
     const keywords = await c.env.DB.prepare(`
       SELECT id, name, slug, type, article_count
-      FROM keywords
+      FROM defined_terms
       WHERE enabled = 1 AND article_count > 0
       ORDER BY article_count DESC
       LIMIT ?
@@ -3304,7 +3304,7 @@ app.get("/api/user/me/follows/authors", async (c) => {
              a.follower_count, a.article_count, a.is_verified,
              uf.followed_at
       FROM user_follows uf
-      JOIN authors a ON uf.follow_id = CAST(a.id AS TEXT)
+      JOIN persons a ON uf.follow_id = CAST(a.id AS TEXT)
       WHERE uf.user_id = ? AND uf.follow_type = 'author'
       ORDER BY uf.followed_at DESC
       LIMIT ? OFFSET ?
@@ -3338,7 +3338,7 @@ app.get("/api/user/me/follows/sources", async (c) => {
              ns.follower_count, ns.article_count, ns.country_id,
              uf.followed_at
       FROM user_follows uf
-      JOIN news_sources ns ON uf.follow_id = ns.id
+      JOIN organizations ns ON uf.follow_id = ns.id
       WHERE uf.user_id = ? AND uf.follow_type = 'source'
       ORDER BY uf.followed_at DESC
       LIMIT ? OFFSET ?
@@ -3368,7 +3368,7 @@ app.get("/api/user/me/follows/categories", async (c) => {
       SELECT c.id, c.name, c.emoji, c.color, c.description,
              uf.followed_at
       FROM user_follows uf
-      JOIN categories c ON uf.follow_id = c.id
+      JOIN article_sections c ON uf.follow_id = c.id
       WHERE uf.user_id = ? AND uf.follow_type = 'category'
       ORDER BY uf.followed_at DESC
     `).bind(userId).all();
@@ -3642,10 +3642,10 @@ app.get("/api/admin/ai-pipeline-status", async (c) => {
         COUNT(DISTINCT CASE WHEN a.verification_status = 'verified' THEN a.id END) as verified_authors,
         COUNT(DISTINCT aa.article_id) as articles_with_authors,
         AVG(aa.confidence_score) as avg_confidence
-      FROM authors a
+      FROM persons a
       LEFT JOIN article_authors aa ON a.id = aa.author_id
     `).first();
-    
+
     // Get keyword extraction statistics  
     const keywordStats = await services.d1Service.db.prepare(`
       SELECT 
@@ -3653,7 +3653,7 @@ app.get("/api/admin/ai-pipeline-status", async (c) => {
         COUNT(DISTINCT ak.article_id) as articles_with_keywords,
         AVG(ak.confidence_score) as avg_keyword_confidence,
         MAX(k.usage_count) as most_used_keyword_count
-      FROM keywords k
+      FROM defined_terms k
       LEFT JOIN article_keywords ak ON k.id = ak.keyword_id
     `).first();
     
@@ -3920,34 +3920,34 @@ app.get("/api/admin/authors", async (c) => {
         a.*,
         COUNT(DISTINCT aa.article_id) as article_count,
         AVG(ar.quality_score) as avg_article_quality,
-        MAX(ar.published_at) as last_article_date
-      FROM authors a
+        MAX(ar.date_published) as last_article_date
+      FROM persons a
       LEFT JOIN article_authors aa ON a.id = aa.author_id
       LEFT JOIN articles ar ON aa.article_id = ar.id
     `;
-    
+
     const params = [];
     if (outlet) {
       query += ` WHERE a.outlet = ?`;
       params.push(outlet);
     }
-    
+
     query += `
       GROUP BY a.id
       ORDER BY article_count DESC, a.created_at DESC
       LIMIT ?
     `;
     params.push(limit);
-    
+
     const authors = await services.d1Service.db.prepare(query).bind(...params).all();
-    
+
     // Get outlets summary
     const outlets = await services.d1Service.db.prepare(`
-      SELECT 
+      SELECT
         outlet,
         COUNT(*) as author_count,
         SUM(article_count) as total_articles
-      FROM authors 
+      FROM persons
       WHERE outlet IS NOT NULL
       GROUP BY outlet
       ORDER BY author_count DESC
@@ -3990,11 +3990,11 @@ app.get("/api/admin/content-quality", async (c) => {
     // Top quality articles by category
     const topByCategory = await services.d1Service.db.prepare(`
       SELECT 
-        category,
-        title,
+        article_section_id,
+        headline,
         quality_score,
-        published_at,
-        (SELECT name FROM authors WHERE id = (
+        date_published,
+        (SELECT name FROM persons WHERE id = (
           SELECT author_id FROM article_authors WHERE article_id = articles.id LIMIT 1
         )) as author_name
       FROM articles 
@@ -4176,13 +4176,13 @@ app.get("/api/admin/authors/detailed", async (c) => {
         COUNT(DISTINCT ao.outlet_id) as outlet_count,
         COUNT(DISTINCT aa.article_id) as total_articles,
         AVG(ar.quality_score) as avg_quality,
-        MAX(ar.published_at) as last_article,
+        MAX(ar.date_published) as last_article,
         GROUP_CONCAT(DISTINCT ns.name) as outlets_list
-      FROM authors a
+      FROM persons a
       LEFT JOIN author_outlets ao ON a.id = ao.author_id
       LEFT JOIN article_authors aa ON a.id = aa.author_id
       LEFT JOIN articles ar ON aa.article_id = ar.id
-      LEFT JOIN news_sources ns ON ao.outlet_id = ns.id
+      LEFT JOIN organizations ns ON ao.outlet_id = ns.id
     `;
     
     const params = [];
@@ -4221,7 +4221,7 @@ app.get("/api/admin/authors/detailed", async (c) => {
         SELECT 
           a.normalized_name,
           COUNT(DISTINCT ao.outlet_id) as outlet_count
-        FROM authors a
+        FROM persons a
         LEFT JOIN author_outlets ao ON a.id = ao.author_id
         GROUP BY a.normalized_name
       ) a
@@ -4259,11 +4259,11 @@ app.get("/api/admin/categories/with-authors", async (c) => {
         COUNT(DISTINCT aa.article_id) as total_articles,
         AVG(ace.avg_quality_score) as category_quality,
         GROUP_CONCAT(DISTINCT a.name) as top_authors
-      FROM categories c
+      FROM article_sections c
       LEFT JOIN author_category_expertise ace ON c.id = ace.category_id
-      LEFT JOIN authors a ON ace.author_id = a.id AND ace.expertise_level IN ('expert', 'specialist')
+      LEFT JOIN persons a ON ace.author_id = a.id AND ace.expertise_level IN ('expert', 'specialist')
       LEFT JOIN article_authors aa ON a.id = aa.author_id
-      LEFT JOIN articles ar ON aa.article_id = ar.id AND ar.category = c.id
+      LEFT JOIN articles ar ON aa.article_id = ar.id AND ar.article_section_id = c.id
       GROUP BY c.id
       ORDER BY expert_authors DESC, total_articles DESC
     `).all();
@@ -5981,8 +5981,8 @@ app.get("/api/user/:username/bookmarks", async (c) => {
     }
 
     const bookmarksResult = await c.env.DB.prepare(`
-      SELECT a.id, a.title, a.slug, a.description, a.author, a.source,
-             a.source_id, a.category_id, a.published_at, a.image_url,
+      SELECT a.id, a.headline, a.slug, a.description, a.author_name, a.publisher_name,
+             a.publisher_id, a.article_section_id, a.date_published, a.image,
              b.created_at as bookmarked_at, b.tags, b.notes
       FROM user_bookmarks b
       INNER JOIN articles a ON b.article_id = a.id
@@ -6036,8 +6036,8 @@ app.get("/api/user/:username/likes", async (c) => {
     }
 
     const likesResult = await c.env.DB.prepare(`
-      SELECT a.id, a.title, a.slug, a.description, a.author, a.source,
-             a.source_id, a.category_id, a.published_at, a.image_url,
+      SELECT a.id, a.headline, a.slug, a.description, a.author_name, a.publisher_name,
+             a.publisher_id, a.article_section_id, a.date_published, a.image,
              l.created_at as liked_at
       FROM user_likes l
       INNER JOIN articles a ON l.article_id = a.id
@@ -6091,8 +6091,8 @@ app.get("/api/user/:username/history", async (c) => {
     }
 
     const historyResult = await c.env.DB.prepare(`
-      SELECT a.id, a.title, a.slug, a.description, a.author, a.source,
-             a.source_id, a.category_id, a.published_at, a.image_url,
+      SELECT a.id, a.headline, a.slug, a.description, a.author_name, a.publisher_name,
+             a.publisher_id, a.article_section_id, a.date_published, a.image,
              h.started_at, h.last_position_at, h.reading_time,
              h.scroll_depth, h.completion_percentage
       FROM user_reading_history h
@@ -6180,12 +6180,12 @@ app.get("/api/search", async (c) => {
     // Search articles
     if (type === 'all' || type === 'articles') {
       const articlesResult = await c.env.DB.prepare(`
-        SELECT a.id, a.title, a.slug, a.description, a.author, a.source,
-               a.source_id, a.category_id, a.published_at, a.image_url
+        SELECT a.id, a.headline, a.slug, a.description, a.author_name, a.publisher_name,
+               a.publisher_id, a.article_section_id, a.date_published, a.image
         FROM articles a
         WHERE a.status = 'published'
-          AND (a.title LIKE ? OR a.description LIKE ? OR a.author LIKE ?)
-        ORDER BY a.published_at DESC
+          AND (a.headline LIKE ? OR a.description LIKE ? OR a.author_name LIKE ?)
+        ORDER BY a.date_published DESC
         LIMIT ? OFFSET ?
       `).bind(searchPattern, searchPattern, searchPattern, limit, offset).all();
 
@@ -6196,8 +6196,8 @@ app.get("/api/search", async (c) => {
     if (type === 'all' || type === 'keywords') {
       const keywordsResult = await c.env.DB.prepare(`
         SELECT k.id, k.name, k.slug, COUNT(akl.article_id) as article_count
-        FROM keywords k
-        LEFT JOIN article_keyword_links akl ON k.id = akl.keyword_id
+        FROM defined_terms k
+        LEFT JOIN article_keywords akl ON k.id = akl.keyword_id
         WHERE k.name LIKE ?
         GROUP BY k.id
         ORDER BY article_count DESC
@@ -6211,7 +6211,7 @@ app.get("/api/search", async (c) => {
     if (type === 'all' || type === 'categories') {
       const categoriesResult = await c.env.DB.prepare(`
         SELECT id, name, emoji, color, description
-        FROM categories
+        FROM article_sections
         WHERE enabled = TRUE AND (name LIKE ? OR description LIKE ?)
         ORDER BY name ASC
       `).bind(searchPattern, searchPattern).all();
@@ -6222,8 +6222,8 @@ app.get("/api/search", async (c) => {
     // Search authors
     if (type === 'all' || type === 'authors') {
       const authorsResult = await c.env.DB.prepare(`
-        SELECT DISTINCT author FROM articles
-        WHERE author IS NOT NULL AND author != '' AND author LIKE ?
+        SELECT DISTINCT author_name FROM articles
+        WHERE author_name IS NOT NULL AND author_name != '' AND author_name LIKE ?
         ORDER BY author ASC
         LIMIT ?
       `).bind(searchPattern, limit).all();
@@ -6251,21 +6251,21 @@ app.get("/api/search/by-keyword/:keyword", async (c) => {
     const offset = parseInt(c.req.query("offset") || "0");
 
     const articlesResult = await c.env.DB.prepare(`
-      SELECT a.id, a.title, a.slug, a.description, a.author, a.source,
-             a.source_id, a.category_id, a.published_at, a.image_url
+      SELECT a.id, a.headline, a.slug, a.description, a.author_name, a.publisher_name,
+             a.publisher_id, a.article_section_id, a.date_published, a.image
       FROM articles a
-      INNER JOIN article_keyword_links akl ON a.id = akl.article_id
-      INNER JOIN keywords k ON akl.keyword_id = k.id
+      INNER JOIN article_keywords akl ON a.id = akl.article_id
+      INNER JOIN defined_terms k ON akl.keyword_id = k.id
       WHERE a.status = 'published' AND k.slug = ?
-      ORDER BY a.published_at DESC
+      ORDER BY a.date_published DESC
       LIMIT ? OFFSET ?
     `).bind(keyword, limit, offset).all();
 
     const totalResult = await c.env.DB.prepare(`
       SELECT COUNT(*) as total
       FROM articles a
-      INNER JOIN article_keyword_links akl ON a.id = akl.article_id
-      INNER JOIN keywords k ON akl.keyword_id = k.id
+      INNER JOIN article_keywords akl ON a.id = akl.article_id
+      INNER JOIN defined_terms k ON akl.keyword_id = k.id
       WHERE a.status = 'published' AND k.slug = ?
     `).bind(keyword).first();
 
@@ -6294,17 +6294,17 @@ app.get("/api/search/by-author", async (c) => {
     }
 
     const articlesResult = await c.env.DB.prepare(`
-      SELECT id, title, slug, description, author, source, source_id,
-             category_id, published_at, image_url
+      SELECT id, headline, slug, description, author_name, publisher_name, publisher_id,
+             article_section_id, date_published, image
       FROM articles
-      WHERE status = 'published' AND author = ?
-      ORDER BY published_at DESC
+      WHERE status = 'published' AND author_name = ?
+      ORDER BY date_published DESC
       LIMIT ? OFFSET ?
     `).bind(author, limit, offset).all();
 
     const totalResult = await c.env.DB.prepare(`
       SELECT COUNT(*) as total FROM articles
-      WHERE status = 'published' AND author = ?
+      WHERE status = 'published' AND author_name = ?
     `).bind(author).first();
 
     return c.json({
@@ -6406,8 +6406,8 @@ app.get("/api/seo/article/:slug", async (c) => {
   try {
     const slug = c.req.param("slug");
     const article = await c.env.DB.prepare(`
-      SELECT id, slug, title, description, content, author, category, tags,
-             image_url, optimized_image_url, published_at, updated_at, word_count, source
+      SELECT id, slug, headline, description, article_body, author_name, article_section_id, tags,
+             image, optimized_image_url, date_published, date_modified, word_count, publisher_name
       FROM articles
       WHERE slug = ? AND status = 'published'
     `).bind(slug).first();
@@ -6455,7 +6455,7 @@ app.get("/api/seo/category/:category", async (c) => {
     // Get article count for category
     const countResult = await c.env.DB.prepare(`
       SELECT COUNT(*) as count FROM articles
-      WHERE category = ? AND status = 'published'
+      WHERE article_section_id = ? AND status = 'published'
     `).bind(category).first();
 
     const seoService = new SEOService(c.env.DB);

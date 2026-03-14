@@ -553,7 +553,7 @@ export class UserBehaviorDO {
         await db
           .prepare(`
             INSERT INTO analytics_events (
-              event_type, event_data, user_id, article_id, category_id, created_at
+              event_type, event_data, user_id, article_id, article_section_id, created_at
             ) VALUES (?, ?, ?, ?, ?, datetime('now'))
           `)
           .bind(

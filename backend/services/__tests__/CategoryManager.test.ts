@@ -297,7 +297,7 @@ describe('CategoryManager', () => {
         const trending = await manager.getTrendingCategories(5);
 
         expect(trending).toHaveLength(2);
-        expect(trending[0].category_id).toBe('politics');
+        expect(trending[0].article_section_id).toBe('politics');
       });
 
       it('should fallback to article counts when no engagement data', async () => {

@@ -28,7 +28,7 @@ export interface LiveMetrics {
   activeUsers: number
   pageViews: number
   articlesRead: number
-  topArticles: Array<{ id: number; title: string; views: number }>
+  topArticles: Array<{ id: number; headline: string; views: number }>
   topCategories: Array<{ id: string; name: string; views: number }>
   realtimeEvents: AnalyticsEvent[]
   lastUpdated: number
@@ -232,15 +232,15 @@ export class RealtimeAnalyticsDO {
    * Update top articles ranking
    */
   private updateTopArticles(event: AnalyticsEvent): void {
-    if (!event.articleId || !event.data.title) return
-    
+    if (!event.articleId || !event.data.headline) return
+
     const existing = this.liveMetrics.topArticles.find(a => a.id === event.articleId)
     if (existing) {
       existing.views++
     } else {
       this.liveMetrics.topArticles.push({
         id: event.articleId,
-        title: event.data.title,
+        headline: event.data.headline,
         views: 1
       })
     }
@@ -324,8 +324,8 @@ export class RealtimeAnalyticsDO {
         await db
           .prepare(`
             INSERT INTO analytics_events (
-              event_type, event_data, user_id, session_id, article_id, 
-              category_id, ip_address, user_agent, referer, device_type, 
+              event_type, event_data, user_id, session_id, article_id,
+              article_section_id, ip_address, user_agent, referer, device_type, 
               browser, os, country, city, created_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
           `)
@@ -393,10 +393,10 @@ export class RealtimeAnalyticsDO {
       
       // Top categories
       db.prepare(`
-        SELECT category_id, COUNT(*) as views
-        FROM analytics_events 
+        SELECT article_section_id, COUNT(*) as views
+        FROM analytics_events
         WHERE event_type = 'article_view' AND ${timeCondition}
-        GROUP BY category_id
+        GROUP BY article_section_id
         ORDER BY views DESC
         LIMIT 5
       `).all(),

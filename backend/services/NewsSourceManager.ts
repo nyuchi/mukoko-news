@@ -25,8 +25,8 @@ export interface NewsSource {
   url: string;
   rss_url?: string;
   base_domain: string;
-  category: string;
-  country: string;
+  article_section_id: string;
+  area_served: string;
   language: string;
   enabled: boolean;
   priority: number;
@@ -71,7 +71,7 @@ export class NewsSourceManager {
   async getSourceById(sourceId: string): Promise<NewsSource | null> {
     try {
       const result = await this.db
-        .prepare('SELECT * FROM rss_sources WHERE id = ?')
+        .prepare('SELECT * FROM organizations WHERE id = ?')
         .bind(sourceId)
         .first();
 
@@ -93,8 +93,8 @@ export class NewsSourceManager {
   async getAllSources(options?: { enabledOnly?: boolean }): Promise<NewsSource[]> {
     try {
       const query = options?.enabledOnly
-        ? 'SELECT * FROM rss_sources WHERE enabled = 1 ORDER BY priority DESC, name ASC'
-        : 'SELECT * FROM rss_sources ORDER BY priority DESC, name ASC';
+        ? 'SELECT * FROM organizations WHERE enabled = 1 ORDER BY priority DESC, name ASC'
+        : 'SELECT * FROM organizations ORDER BY priority DESC, name ASC';
 
       const result = await this.db.prepare(query).all();
       const validated = validateNewsSourceRows(result.results);
@@ -116,8 +116,8 @@ export class NewsSourceManager {
       url: row.url,
       rss_url: row.rss_url,
       base_domain: row.base_domain || new URL(row.url).hostname,
-      category: row.category,
-      country: row.country || 'ZW',
+      article_section_id: row.article_section_id,
+      area_served: row.area_served || 'ZW',
       language: row.language || 'en',
       enabled: row.enabled,
       priority: row.priority,
@@ -405,7 +405,7 @@ export class NewsSourceManager {
 
       // Check if source already exists by URL or name
       const existingSource = await this.db
-        .prepare('SELECT id FROM rss_sources WHERE url = ? OR name = ?')
+        .prepare('SELECT id FROM organizations WHERE url = ? OR name = ?')
         .bind(websiteUrl, sourceName)
         .first();
 
@@ -458,8 +458,8 @@ export class NewsSourceManager {
         url: websiteUrl,
         rss_url: bestFeed,
         base_domain: baseDomain,
-        category: category,
-        country: 'ZW', // Zimbabwe
+        article_section_id: category,
+        area_served: 'ZW', // Zimbabwe
         language: bestValidation.language_detected || 'en',
         enabled: true,
         priority: priority,
@@ -478,15 +478,15 @@ export class NewsSourceManager {
       // Insert into database
       await this.db
         .prepare(`
-          INSERT INTO rss_sources (
-            id, name, url, category, enabled, priority, metadata
+          INSERT INTO organizations (
+            id, name, rss_feed_url, article_section_id, enabled, priority, metadata
           ) VALUES (?, ?, ?, ?, ?, ?, ?)
         `)
         .bind(
-          source.id, source.name, source.rss_url, source.category, source.enabled ? 1 : 0,
+          source.id, source.name, source.rss_url, source.article_section_id, source.enabled ? 1 : 0,
           source.priority, JSON.stringify({
             base_domain: source.base_domain,
-            country: source.country,
+            area_served: source.area_served,
             language: source.language,
             quality_score: source.quality_score,
             validation_status: source.validation_status,
@@ -531,7 +531,7 @@ export class NewsSourceManager {
         
         await this.db
           .prepare(`
-            UPDATE rss_sources 
+            UPDATE organizations 
             SET success_count = success_count + 1,
                 reliability_score = CASE 
                   WHEN reliability_score < 90 THEN reliability_score + 2
@@ -548,7 +548,7 @@ export class NewsSourceManager {
       } else {
         await this.db
           .prepare(`
-            UPDATE rss_sources 
+            UPDATE organizations 
             SET error_count = error_count + 1,
                 reliability_score = CASE 
                   WHEN reliability_score > 10 THEN reliability_score - 5
@@ -579,7 +579,7 @@ export class NewsSourceManager {
         .prepare(`
           SELECT reliability_score, freshness_score, success_count, error_count,
                  last_successful_fetch
-          FROM rss_sources WHERE id = ?
+          FROM organizations WHERE id = ?
         `)
         .bind(sourceId)
         .first();
@@ -614,7 +614,7 @@ export class NewsSourceManager {
 
       // Update quality score
       await this.db
-        .prepare('UPDATE rss_sources SET quality_score = ? WHERE id = ?')
+        .prepare('UPDATE organizations SET quality_score = ? WHERE id = ?')
         .bind(Math.round(qualityScore), sourceId)
         .run();
 
@@ -731,20 +731,20 @@ export class NewsSourceManager {
     try {
       // Use parseCountResult for all count queries
       const totalSourcesResult = await this.db
-        .prepare('SELECT COUNT(*) as count FROM rss_sources')
+        .prepare('SELECT COUNT(*) as count FROM organizations')
         .first();
 
       const activeSourcesResult = await this.db
-        .prepare('SELECT COUNT(*) as count FROM rss_sources WHERE enabled = 1')
+        .prepare('SELECT COUNT(*) as count FROM organizations WHERE enabled = 1')
         .first();
 
       const highQualitySourcesResult = await this.db
-        .prepare('SELECT COUNT(*) as count FROM rss_sources WHERE quality_score >= 70')
+        .prepare('SELECT COUNT(*) as count FROM organizations WHERE quality_score >= 70')
         .first();
 
       const sourcesNeedingAttention = await this.db
         .prepare(`
-          SELECT * FROM rss_sources
+          SELECT * FROM organizations
           WHERE quality_score < 50 OR error_count > success_count
           ORDER BY quality_score ASC
           LIMIT 10
@@ -753,7 +753,7 @@ export class NewsSourceManager {
 
       const topPerformers = await this.db
         .prepare(`
-          SELECT * FROM rss_sources
+          SELECT * FROM organizations
           WHERE enabled = 1
           ORDER BY quality_score DESC, reliability_score DESC
           LIMIT 10
@@ -762,7 +762,7 @@ export class NewsSourceManager {
 
       const recentAdditions = await this.db
         .prepare(`
-          SELECT * FROM rss_sources
+          SELECT * FROM organizations
           ORDER BY created_at DESC
           LIMIT 5
         `)
@@ -898,7 +898,7 @@ export class NewsSourceManager {
 
         // Check if source already exists
         const existing = await this.db.prepare(
-          'SELECT id FROM rss_sources WHERE id = ? OR url = ?'
+          'SELECT id FROM organizations WHERE id = ? OR url = ?'
         ).bind(sourceId, source.url).first();
 
         if (existing) {
@@ -908,7 +908,7 @@ export class NewsSourceManager {
 
         // Insert the RSS source directly
         await this.db.prepare(`
-          INSERT INTO rss_sources (id, name, url, category, enabled, priority, country_id, created_at, updated_at)
+          INSERT INTO organizations (id, name, rss_feed_url, article_section_id, enabled, priority, area_served, created_at, updated_at)
           VALUES (?, ?, ?, ?, 1, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         `).bind(
           sourceId,

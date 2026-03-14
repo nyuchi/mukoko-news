@@ -32,9 +32,9 @@ export class D1UserService {
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           user_id TEXT NOT NULL,
           article_id TEXT NOT NULL,
-          article_title TEXT,
-          article_source TEXT,
-          article_category TEXT,
+          article_headline TEXT,
+          article_publisher_name TEXT,
+          article_section_id TEXT,
           liked_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           UNIQUE(user_id, article_id),
           FOREIGN KEY (user_id) REFERENCES users(id)
@@ -47,13 +47,13 @@ export class D1UserService {
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           user_id TEXT NOT NULL,
           article_id TEXT NOT NULL,
-          article_title TEXT,
+          article_headline TEXT,
           article_description TEXT,
-          article_source TEXT,
-          article_category TEXT,
+          article_publisher_name TEXT,
+          article_section_id TEXT,
           article_link TEXT,
-          article_image_url TEXT,
-          article_pub_date DATETIME,
+          article_image TEXT,
+          article_date_published DATETIME,
           saved_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           UNIQUE(user_id, article_id),
           FOREIGN KEY (user_id) REFERENCES users(id)
@@ -66,9 +66,9 @@ export class D1UserService {
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           user_id TEXT NOT NULL,
           article_id TEXT NOT NULL,
-          article_title TEXT,
-          article_source TEXT,
-          article_category TEXT,
+          article_headline TEXT,
+          article_publisher_name TEXT,
+          article_section_id TEXT,
           read_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           time_spent INTEGER DEFAULT 0,
           FOREIGN KEY (user_id) REFERENCES users(id)
@@ -223,15 +223,15 @@ export class D1UserService {
       const articleId = article.id || article.link
       
       const result = await this.db.prepare(`
-        INSERT OR REPLACE INTO user_likes 
-        (user_id, article_id, article_title, article_source, article_category)
+        INSERT OR REPLACE INTO user_likes
+        (user_id, article_id, article_headline, article_publisher_name, article_section_id)
         VALUES (?, ?, ?, ?, ?)
       `).bind(
         userId,
         articleId,
-        article.title,
-        article.source,
-        article.category
+        article.headline,
+        article.publisher_name,
+        article.article_section_id
       ).run()
 
       if (result.success) {
@@ -309,20 +309,20 @@ export class D1UserService {
       const articleId = article.id || article.link
       
       const result = await this.db.prepare(`
-        INSERT OR REPLACE INTO user_bookmarks 
-        (user_id, article_id, article_title, article_description, article_source, 
-         article_category, article_link, article_image_url, article_pub_date)
+        INSERT OR REPLACE INTO user_bookmarks
+        (user_id, article_id, article_headline, article_description, article_publisher_name,
+         article_section_id, article_link, article_image, article_date_published)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
         userId,
         articleId,
-        article.title,
+        article.headline,
         article.description,
-        article.source,
-        article.category,
+        article.publisher_name,
+        article.article_section_id,
         article.link,
-        article.imageUrl,
-        article.pubDate
+        article.image,
+        article.date_published
       ).run()
 
       if (result.success) {
@@ -382,15 +382,15 @@ export class D1UserService {
       const articleId = article.id || article.link
       
       const result = await this.db.prepare(`
-        INSERT INTO user_reading_history 
-        (user_id, article_id, article_title, article_source, article_category, time_spent)
+        INSERT INTO user_reading_history
+        (user_id, article_id, article_headline, article_publisher_name, article_section_id, time_spent)
         VALUES (?, ?, ?, ?, ?, ?)
       `).bind(
         userId,
         articleId,
-        article.title,
-        article.source,
-        article.category,
+        article.headline,
+        article.publisher_name,
+        article.article_section_id,
         timeSpent
       ).run()
 
@@ -485,14 +485,14 @@ export class D1UserService {
       await this.initialize()
 
       const stmt = this.db.prepare(`
-        INSERT OR REPLACE INTO user_likes 
-        (user_id, article_id, article_title, article_source, article_category)
+        INSERT OR REPLACE INTO user_likes
+        (user_id, article_id, article_headline, article_publisher_name, article_section_id)
         VALUES (?, ?, ?, ?, ?)
       `)
 
       const batch = articles.map(article => {
         const articleId = article.id || article.link
-        return stmt.bind(userId, articleId, article.title, article.source, article.category)
+        return stmt.bind(userId, articleId, article.headline, article.publisher_name, article.article_section_id)
       })
 
       const results = await this.db.batch(batch)
@@ -514,18 +514,18 @@ export class D1UserService {
       await this.initialize()
 
       const stmt = this.db.prepare(`
-        INSERT OR REPLACE INTO user_bookmarks 
-        (user_id, article_id, article_title, article_description, article_source, 
-         article_category, article_link, article_image_url, article_pub_date)
+        INSERT OR REPLACE INTO user_bookmarks
+        (user_id, article_id, article_headline, article_description, article_publisher_name,
+         article_section_id, article_link, article_image, article_date_published)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
 
       const batch = articles.map(article => {
         const articleId = article.id || article.link
         return stmt.bind(
-          userId, articleId, article.title, article.description,
-          article.source, article.category, article.link,
-          article.imageUrl, article.pubDate
+          userId, articleId, article.headline, article.description,
+          article.publisher_name, article.article_section_id, article.link,
+          article.image, article.date_published
         )
       })
 

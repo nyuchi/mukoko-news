@@ -9,8 +9,8 @@ interface ScraperConfig {
 }
 
 interface ArticleFilters {
-  category?: string;
-  source?: string;
+  article_section_id?: string;
+  publisher_name?: string;
   countries?: string[];  // Pan-African support: filter by country IDs
   limit?: number;
   offset?: number;
@@ -133,29 +133,29 @@ export class ArticleService {
   // Insert or update article with slug
   async upsertArticle(articleData) {
     try {
-      if (!articleData || !articleData.title) {
-        throw new Error('Article title is required')
+      if (!articleData || !articleData.headline) {
+        throw new Error('Article headline is required')
       }
 
-      // Generate slug from title
-      const baseSlug = this.generateSlug(articleData.title)
+      // Generate slug from headline
+      const baseSlug = this.generateSlug(articleData.headline)
       if (!baseSlug) {
-        throw new Error('Unable to generate slug from title')
+        throw new Error('Unable to generate slug from headline')
       }
 
       // Ensure slug is unique
       const slug = await this.ensureUniqueSlug(baseSlug)
 
       // Calculate word count and reading time
-      const content = articleData.content || ''
-      const wordCount = content ? content.split(/\s+/).filter(word => word.length > 0).length : 0
-      const readingTime = this.calculateReadingTime(content)
+      const articleBody = articleData.article_body || ''
+      const wordCount = articleBody ? articleBody.split(/\s+/).filter(word => word.length > 0).length : 0
+      const readingTime = this.calculateReadingTime(articleBody)
 
       // Prepare search content for full-text search
       const searchContent = [
-        articleData.title,
+        articleData.headline,
         articleData.description,
-        content,
+        articleBody,
         articleData.tags
       ].filter(Boolean).join(' ')
 
@@ -167,10 +167,10 @@ export class ArticleService {
         ).bind(articleData.rss_guid).first()
       }
 
-      if (!existingArticle && articleData.original_url) {
+      if (!existingArticle && articleData.main_entity_of_page) {
         existingArticle = await this.db.prepare(
-          'SELECT id, slug FROM articles WHERE original_url = ?'
-        ).bind(articleData.original_url).first()
+          'SELECT id, slug FROM articles WHERE main_entity_of_page = ?'
+        ).bind(articleData.main_entity_of_page).first()
       }
 
       const now = new Date().toISOString()
@@ -179,31 +179,29 @@ export class ArticleService {
         // Update existing article
         const result = await this.db.prepare(`
           UPDATE articles SET
-            title = ?, description = ?, content = ?, author = ?,
-            source = ?, source_url = ?, category = ?, country_id = ?, tags = ?,
-            published_at = ?, updated_at = ?, word_count = ?, reading_time = ?,
-            image_url = ?, optimized_image_url = ?, status = ?, priority = ?,
-            original_url = ?, content_search = ?
+            headline = ?, description = ?, article_body = ?, author_name = ?,
+            publisher_name = ?, main_entity_of_page = ?, article_section_id = ?, about_country_id = ?, tags = ?,
+            date_published = ?, date_modified = ?, word_count = ?, reading_time_minutes = ?,
+            image = ?, status = ?, priority = ?,
+            content_search = ?
           WHERE id = ?
         `).bind(
-          articleData.title,
+          articleData.headline,
           articleData.description || '',
-          content,
-          articleData.author || '',
-          articleData.source || '',
-          articleData.source_url || '',
-          articleData.category || 'general',
-          articleData.country_id || 'ZW',  // Pan-African support: default to Zimbabwe
+          articleBody,
+          articleData.author_name || '',
+          articleData.publisher_name || '',
+          articleData.main_entity_of_page || '',
+          articleData.article_section_id || 'general',
+          articleData.about_country_id || 'ZW',  // Pan-African support: default to Zimbabwe
           articleData.tags || '',
-          articleData.published_at || now,
+          articleData.date_published || now,
           now,
           wordCount,
           readingTime,
-          articleData.image_url || '',
-          articleData.optimized_image_url || '',
+          articleData.image || '',
           articleData.status || 'published',
           articleData.priority || 0,
-          articleData.original_url || '',
           searchContent,
           existingArticle.id
         ).run()
@@ -218,32 +216,30 @@ export class ArticleService {
         // Insert new article
         const result = await this.db.prepare(`
           INSERT INTO articles (
-            slug, title, description, content, author, source, source_url,
-            category, country_id, tags, published_at, created_at, updated_at, word_count,
-            reading_time, image_url, optimized_image_url, status, priority,
-            original_url, rss_guid, content_search
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            slug, headline, description, article_body, author_name, publisher_name, main_entity_of_page,
+            article_section_id, about_country_id, tags, date_published, date_created, date_modified, word_count,
+            reading_time_minutes, image, status, priority,
+            rss_guid, content_search
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).bind(
           slug,
-          articleData.title,
+          articleData.headline,
           articleData.description || '',
-          content,
-          articleData.author || '',
-          articleData.source || '',
-          articleData.source_url || '',
-          articleData.category || 'general',
-          articleData.country_id || 'ZW',  // Pan-African support: default to Zimbabwe
+          articleBody,
+          articleData.author_name || '',
+          articleData.publisher_name || '',
+          articleData.main_entity_of_page || '',
+          articleData.article_section_id || 'general',
+          articleData.about_country_id || 'ZW',  // Pan-African support: default to Zimbabwe
           articleData.tags || '',
-          articleData.published_at || now,
+          articleData.date_published || now,
           now,
           now,
           wordCount,
           readingTime,
-          articleData.image_url || '',
-          articleData.optimized_image_url || '',
+          articleData.image || '',
           articleData.status || 'published',
           articleData.priority || 0,
-          articleData.original_url || '',
           articleData.rss_guid || '',
           searchContent
         ).run()
@@ -289,8 +285,8 @@ export class ArticleService {
 
   // Get articles with pagination
   async getArticles(options: {
-    category?: string | null;
-    source?: string | null;
+    article_section_id?: string | null;
+    publisher_name?: string | null;
     countries?: string[] | null;  // Pan-African support: filter by country IDs
     limit?: number;
     offset?: number;
@@ -301,12 +297,12 @@ export class ArticleService {
   } = {}) {
     try {
       const {
-        category = null,
-        source = null,
+        article_section_id = null,
+        publisher_name = null,
         countries = null,
         limit = 25,
         offset = 0,
-        orderBy = 'published_at',
+        orderBy = 'date_published',
         orderDirection = 'DESC',
         status = 'published',
         search = null
@@ -315,20 +311,20 @@ export class ArticleService {
       let query = 'SELECT * FROM articles WHERE status = ?'
       const params: (string | number)[] = [status]
 
-      if (category) {
-        query += ' AND category = ?'
-        params.push(category)
+      if (article_section_id) {
+        query += ' AND article_section_id = ?'
+        params.push(article_section_id)
       }
 
-      if (source) {
-        query += ' AND source = ?'
-        params.push(source)
+      if (publisher_name) {
+        query += ' AND publisher_name = ?'
+        params.push(publisher_name)
       }
 
       // Pan-African support: filter by countries
       if (countries && countries.length > 0) {
         const placeholders = countries.map(() => '?').join(',')
-        query += ` AND country_id IN (${placeholders})`
+        query += ` AND about_country_id IN (${placeholders})`
         params.push(...countries)
       }
 
@@ -374,7 +370,7 @@ export class ArticleService {
             results.push(result)
           } catch (error) {
             errors.push({
-              article: articleData.title || 'Unknown',
+              article: articleData.headline || 'Unknown',
               error: error.message
             })
             console.error('[ARTICLES] Error in bulk insert:', error)
@@ -447,7 +443,7 @@ export class ArticleService {
           COUNT(*) as total_articles,
           COUNT(CASE WHEN status = 'published' THEN 1 END) as published_articles,
           AVG(word_count) as avg_word_count,
-          AVG(reading_time) as avg_reading_time,
+          AVG(reading_time_minutes) as avg_reading_time,
           SUM(view_count) as total_views
         FROM articles
       `).first()
@@ -813,11 +809,11 @@ export class ArticleService {
 
   // Check if article content needs enhancement (is too short or generic)
   needsContentEnhancement(article) {
-    if (!article.description && !article.content) {
+    if (!article.description && !article.article_body) {
       return true
     }
 
-    const totalContent = (article.description || '') + (article.content || '')
+    const totalContent = (article.description || '') + (article.article_body || '')
     
     // Check if content is too short
     if (totalContent.length < 200) {
@@ -848,34 +844,34 @@ export class ArticleService {
   async enhanceArticle(article) {
     try {
       if (!this.needsContentEnhancement(article)) {
-        console.log(`ArticleService: Article "${article.title}" has sufficient content, skipping enhancement`)
+        console.log(`ArticleService: Article "${article.headline}" has sufficient content, skipping enhancement`)
         return article
       }
 
-      if (!article.link && !article.original_url) {
-        console.log(`ArticleService: Article "${article.title}" has no link, cannot enhance`)
+      if (!article.link && !article.main_entity_of_page) {
+        console.log(`ArticleService: Article "${article.headline}" has no link, cannot enhance`)
         return article
       }
 
-      const url = article.link || article.original_url
-      console.log(`ArticleService: Enhancing article "${article.title}" with scraped content`)
+      const url = article.link || article.main_entity_of_page
+      console.log(`ArticleService: Enhancing article "${article.headline}" with scraped content`)
       
       const scrapedData = await this.scrapeArticleContent(url)
       
       // Merge content and image intelligently
       const enhancedArticle = {
         ...article,
-        content: scrapedData.content,
+        article_body: scrapedData.content,
         enhanced: true,
         enhancedAt: new Date().toISOString(),
         originalDescription: article.description
       }
 
       // Add scraped image if article doesn't have one
-      if (scrapedData.image && !article.imageUrl && !article.image && !article.optimizedImageUrl) {
-        enhancedArticle.imageUrl = scrapedData.image
+      if (scrapedData.image && !article.image) {
+        enhancedArticle.image = scrapedData.image
         enhancedArticle.scrapedImage = true
-        console.log(`ArticleService: Added scraped image to article "${article.title}": ${scrapedData.image}`)
+        console.log(`ArticleService: Added scraped image to article "${article.headline}": ${scrapedData.image}`)
       }
 
       // If original description was very short, replace it with an excerpt from scraped content
@@ -886,11 +882,11 @@ export class ArticleService {
         enhancedArticle.description = excerpt
       }
 
-      console.log(`ArticleService: Successfully enhanced article "${article.title}"`)
+      console.log(`ArticleService: Successfully enhanced article "${article.headline}"`)
       return enhancedArticle
-      
+
     } catch (error) {
-      console.error(`ArticleService: Failed to enhance article "${article.title}":`, error.message)
+      console.error(`ArticleService: Failed to enhance article "${article.headline}":`, error.message)
       
       // Return original article with error flag
       return {
@@ -914,7 +910,7 @@ export class ArticleService {
       
       const batchPromises = batch.map(article => 
         this.enhanceArticle(article).catch(error => {
-          console.error(`ArticleService: Batch enhancement error for "${article.title}":`, error.message)
+          console.error(`ArticleService: Batch enhancement error for "${article.headline}":`, error.message)
           return {
             ...article,
             enhancementError: error.message,

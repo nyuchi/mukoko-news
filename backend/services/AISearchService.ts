@@ -6,11 +6,11 @@
 export interface SearchResult {
   id: number;
   slug: string;
-  title: string;
+  headline: string;
   description: string;
-  source: string;
-  category: string;
-  published_at: string;
+  publisher_name: string;
+  article_section_id: string;
+  date_published: string;
   score: number;
   highlights?: string[];
 }
@@ -76,7 +76,7 @@ export class AISearchService {
       // Fetch full article data from D1
       const placeholders = articleIds.map(() => '?').join(',');
       let sql = `
-        SELECT id, slug, title, description, source, category, published_at
+        SELECT id, slug, headline, description, publisher_name, article_section_id, date_published
         FROM articles
         WHERE id IN (${placeholders})
       `;
@@ -84,23 +84,23 @@ export class AISearchService {
 
       // Apply filters
       if (category) {
-        sql += ' AND category = ?';
+        sql += ' AND article_section_id = ?';
         params.push(category);
       }
       if (source) {
-        sql += ' AND source = ?';
+        sql += ' AND publisher_name = ?';
         params.push(source);
       }
       if (dateFrom) {
-        sql += ' AND published_at >= ?';
+        sql += ' AND date_published >= ?';
         params.push(dateFrom);
       }
       if (dateTo) {
-        sql += ' AND published_at <= ?';
+        sql += ' AND date_published <= ?';
         params.push(dateTo);
       }
 
-      sql += ' ORDER BY published_at DESC LIMIT ?';
+      sql += ' ORDER BY date_published DESC LIMIT ?';
       params.push(limit);
 
       const articles = await this.db.prepare(sql).bind(...params).all();
@@ -111,11 +111,11 @@ export class AISearchService {
         return {
           id: article.id,
           slug: article.slug,
-          title: article.title,
+          headline: article.headline,
           description: article.description,
-          source: article.source,
-          category: article.category,
-          published_at: article.published_at,
+          publisher_name: article.publisher_name,
+          article_section_id: article.article_section_id,
+          date_published: article.date_published,
           score: vectorMatch?.score || 0,
         };
       });
@@ -141,32 +141,32 @@ export class AISearchService {
     const { limit = 20, category, source, dateFrom, dateTo } = options;
 
     let sql = `
-      SELECT id, slug, title, description, source, category, published_at,
+      SELECT id, slug, headline, description, publisher_name, article_section_id, date_published,
              1.0 as score
       FROM articles
-      WHERE (title LIKE ? OR description LIKE ? OR content_search LIKE ?)
+      WHERE (headline LIKE ? OR description LIKE ? OR content_search LIKE ?)
     `;
     const searchPattern = `%${query}%`;
     const params: (string | number)[] = [searchPattern, searchPattern, searchPattern];
 
     if (category) {
-      sql += ' AND category = ?';
+      sql += ' AND article_section_id = ?';
       params.push(category);
     }
     if (source) {
-      sql += ' AND source = ?';
+      sql += ' AND publisher_name = ?';
       params.push(source);
     }
     if (dateFrom) {
-      sql += ' AND published_at >= ?';
+      sql += ' AND date_published >= ?';
       params.push(dateFrom);
     }
     if (dateTo) {
-      sql += ' AND published_at <= ?';
+      sql += ' AND date_published <= ?';
       params.push(dateTo);
     }
 
-    sql += ' ORDER BY published_at DESC LIMIT ?';
+    sql += ' ORDER BY date_published DESC LIMIT ?';
     params.push(limit);
 
     const articles = await this.db.prepare(sql).bind(...params).all();
@@ -174,11 +174,11 @@ export class AISearchService {
     return (articles.results || []).map((article: any) => ({
       id: article.id,
       slug: article.slug,
-      title: article.title,
+      headline: article.headline,
       description: article.description,
-      source: article.source,
-      category: article.category,
-      published_at: article.published_at,
+      publisher_name: article.publisher_name,
+      article_section_id: article.article_section_id,
+      date_published: article.date_published,
       score: article.score,
     }));
   }
@@ -222,13 +222,13 @@ export class AISearchService {
     try {
       // Get recent article titles
       const recentArticles = await this.db.prepare(`
-        SELECT title FROM articles
-        WHERE published_at >= datetime('now', '-24 hours')
-        ORDER BY published_at DESC
+        SELECT headline FROM articles
+        WHERE date_published >= datetime('now', '-24 hours')
+        ORDER BY date_published DESC
         LIMIT 50
       `).all();
 
-      const titles = (recentArticles.results || []).map((a: any) => a.title).join('\n');
+      const titles = (recentArticles.results || []).map((a: any) => a.headline).join('\n');
 
       const response = await this.ai.run('@cf/meta/llama-3.1-8b-instruct', {
         prompt: `Extract the ${limit} most important trending topics from these Zimbabwe news headlines. Return only the topic names, one per line:\n${titles}`,
@@ -253,14 +253,14 @@ export class AISearchService {
    */
   async indexArticle(article: {
     id: number;
-    title: string;
+    headline: string;
     description: string;
-    content?: string;
-    category: string;
-    source: string;
+    article_body?: string;
+    article_section_id: string;
+    publisher_name: string;
   }): Promise<boolean> {
     try {
-      const textToEmbed = `${article.title}. ${article.description}. ${article.content || ''}`.slice(0, 2000);
+      const textToEmbed = `${article.headline}. ${article.description}. ${article.article_body || ''}`.slice(0, 2000);
       const embedding = await this.generateEmbedding(textToEmbed);
 
       await this.vectorize.upsert([
@@ -268,8 +268,8 @@ export class AISearchService {
           id: String(article.id),
           values: embedding,
           metadata: {
-            category: article.category,
-            source: article.source,
+            article_section_id: article.article_section_id,
+            publisher_name: article.publisher_name,
           },
         },
       ]);
@@ -286,11 +286,11 @@ export class AISearchService {
    */
   async batchIndexArticles(articles: Array<{
     id: number;
-    title: string;
+    headline: string;
     description: string;
-    content?: string;
-    category: string;
-    source: string;
+    article_body?: string;
+    article_section_id: string;
+    publisher_name: string;
   }>): Promise<{ success: number; failed: number }> {
     let success = 0;
     let failed = 0;

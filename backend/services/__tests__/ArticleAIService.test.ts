@@ -270,9 +270,9 @@ describe('ArticleAIService', () => {
     beforeEach(() => {
       mockD1Service.db._statement.all.mockResolvedValue({
         results: [
-          { keyword: 'government', category_id: 'politics', relevance_score: 0.9 },
-          { keyword: 'economy', category_id: 'business', relevance_score: 0.8 },
-          { keyword: 'election', category_id: 'politics', relevance_score: 0.85 },
+          { keyword: 'government', article_section_id: 'politics', relevance_score: 0.9 },
+          { keyword: 'economy', article_section_id: 'business', relevance_score: 0.8 },
+          { keyword: 'election', article_section_id: 'politics', relevance_score: 0.85 },
         ],
       });
     });
@@ -755,7 +755,7 @@ describe('ArticleAIService', () => {
 
       const result = await service.processArticle({
         id: 1,
-        title: 'Test Article',
+        headline: 'Test Article',
         content: 'Test content '.repeat(50),
       });
 
@@ -772,7 +772,7 @@ describe('ArticleAIService', () => {
 
       await service.processArticle({
         id: 1,
-        title: 'Test',
+        headline: 'Test',
         content: 'Content '.repeat(50),
       });
 
@@ -790,7 +790,7 @@ describe('ArticleAIService', () => {
 
       const result = await service.processArticle({
         id: 1,
-        title: 'Test',
+        headline: 'Test',
         content: 'Content '.repeat(50),
       });
 
@@ -819,7 +819,7 @@ describe('ArticleAIService', () => {
 
       const result = await service.processArticle({
         id: 1,
-        title: 'Test Article',
+        headline: 'Test Article',
         content: 'Test content '.repeat(50),
       });
 

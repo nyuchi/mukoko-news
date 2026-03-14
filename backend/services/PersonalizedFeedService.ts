@@ -17,18 +17,18 @@ interface UserPreferences {
 
 interface ScoredArticle {
   id: number;
-  title: string;
+  headline: string;
   slug: string;
   description: string;
   content_snippet: string;
-  author: string;
+  author_name: string;
   source: string;
-  source_id: string;
-  published_at: string;
-  image_url: string;
-  original_url: string;
-  category_id: string;
-  country_id: string;  // Pan-African support
+  publisher_id: string;
+  date_published: string;
+  image: string;
+  main_entity_of_page: string;
+  article_section_id: string;
+  about_country_id: string;  // Pan-African support
   view_count: number;
   like_count: number;
   bookmark_count: number;
@@ -145,7 +145,7 @@ export class PersonalizedFeedService {
     const countParams: string[] = [];
     if (effectiveCountries.length > 0) {
       const placeholders = effectiveCountries.map(() => '?').join(',');
-      countQuery += ` AND country_id IN (${placeholders})`;
+      countQuery += ` AND about_country_id IN (${placeholders})`;
       countParams.push(...effectiveCountries);
     }
     const totalResult = countParams.length > 0
@@ -197,14 +197,14 @@ export class PersonalizedFeedService {
 
     // Get category interests from reading history (last 30 days)
     const historyResult = await this.db.prepare(`
-      SELECT a.category_id, COUNT(*) as read_count,
+      SELECT a.article_section_id, COUNT(*) as read_count,
              SUM(h.reading_time) as total_time,
              AVG(h.scroll_depth) as avg_depth
       FROM user_reading_history h
       JOIN articles a ON h.article_id = a.id
       WHERE h.user_id = ?
         AND h.started_at > datetime('now', '-30 days')
-      GROUP BY a.category_id
+      GROUP BY a.article_section_id
       ORDER BY read_count DESC
     `).bind(userId).all();
 
@@ -218,7 +218,7 @@ export class PersonalizedFeedService {
       const readScore = (r.read_count / maxReadCount) * 0.5;
       const timeScore = Math.min(r.total_time / 3600, 1) * 0.3; // Cap at 1 hour
       const depthScore = (r.avg_depth / 100) * 0.2;
-      categoryInterests.set(r.category_id, readScore + timeScore + depthScore);
+      categoryInterests.set(r.article_section_id, readScore + timeScore + depthScore);
     }
 
     // Get recently read article IDs (last 7 days)
@@ -249,23 +249,23 @@ export class PersonalizedFeedService {
   ): Promise<ScoredArticle[]> {
     // Build query with optional country filter
     let query = `
-      SELECT id, title, slug, description, content_snippet, author, source, source_id,
-             published_at, image_url, original_url, category_id, country_id, view_count,
+      SELECT id, headline, slug, description, content_snippet, author_name, source, publisher_id,
+             date_published, image, main_entity_of_page, article_section_id, about_country_id, view_count,
              like_count, bookmark_count
       FROM articles
       WHERE status = 'published'
-        AND published_at > datetime('now', '-14 days')
+        AND date_published > datetime('now', '-14 days')
     `;
     const params: (string | number)[] = [];
 
     // Pan-African: filter by countries if provided
     if (countries && countries.length > 0) {
       const placeholders = countries.map(() => '?').join(',');
-      query += ` AND country_id IN (${placeholders})`;
+      query += ` AND about_country_id IN (${placeholders})`;
       params.push(...countries);
     }
 
-    query += ` ORDER BY published_at DESC LIMIT ?`;
+    query += ` ORDER BY date_published DESC LIMIT ?`;
     params.push(limit);
 
     const result = await this.db.prepare(query).bind(...params).all();
@@ -307,36 +307,36 @@ export class PersonalizedFeedService {
       };
 
       // Followed source boost
-      if (preferences.followedSources.includes(article.source_id)) {
+      if (preferences.followedSources.includes(article.publisher_id)) {
         breakdown.followedSource = WEIGHTS.FOLLOWED_SOURCE;
         score += breakdown.followedSource;
       }
 
       // Followed author boost
-      if (article.author && preferences.followedAuthors.includes(article.author)) {
+      if (article.author_name && preferences.followedAuthors.includes(article.author_name)) {
         breakdown.followedAuthor = WEIGHTS.FOLLOWED_AUTHOR;
         score += breakdown.followedAuthor;
       }
 
       // Followed category boost
-      if (preferences.followedCategories.includes(article.category_id)) {
+      if (preferences.followedCategories.includes(article.article_section_id)) {
         breakdown.followedCategory = WEIGHTS.FOLLOWED_CATEGORY;
         score += breakdown.followedCategory;
       }
 
       // Pan-African: Primary country boost
-      if (preferences.primaryCountry && article.country_id === preferences.primaryCountry) {
+      if (preferences.primaryCountry && article.about_country_id === preferences.primaryCountry) {
         breakdown.primaryCountry = WEIGHTS.PRIMARY_COUNTRY;
         score += breakdown.primaryCountry;
       }
 
       // Category interest from reading history
-      const categoryInterest = preferences.categoryInterests.get(article.category_id) || 0;
+      const categoryInterest = preferences.categoryInterests.get(article.article_section_id) || 0;
       breakdown.categoryInterest = categoryInterest * WEIGHTS.CATEGORY_INTEREST;
       score += breakdown.categoryInterest;
 
       // Recency score (exponential decay)
-      const articleTime = new Date(article.published_at).getTime();
+      const articleTime = new Date(article.date_published).getTime();
       const hoursOld = (now - articleTime) / (1000 * 60 * 60);
       const recencyScore = Math.pow(0.5, hoursOld / RECENCY_HALF_LIFE_HOURS);
       breakdown.recency = recencyScore * WEIGHTS.RECENCY * recencyWeight;
@@ -361,7 +361,7 @@ export class PersonalizedFeedService {
     // Second pass: apply diversity penalty (in order)
     if (diversityFactor > 0) {
       for (const article of scoredArticles) {
-        const count = categoryCount.get(article.category_id) || 0;
+        const count = categoryCount.get(article.article_section_id) || 0;
         if (count > 0) {
           // Apply increasing penalty for repeated categories
           const penalty = count * WEIGHTS.DIVERSITY_PENALTY * diversityFactor;
@@ -370,7 +370,7 @@ export class PersonalizedFeedService {
             article.scoreBreakdown.diversity = penalty;
           }
         }
-        categoryCount.set(article.category_id, count + 1);
+        categoryCount.set(article.article_section_id, count + 1);
       }
 
       // Re-sort after diversity adjustment
@@ -395,23 +395,23 @@ export class PersonalizedFeedService {
   }> {
     // Build query with optional country filter
     let query = `
-      SELECT id, title, slug, description, content_snippet, author, source, source_id,
-             published_at, image_url, original_url, category_id, country_id, view_count,
+      SELECT id, headline, slug, description, content_snippet, author_name, source, publisher_id,
+             date_published, image, main_entity_of_page, article_section_id, about_country_id, view_count,
              like_count, bookmark_count
       FROM articles
       WHERE status = 'published'
-        AND published_at > datetime('now', '-7 days')
+        AND date_published > datetime('now', '-7 days')
     `;
     const params: (string | number)[] = [];
 
     // Pan-African: filter by countries if provided
     if (countries && countries.length > 0) {
       const placeholders = countries.map(() => '?').join(',');
-      query += ` AND country_id IN (${placeholders})`;
+      query += ` AND about_country_id IN (${placeholders})`;
       params.push(...countries);
     }
 
-    query += ` ORDER BY (view_count + like_count * 3 + bookmark_count * 2) DESC, published_at DESC
+    query += ` ORDER BY (view_count + like_count * 3 + bookmark_count * 2) DESC, date_published DESC
       LIMIT ? OFFSET ?`;
     params.push(limit, offset);
 
@@ -419,12 +419,12 @@ export class PersonalizedFeedService {
 
     // Build count query with same country filter
     let countQuery = `SELECT COUNT(*) as total FROM articles
-      WHERE status = 'published' AND published_at > datetime('now', '-7 days')`;
+      WHERE status = 'published' AND date_published > datetime('now', '-7 days')`;
     const countParams: string[] = [];
 
     if (countries && countries.length > 0) {
       const placeholders = countries.map(() => '?').join(',');
-      countQuery += ` AND country_id IN (${placeholders})`;
+      countQuery += ` AND about_country_id IN (${placeholders})`;
       countParams.push(...countries);
     }
 
@@ -455,7 +455,7 @@ export class PersonalizedFeedService {
     const sourceNames: string[] = [];
     if (preferences.followedSources.length > 0) {
       const sourcesResult = await this.db.prepare(`
-        SELECT name FROM rss_sources WHERE id IN (${preferences.followedSources.map(() => '?').join(',')})
+        SELECT name FROM organizations WHERE id IN (${preferences.followedSources.map(() => '?').join(',')})
       `).bind(...preferences.followedSources).all();
       sourceNames.push(...(sourcesResult.results || []).map((r: any) => r.name));
     }
@@ -469,7 +469,7 @@ export class PersonalizedFeedService {
     const categoryNames: string[] = [];
     if (topInterestIds.length > 0) {
       const categoriesResult = await this.db.prepare(`
-        SELECT name FROM categories WHERE id IN (${topInterestIds.map(() => '?').join(',')})
+        SELECT name FROM article_sections WHERE id IN (${topInterestIds.map(() => '?').join(',')})
       `).bind(...topInterestIds).all();
       categoryNames.push(...(categoriesResult.results || []).map((r: any) => r.name));
     }

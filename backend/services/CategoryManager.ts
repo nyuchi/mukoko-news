@@ -12,7 +12,7 @@
 
 export interface UserInterest {
   user_id: string;
-  category_id: string;
+  article_section_id: string;
   interest_score: number;
   view_count: number;
   engagement_count: number;
@@ -20,7 +20,7 @@ export interface UserInterest {
 }
 
 export interface CategoryPerformance {
-  category_id: string;
+  article_section_id: string;
   date: string;
   article_count: number;
   total_views: number;
@@ -31,7 +31,7 @@ export interface CategoryPerformance {
 }
 
 export interface CategoryTrend {
-  category_id: string;
+  article_section_id: string;
   category_name: string;
   trend_direction: 'up' | 'down' | 'stable';
   growth_rate: number;
@@ -44,7 +44,7 @@ export interface UserSegment {
   segment_name: string;
   user_count: number;
   top_categories: Array<{
-    category_id: string;
+    article_section_id: string;
     category_name: string;
     avg_engagement: number;
   }>;
@@ -79,7 +79,7 @@ export class CategoryManager {
             c.name as category_name,
             c.emoji as category_emoji
           FROM user_category_interests u
-          JOIN categories c ON u.category_id = c.id
+          JOIN article_sections c ON u.category_id = c.id
           WHERE u.user_id = ?
           ORDER BY u.interest_score DESC
         `)
@@ -105,7 +105,7 @@ export class CategoryManager {
     try {
       // Validate category exists
       const categoryExists = await this.db
-        .prepare('SELECT id FROM categories WHERE id = ?')
+        .prepare('SELECT id FROM article_sections WHERE id = ?')
         .bind(categoryId)
         .first();
 
@@ -240,7 +240,7 @@ export class CategoryManager {
             c.name as category_name,
             c.emoji as category_emoji
           FROM category_performance cp
-          JOIN categories c ON cp.category_id = c.id
+          JOIN article_sections c ON cp.category_id = c.id
           WHERE cp.category_id = ? AND cp.date >= date('now', '-' || ? || ' days')
           ORDER BY cp.date DESC
         `
@@ -250,7 +250,7 @@ export class CategoryManager {
             c.name as category_name,
             c.emoji as category_emoji
           FROM category_performance cp
-          JOIN categories c ON cp.category_id = c.id
+          JOIN article_sections c ON cp.category_id = c.id
           WHERE cp.date >= date('now', '-' || ? || ' days')
           ORDER BY cp.total_engagements DESC, cp.date DESC
         `;
@@ -286,12 +286,12 @@ export class CategoryManager {
               WHEN previous.total_engagements = 0 THEN 100.0
               ELSE ROUND(((current.total_engagements - previous.total_engagements) * 100.0 / previous.total_engagements), 2)
             END as growth_rate
-          FROM categories c
+          FROM article_sections c
           LEFT JOIN (
-            SELECT 
+            SELECT
               category_id,
               SUM(total_engagements) as total_engagements
-            FROM category_performance 
+            FROM category_performance
             WHERE date >= date('now', '-' || ? || ' days')
             GROUP BY category_id
           ) current ON c.id = current.category_id
@@ -311,7 +311,7 @@ export class CategoryManager {
         .all();
 
       return result.results.map((row: any) => ({
-        category_id: row.category_id,
+        article_section_id: row.category_id,
         category_name: row.category_name,
         trend_direction: row.growth_rate > 5 ? 'up' : row.growth_rate < -5 ? 'down' : 'stable',
         growth_rate: row.growth_rate || 0,
@@ -346,9 +346,9 @@ export class CategoryManager {
             c.id as category_id,
             c.name as category_name,
             COUNT(a.id) as article_count,
-            COUNT(CASE WHEN a.published_at >= datetime('now', '-7 days') THEN 1 END) as recent_articles
-          FROM categories c
-          LEFT JOIN articles a ON a.category_id = c.id
+            COUNT(CASE WHEN a.date_published >= datetime('now', '-7 days') THEN 1 END) as recent_articles
+          FROM article_sections c
+          LEFT JOIN articles a ON a.article_section_id = c.id
           WHERE c.id != 'all' AND c.id != 'general' AND c.enabled = 1
           GROUP BY c.id, c.name
           HAVING recent_articles > 0
@@ -359,7 +359,7 @@ export class CategoryManager {
         .all();
 
       return result.results.map((row: any) => ({
-        category_id: row.category_id,
+        article_section_id: row.category_id,
         category_name: row.category_name,
         trend_direction: 'up' as const,
         growth_rate: Math.round((row.recent_articles / Math.max(row.article_count, 1)) * 100),
@@ -406,7 +406,7 @@ export class CategoryManager {
     const result = await this.db
       .prepare(`
         SELECT id, keywords
-        FROM categories
+        FROM article_sections
         WHERE keywords IS NOT NULL AND keywords != '' AND keywords != '[]'
         ORDER BY sort_order
       `)
@@ -546,7 +546,7 @@ export class CategoryManager {
             c.name as category_name,
             AVG(engagement_count) as avg_engagement
           FROM user_category_interests u
-          JOIN categories c ON u.category_id = c.id
+          JOIN article_sections c ON u.category_id = c.id
           GROUP BY segment_name, category_id, c.name
           ORDER BY segment_name, avg_engagement DESC
         `)
@@ -570,7 +570,7 @@ export class CategoryManager {
         }
 
         segments[row.segment_name].top_categories.push({
-          category_id: row.category_id,
+          article_section_id: row.category_id,
           category_name: row.category_name,
           avg_engagement: row.avg_engagement
         });
@@ -612,7 +612,7 @@ export class CategoryManager {
       const summaryResult = await this.db
         .prepare(`
           SELECT 
-            (SELECT COUNT(*) FROM categories WHERE enabled = 1) as total_categories,
+            (SELECT COUNT(*) FROM article_sections WHERE enabled = 1) as total_categories,
             (SELECT COUNT(DISTINCT category_id) FROM category_performance WHERE date >= date('now', '-' || ? || ' days')) as active_categories,
             (SELECT SUM(total_engagements) FROM category_performance WHERE date >= date('now', '-' || ? || ' days')) as total_engagements
         `)

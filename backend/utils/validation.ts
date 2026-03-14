@@ -66,11 +66,11 @@ export interface NewsSourceRow {
   id: string;
   name: string;
   url: string;
-  rss_url?: string;
+  rss_feed_url?: string;
   base_domain?: string;
-  category: string;
-  country?: string;
-  language?: string;
+  article_section_id: string;
+  area_served?: string;
+  in_language?: string;
   enabled: boolean;
   priority: number;
   quality_score?: number;
@@ -98,9 +98,9 @@ export function validateNewsSourceRow(row: unknown): NewsSourceRow | null {
   const id = getString(row, 'id');
   const name = getString(row, 'name');
   const url = getString(row, 'url');
-  const category = getString(row, 'category');
+  const article_section_id = getString(row, 'article_section_id');
 
-  if (!id || !name || !url || !category) {
+  if (!id || !name || !url || !article_section_id) {
     return null;
   }
 
@@ -112,11 +112,11 @@ export function validateNewsSourceRow(row: unknown): NewsSourceRow | null {
     id,
     name,
     url,
-    rss_url: getString(row, 'rss_url'),
+    rss_feed_url: getString(row, 'rss_feed_url'),
     base_domain: getString(row, 'base_domain'),
-    category,
-    country: getString(row, 'country') ?? getString(row, 'country_id'),
-    language: getString(row, 'language'),
+    article_section_id,
+    area_served: getString(row, 'area_served') ?? getString(row, 'country_id'),
+    in_language: getString(row, 'in_language'),
     enabled,
     priority,
     quality_score: getNumber(row, 'quality_score'),

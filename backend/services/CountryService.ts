@@ -9,8 +9,8 @@ export interface Country {
   id: string;           // ISO 3166-1 alpha-2 code
   name: string;
   code: string;
-  emoji: string;
-  language: string;
+  flag_emoji: string;
+  in_language: string;
   timezone: string;
   enabled: boolean;
   priority: number;
@@ -59,15 +59,15 @@ export class CountryService {
           COALESCE(a.article_count, 0) as article_count
         FROM countries c
         LEFT JOIN (
-          SELECT country, COUNT(*) as source_count
-          FROM news_sources WHERE enabled = 1
-          GROUP BY country
-        ) s ON c.name = s.country
+          SELECT area_served, COUNT(*) as source_count
+          FROM organizations WHERE enabled = 1
+          GROUP BY area_served
+        ) s ON c.id = s.area_served
         LEFT JOIN (
-          SELECT country_id, COUNT(*) as article_count
+          SELECT about_country_id, COUNT(*) as article_count
           FROM articles WHERE status = 'published'
-          GROUP BY country_id
-        ) a ON c.id = a.country_id
+          GROUP BY about_country_id
+        ) a ON c.id = a.about_country_id
         ${enabledOnly ? 'WHERE c.enabled = 1' : ''}
         ORDER BY c.priority DESC, c.name ASC
       `).all();
@@ -113,9 +113,9 @@ export class CountryService {
     // Get sources for this country
     const sourcesResult = await this.db.prepare(`
       SELECT ns.id, ns.name, COUNT(a.id) as article_count
-      FROM news_sources ns
-      LEFT JOIN articles a ON ns.id = a.source_id
-      WHERE ns.country = ? AND ns.enabled = 1
+      FROM organizations ns
+      LEFT JOIN articles a ON ns.id = a.publisher_id
+      WHERE ns.area_served = ? AND ns.enabled = 1
       GROUP BY ns.id, ns.name
       ORDER BY article_count DESC
     `).bind(country.name).all();
@@ -123,8 +123,8 @@ export class CountryService {
     // Get category distribution for this country
     const categoriesResult = await this.db.prepare(`
       SELECT c.id, c.name, COUNT(a.id) as article_count
-      FROM categories c
-      LEFT JOIN articles a ON c.id = a.category_id AND a.country_id = ?
+      FROM article_sections c
+      LEFT JOIN articles a ON c.id = a.article_section_id AND a.about_country_id = ?
       WHERE c.enabled = 1
       GROUP BY c.id, c.name
       HAVING article_count > 0
@@ -135,9 +135,9 @@ export class CountryService {
     const recentResult = await this.db.prepare(`
       SELECT COUNT(*) as count
       FROM articles
-      WHERE country_id = ?
+      WHERE about_country_id = ?
         AND status = 'published'
-        AND published_at > datetime('now', '-24 hours')
+        AND date_published > datetime('now', '-24 hours')
     `).bind(countryId).first();
 
     return {
@@ -347,22 +347,22 @@ export class CountryService {
    */
   async getArticleCountsByCountry(options: {
     since?: string;
-  } = {}): Promise<{ country_id: string; country_name: string; emoji: string; count: number }[]> {
+  } = {}): Promise<{ country_id: string; country_name: string; flag_emoji: string; count: number }[]> {
     const { since } = options;
 
     let query = `
-      SELECT c.id as country_id, c.name as country_name, c.emoji, COUNT(a.id) as count
+      SELECT c.id as country_id, c.name as country_name, c.flag_emoji, COUNT(a.id) as count
       FROM countries c
-      LEFT JOIN articles a ON c.id = a.country_id AND a.status = 'published'
+      LEFT JOIN articles a ON c.id = a.about_country_id AND a.status = 'published'
     `;
 
     if (since) {
-      query += ` AND a.published_at >= ?`;
+      query += ` AND a.date_published >= ?`;
     }
 
     query += `
       WHERE c.enabled = 1
-      GROUP BY c.id, c.name, c.emoji
+      GROUP BY c.id, c.name, c.flag_emoji
       ORDER BY count DESC
     `;
 
@@ -370,7 +370,7 @@ export class CountryService {
       ? await this.db.prepare(query).bind(since).all()
       : await this.db.prepare(query).all();
 
-    return (result.results || []) as { country_id: string; country_name: string; emoji: string; count: number }[];
+    return (result.results || []) as { country_id: string; country_name: string; flag_emoji: string; count: number }[];
   }
 
   /**
@@ -385,8 +385,8 @@ export class CountryService {
   }[]> {
     const result = await this.db.prepare(`
       SELECT id, name, rss_feed_url, logo_url, enabled
-      FROM news_sources
-      WHERE country_id = ?
+      FROM organizations
+      WHERE area_served = ?
       ORDER BY name ASC
     `).bind(countryId).all();
 

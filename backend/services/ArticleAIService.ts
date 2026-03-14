@@ -49,18 +49,18 @@ export class ArticleAIService {
    */
   async processArticle(article: {
     id: number
-    title: string
+    headline: string
     content: string
     description?: string
-    category?: string
+    article_section_id?: string
   }): Promise<ArticleProcessingResult> {
     const startTime = Date.now()
-    
+
     try {
       // Log processing start
       await this.logProcessing(article.id, 'full_processing', 'processing', {
         originalLength: article.content?.length || 0,
-        title: article.title
+        headline: article.headline
       })
 
       // Step 1: Clean content and extract images
@@ -73,18 +73,18 @@ export class ArticleAIService {
       })
 
       // Step 2: Extract keywords using AI
-      const keywords = await this.extractKeywords(article.title, cleaningResult.cleanedContent, article.category)
+      const keywords = await this.extractKeywords(article.headline, cleaningResult.cleanedContent, article.article_section_id)
 
       // Step 3: Calculate quality score
-      const qualityScore = await this.calculateQualityScore(article.title, cleaningResult.cleanedContent)
+      const qualityScore = await this.calculateQualityScore(article.headline, cleaningResult.cleanedContent)
 
       // Step 4: Generate content hash for duplicate detection
-      const contentHash = await this.generateContentHash(article.title + cleaningResult.cleanedContent)
+      const contentHash = await this.generateContentHash(article.headline + cleaningResult.cleanedContent)
 
       // Step 5: Create embedding (if vectorize is available)
       let embeddingId: string | undefined
       if (this.vectorize && cleaningResult.cleanedContent.length > 50) {
-        embeddingId = await this.createEmbedding(article.id, article.title, cleaningResult.cleanedContent)
+        embeddingId = await this.createEmbedding(article.id, article.headline, cleaningResult.cleanedContent)
       }
 
       // Step 6: Process images with Cloudflare Images
@@ -259,9 +259,9 @@ Return only the cleaned text content, no explanations:`,
       // Get existing keywords from database for context
       const existingKeywords = await this.db
         .prepare(`
-          SELECT k.keyword, k.category_id, k.relevance_score
-          FROM keywords k
-          JOIN categories c ON k.category_id = c.id
+          SELECT k.keyword, k.article_section_id, k.relevance_score
+          FROM defined_terms k
+          JOIN article_sections c ON k.article_section_id = c.id
           WHERE c.enabled = true
           ORDER BY k.usage_count DESC, k.relevance_score DESC
           LIMIT 50
@@ -302,7 +302,7 @@ Return JSON format:
           const parsed = JSON.parse(aiResponse.response)
           if (parsed.keywords && Array.isArray(parsed.keywords)) {
             // Match extracted keywords with database keywords to get categories
-            const dbKeywords = existingKeywords.results as Array<{ keyword: string; category_id: string }>
+            const dbKeywords = existingKeywords.results as Array<{ keyword: string; article_section_id: string }>
             for (const kw of parsed.keywords) {
               const dbKeyword = dbKeywords.find((k) =>
                 k.keyword.toLowerCase() === kw.keyword.toLowerCase()
@@ -312,7 +312,7 @@ Return JSON format:
                 extractedKeywords.push({
                   keyword: kw.keyword,
                   confidence: kw.confidence,
-                  category: dbKeyword.category_id
+                  category: dbKeyword.article_section_id
                 })
               }
             }
@@ -326,12 +326,12 @@ Return JSON format:
       if (extractedKeywords.length === 0) {
         const contentLower = (title + ' ' + content).toLowerCase()
 
-        for (const kw of existingKeywords.results.slice(0, 20) as Array<{ keyword: string; category_id: string }>) {
+        for (const kw of existingKeywords.results.slice(0, 20) as Array<{ keyword: string; article_section_id: string }>) {
           if (contentLower.includes(kw.keyword.toLowerCase())) {
             extractedKeywords.push({
               keyword: kw.keyword,
               confidence: 0.7,
-              category: kw.category_id
+              category: kw.article_section_id
             })
           }
         }
@@ -508,7 +508,7 @@ Return only a number between 0.0 and 1.0 (e.g., 0.75):`,
       for (const keyword of result.keywords) {
         // Find keyword ID
         const keywordRecord = await this.db
-          .prepare('SELECT id FROM keywords WHERE keyword = ?')
+          .prepare('SELECT id FROM defined_terms WHERE keyword = ?')
           .bind(keyword.keyword)
           .first()
 

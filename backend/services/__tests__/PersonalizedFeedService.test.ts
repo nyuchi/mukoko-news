@@ -29,54 +29,54 @@ describe('PersonalizedFeedService', () => {
   const sampleArticles = [
     {
       id: 1,
-      title: 'Politics Article',
+      headline: 'Politics Article',
       slug: 'politics-article',
       description: 'About politics',
       content_snippet: 'Content...',
-      author: 'John Doe',
-      source: 'The Herald',
-      source_id: 'herald',
-      published_at: new Date().toISOString(),
-      image_url: 'https://example.com/image1.jpg',
-      original_url: 'https://example.com/article1',
-      category_id: 'politics',
-      country_id: 'ZW',
+      author_name: 'John Doe',
+      publisher_name: 'The Herald',
+      publisher_id: 'herald',
+      date_published: new Date().toISOString(),
+      image: 'https://example.com/image1.jpg',
+      main_entity_of_page: 'https://example.com/article1',
+      article_section_id: 'politics',
+      about_country_id: 'ZW',
       view_count: 100,
       like_count: 10,
       bookmark_count: 5,
     },
     {
       id: 2,
-      title: 'Sports Article',
+      headline: 'Sports Article',
       slug: 'sports-article',
       description: 'About sports',
       content_snippet: 'Content...',
-      author: 'Jane Smith',
-      source: 'Daily News',
-      source_id: 'dailynews',
-      published_at: new Date(Date.now() - 3600000).toISOString(), // 1 hour ago
-      image_url: 'https://example.com/image2.jpg',
-      original_url: 'https://example.com/article2',
-      category_id: 'sports',
-      country_id: 'ZA',
+      author_name: 'Jane Smith',
+      publisher_name: 'Daily News',
+      publisher_id: 'dailynews',
+      date_published: new Date(Date.now() - 3600000).toISOString(), // 1 hour ago
+      image: 'https://example.com/image2.jpg',
+      main_entity_of_page: 'https://example.com/article2',
+      article_section_id: 'sports',
+      about_country_id: 'ZA',
       view_count: 200,
       like_count: 20,
       bookmark_count: 10,
     },
     {
       id: 3,
-      title: 'Business Article',
+      headline: 'Business Article',
       slug: 'business-article',
       description: 'About business',
       content_snippet: 'Content...',
-      author: 'Bob Wilson',
-      source: 'Chronicle',
-      source_id: 'chronicle',
-      published_at: new Date(Date.now() - 7200000).toISOString(), // 2 hours ago
-      image_url: 'https://example.com/image3.jpg',
-      original_url: 'https://example.com/article3',
-      category_id: 'business',
-      country_id: 'KE',
+      author_name: 'Bob Wilson',
+      publisher_name: 'Chronicle',
+      publisher_id: 'chronicle',
+      date_published: new Date(Date.now() - 7200000).toISOString(), // 2 hours ago
+      image: 'https://example.com/image3.jpg',
+      main_entity_of_page: 'https://example.com/article3',
+      article_section_id: 'business',
+      about_country_id: 'KE',
       view_count: 50,
       like_count: 5,
       bookmark_count: 2,
@@ -103,7 +103,7 @@ describe('PersonalizedFeedService', () => {
 
       it('should filter by countries for anonymous users', async () => {
         mockDb._statement.all.mockResolvedValue({
-          results: sampleArticles.filter(a => a.country_id === 'ZW')
+          results: sampleArticles.filter(a => a.about_country_id === 'ZW')
         });
         mockDb._statement.first.mockResolvedValue({ total: 1 });
 
@@ -154,7 +154,7 @@ describe('PersonalizedFeedService', () => {
           .mockResolvedValueOnce({ results: [{ follow_id: 'John Doe' }] }) // followed authors
           .mockResolvedValueOnce({ results: [{ follow_id: 'politics' }] }) // followed categories
           .mockResolvedValueOnce({ results: [{ country_id: 'ZW', is_primary: true }] }) // countries
-          .mockResolvedValueOnce({ results: [{ category_id: 'politics', read_count: 10, total_time: 600, avg_depth: 80 }] }) // history
+          .mockResolvedValueOnce({ results: [{ article_section_id: 'politics', read_count: 10, total_time: 600, avg_depth: 80 }] }) // history
           .mockResolvedValueOnce({ results: [] }) // recent reads
           .mockResolvedValue({ results: sampleArticles }); // candidates
 
@@ -172,7 +172,7 @@ describe('PersonalizedFeedService', () => {
         const result = await service.getPersonalizedFeed('user-123');
 
         // Herald article should be ranked higher
-        const heraldArticle = result.articles.find(a => a.source_id === 'herald');
+        const heraldArticle = result.articles.find(a => a.publisher_id === 'herald');
         expect(heraldArticle).toBeDefined();
         if (heraldArticle?.scoreBreakdown) {
           expect(heraldArticle.scoreBreakdown.followedSource).toBeGreaterThan(0);
@@ -182,7 +182,7 @@ describe('PersonalizedFeedService', () => {
       it('should boost articles from followed authors', async () => {
         const result = await service.getPersonalizedFeed('user-123');
 
-        const authorArticle = result.articles.find(a => a.author === 'John Doe');
+        const authorArticle = result.articles.find(a => a.author_name === 'John Doe');
         expect(authorArticle).toBeDefined();
         if (authorArticle?.scoreBreakdown) {
           expect(authorArticle.scoreBreakdown.followedAuthor).toBeGreaterThan(0);
@@ -192,7 +192,7 @@ describe('PersonalizedFeedService', () => {
       it('should boost articles from followed categories', async () => {
         const result = await service.getPersonalizedFeed('user-123');
 
-        const categoryArticle = result.articles.find(a => a.category_id === 'politics');
+        const categoryArticle = result.articles.find(a => a.article_section_id === 'politics');
         expect(categoryArticle).toBeDefined();
         if (categoryArticle?.scoreBreakdown) {
           expect(categoryArticle.scoreBreakdown.followedCategory).toBeGreaterThan(0);
@@ -202,7 +202,7 @@ describe('PersonalizedFeedService', () => {
       it('should boost articles from primary country', async () => {
         const result = await service.getPersonalizedFeed('user-123');
 
-        const countryArticle = result.articles.find(a => a.country_id === 'ZW');
+        const countryArticle = result.articles.find(a => a.about_country_id === 'ZW');
         expect(countryArticle).toBeDefined();
         if (countryArticle?.scoreBreakdown) {
           expect(countryArticle.scoreBreakdown.primaryCountry).toBeGreaterThan(0);
@@ -295,9 +295,9 @@ describe('PersonalizedFeedService', () => {
       it('should apply diversity penalty with high factor', async () => {
         // Articles from same category
         const sameCategoryArticles = [
-          { ...sampleArticles[0], id: 1, category_id: 'politics' },
-          { ...sampleArticles[0], id: 2, category_id: 'politics' },
-          { ...sampleArticles[0], id: 3, category_id: 'politics' },
+          { ...sampleArticles[0], id: 1, article_section_id: 'politics' },
+          { ...sampleArticles[0], id: 2, article_section_id: 'politics' },
+          { ...sampleArticles[0], id: 3, article_section_id: 'politics' },
         ];
 
         mockDb._statement.all
@@ -358,8 +358,8 @@ describe('PersonalizedFeedService', () => {
         const result = await service.getPersonalizedFeed('user-123');
 
         // Sports article has highest engagement (200 views, 20 likes, 10 bookmarks)
-        const highEngagement = result.articles.find(a => a.category_id === 'sports');
-        const lowEngagement = result.articles.find(a => a.category_id === 'business');
+        const highEngagement = result.articles.find(a => a.article_section_id === 'sports');
+        const lowEngagement = result.articles.find(a => a.article_section_id === 'business');
 
         if (highEngagement?.scoreBreakdown && lowEngagement?.scoreBreakdown) {
           expect(highEngagement.scoreBreakdown.engagement).toBeGreaterThan(
@@ -377,7 +377,7 @@ describe('PersonalizedFeedService', () => {
         .mockResolvedValueOnce({ results: [{ follow_id: 'John Doe' }] }) // authors
         .mockResolvedValueOnce({ results: [{ follow_id: 'politics' }] }) // categories
         .mockResolvedValueOnce({ results: [{ country_id: 'ZW' }] }) // countries
-        .mockResolvedValueOnce({ results: [{ category_id: 'politics', read_count: 10, total_time: 600, avg_depth: 80 }] })
+        .mockResolvedValueOnce({ results: [{ article_section_id: 'politics', read_count: 10, total_time: 600, avg_depth: 80 }] })
         .mockResolvedValueOnce({ results: [] }) // recent
         .mockResolvedValueOnce({ results: [{ name: 'The Herald' }] }) // source names
         .mockResolvedValueOnce({ results: [{ name: 'Politics' }] }); // category names
@@ -405,7 +405,7 @@ describe('PersonalizedFeedService', () => {
   describe('Pan-African country support', () => {
     it('should filter articles by multiple countries', async () => {
       const filteredArticles = sampleArticles.filter(
-        a => ['ZW', 'ZA'].includes(a.country_id)
+        a => ['ZW', 'ZA'].includes(a.about_country_id)
       );
 
       mockDb._statement.all.mockResolvedValue({ results: filteredArticles });
@@ -416,7 +416,7 @@ describe('PersonalizedFeedService', () => {
       });
 
       expect(result.countries).toEqual(['ZW', 'ZA']);
-      expect(result.articles.every(a => ['ZW', 'ZA'].includes(a.country_id))).toBe(true);
+      expect(result.articles.every(a => ['ZW', 'ZA'].includes(a.about_country_id))).toBe(true);
     });
 
     it('should use user preferred countries when no override', async () => {
@@ -430,7 +430,7 @@ describe('PersonalizedFeedService', () => {
         ]})
         .mockResolvedValueOnce({ results: [] }) // history
         .mockResolvedValueOnce({ results: [] }) // recent
-        .mockResolvedValue({ results: sampleArticles.filter(a => ['ZW', 'ZA'].includes(a.country_id)) });
+        .mockResolvedValue({ results: sampleArticles.filter(a => ['ZW', 'ZA'].includes(a.about_country_id)) });
 
       mockDb._statement.first.mockResolvedValue({ total: 2 });
 

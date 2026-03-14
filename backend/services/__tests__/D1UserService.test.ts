@@ -269,9 +269,9 @@ describe('D1UserService', () => {
 
         const result = await service.addUserLike('user-123', {
           id: 'article-1',
-          title: 'Test Article',
-          source: 'Test Source',
-          category: 'news',
+          headline: 'Test Article',
+          publisher_name: 'Test Source',
+          article_section_id: 'news',
         });
 
         expect(result.success).toBe(true);
@@ -287,9 +287,9 @@ describe('D1UserService', () => {
 
         const result = await service.addUserLike('user-123', {
           link: 'https://example.com/article',
-          title: 'Test Article',
-          source: 'Test Source',
-          category: 'news',
+          headline: 'Test Article',
+          publisher_name: 'Test Source',
+          article_section_id: 'news',
         });
 
         expect(result.success).toBe(true);
@@ -359,10 +359,10 @@ describe('D1UserService', () => {
 
         const result = await service.addUserBookmark('user-123', {
           id: 'article-1',
-          title: 'Test Article',
+          headline: 'Test Article',
           description: 'Test description',
-          source: 'Test Source',
-          category: 'news',
+          publisher_name: 'Test Source',
+          article_section_id: 'news',
           link: 'https://example.com',
           imageUrl: 'https://example.com/image.jpg',
           pubDate: '2024-01-01',
@@ -396,7 +396,7 @@ describe('D1UserService', () => {
 
         const result = await service.addReadingHistory(
           'user-123',
-          { id: 'article-1', title: 'Test', source: 'Source', category: 'news' },
+          { id: 'article-1', headline: 'Test', publisher_name: 'Source', article_section_id: 'news' },
           120 // 2 minutes time spent
         );
 
@@ -497,9 +497,9 @@ describe('D1UserService', () => {
         mockDb._mocks.mockRun.mockResolvedValue({ success: true });
 
         const articles = [
-          { id: '1', title: 'Article 1', source: 'Source', category: 'news' },
-          { id: '2', title: 'Article 2', source: 'Source', category: 'news' },
-          { id: '3', title: 'Article 3', source: 'Source', category: 'news' },
+          { id: '1', headline: 'Article 1', publisher_name: 'Source', article_section_id: 'news' },
+          { id: '2', headline: 'Article 2', publisher_name: 'Source', article_section_id: 'news' },
+          { id: '3', headline: 'Article 3', publisher_name: 'Source', article_section_id: 'news' },
         ];
 
         const result = await service.batchAddLikes('user-123', articles);
@@ -524,8 +524,8 @@ describe('D1UserService', () => {
         mockDb._mocks.mockRun.mockResolvedValue({ success: true });
 
         const articles = [
-          { id: '1', title: 'Article 1', source: 'Source', category: 'news' },
-          { id: '2', title: 'Article 2', source: 'Source', category: 'news' },
+          { id: '1', headline: 'Article 1', publisher_name: 'Source', article_section_id: 'news' },
+          { id: '2', headline: 'Article 2', publisher_name: 'Source', article_section_id: 'news' },
         ];
 
         const result = await service.batchAddBookmarks('user-123', articles);

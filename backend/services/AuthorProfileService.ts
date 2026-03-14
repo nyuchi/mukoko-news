@@ -50,7 +50,7 @@ export interface AuthorOutlet {
 }
 
 export interface AuthorExpertise {
-  categoryId: string;
+  articleSectionId: string;
   categoryName: string;
   expertiseLevel: string;
   articlesWritten: number;
@@ -71,8 +71,8 @@ export interface AuthorCredibility {
 
 export interface AuthorArticle {
   id: number;
-  title: string;
-  publishedAt: string;
+  headline: string;
+  datePublished: string;
   category: string;
   outlet: string;
   qualityScore: number;
@@ -139,7 +139,7 @@ interface OutletRow {
 }
 
 interface ExpertiseRow {
-  category_id: string;
+  article_section_id: string;
   category_name: string;
   expertise_level: string;
   articles_written: number;
@@ -160,8 +160,8 @@ interface CredibilityRow {
 
 interface ArticleRow {
   id: number;
-  title: string;
-  published_at: string;
+  headline: string;
+  date_published: string;
   category: string;
   outlet: string;
   quality_score: number;
@@ -192,7 +192,7 @@ export class AuthorProfileService {
     try {
       // Get basic author information
       const author = await this.d1Service.db.prepare(`
-        SELECT * FROM authors WHERE slug = ?
+        SELECT * FROM persons WHERE slug = ?
       `).bind(slug).first<AuthorRow>();
 
       if (!author) {
@@ -266,7 +266,7 @@ export class AuthorProfileService {
     
     // First, try exact name match across all outlets
     let author = await this.d1Service.db.prepare(`
-      SELECT * FROM authors WHERE normalized_name = ?
+      SELECT * FROM persons WHERE normalized_name = ?
     `).bind(normalizedName).first<AuthorRow>();
 
     if (author) {
@@ -293,8 +293,8 @@ export class AuthorProfileService {
     const slug = await this.generateUniqueSlug(normalizedName);
     
     const result = await this.d1Service.db.prepare(`
-      INSERT INTO authors (
-        name, normalized_name, slug, title, outlet, verification_status,
+      INSERT INTO persons (
+        name, normalized_name, slug, title, works_for, verification_status,
         years_experience, status, created_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
       RETURNING *
@@ -456,7 +456,7 @@ export class AuthorProfileService {
    */
   async getFeaturedAuthors(limit: number = 10): Promise<AuthorProfile[]> {
     const authors = await this.d1Service.db.prepare(`
-      SELECT slug FROM authors 
+      SELECT slug FROM persons
       WHERE is_featured = true 
       AND (featured_until IS NULL OR featured_until > CURRENT_TIMESTAMP)
       AND status = 'active'
@@ -485,10 +485,10 @@ export class AuthorProfileService {
         COUNT(DISTINCT aa.article_id) as recent_articles,
         SUM(COALESCE(ar.view_count, 0)) as recent_views,
         COUNT(DISTINCT api.id) as recent_interactions
-      FROM authors a
+      FROM persons a
       LEFT JOIN article_authors aa ON a.id = aa.author_id
       LEFT JOIN articles ar ON aa.article_id = ar.id 
-        AND datetime(ar.published_at) > datetime('now', '-${days} days')
+        AND datetime(ar.date_published) > datetime('now', '-${days} days')
       LEFT JOIN author_profile_interactions api ON a.id = api.author_id
         AND datetime(api.created_at) > datetime('now', '-${days} days')
       WHERE a.status = 'active'
@@ -523,9 +523,9 @@ export class AuthorProfileService {
           WHEN LOWER(a.title) LIKE ? THEN 3
           ELSE 4
         END as relevance_score
-      FROM authors a
+      FROM persons a
       LEFT JOIN author_outlets ao ON a.id = ao.author_id
-      LEFT JOIN news_sources ns ON ao.outlet_id = ns.id
+      LEFT JOIN organizations ns ON ao.outlet_id = ns.id
       WHERE (
         LOWER(a.name) LIKE ? OR
         LOWER(a.specialization) LIKE ? OR
@@ -559,9 +559,9 @@ export class AuthorProfileService {
 
     let query = `
       SELECT DISTINCT a.slug
-      FROM authors a
+      FROM persons a
       LEFT JOIN author_outlets ao ON a.id = ao.author_id
-      LEFT JOIN news_sources ns ON ao.outlet_id = ns.id
+      LEFT JOIN organizations ns ON ao.outlet_id = ns.id
       WHERE a.status = 'active'
     `;
 
@@ -601,7 +601,7 @@ export class AuthorProfileService {
         ao.start_date,
         ao.end_date
       FROM author_outlets ao
-      JOIN news_sources ns ON ao.outlet_id = ns.id
+      JOIN organizations ns ON ao.outlet_id = ns.id
       WHERE ao.author_id = ?
       ORDER BY ao.is_primary DESC, ao.articles_count DESC
     `).bind(authorId).all();
@@ -620,7 +620,7 @@ export class AuthorProfileService {
   private async getAuthorExpertise(authorId: number): Promise<AuthorExpertise[]> {
     const expertise = await this.d1Service.db.prepare(`
       SELECT 
-        ace.category_id,
+        ace.article_section_id,
         c.name as category_name,
         ace.expertise_level,
         ace.articles_written,
@@ -628,13 +628,13 @@ export class AuthorProfileService {
         ace.reader_rating,
         ace.last_article_date
       FROM author_category_expertise ace
-      JOIN categories c ON ace.category_id = c.id
+      JOIN article_sections c ON ace.article_section_id = c.id
       WHERE ace.author_id = ?
       ORDER BY ace.articles_written DESC, ace.avg_quality_score DESC
     `).bind(authorId).all();
 
     return expertise.results.map((exp: any) => ({
-      categoryId: exp.category_id,
+      articleSectionId: exp.article_section_id,
       categoryName: exp.category_name,
       expertiseLevel: exp.expertise_level,
       articlesWritten: exp.articles_written || 0,
@@ -678,8 +678,8 @@ export class AuthorProfileService {
     const articles = await this.d1Service.db.prepare(`
       SELECT 
         a.id,
-        a.title,
-        a.published_at,
+        a.headline,
+        a.date_published,
         a.category,
         a.source as outlet,
         a.quality_score,
@@ -689,15 +689,15 @@ export class AuthorProfileService {
       FROM articles a
       JOIN article_authors aa ON a.id = aa.article_id
       WHERE aa.author_id = ?
-      ORDER BY a.published_at DESC
+      ORDER BY a.date_published DESC
       LIMIT ?
     `).bind(authorId, limit).all();
 
     return articles.results.map((article: any) => ({
       id: article.id,
-      title: article.title,
-      publishedAt: article.published_at,
-      category: article.category,
+      headline: article.headline,
+      datePublished: article.date_published,
+      category: article.article_section_id,
       outlet: article.outlet,
       qualityScore: article.quality_score || 0,
       engagementCount: article.engagement_count || 0
@@ -716,7 +716,7 @@ export class AuthorProfileService {
       FROM article_authors aa
       JOIN articles a ON aa.article_id = a.id
       WHERE aa.author_id = ?
-      AND datetime(a.published_at) > datetime('now', 'start of month')
+      AND datetime(a.date_published) > datetime('now', 'start of month')
     `).bind(authorId).first<{ count: number }>();
 
     // Get average quality score
@@ -789,7 +789,7 @@ export class AuthorProfileService {
     const placeholders = variations.map(() => '?').join(',');
     
     const similar = await this.d1Service.db.prepare(`
-      SELECT * FROM authors 
+      SELECT * FROM persons
       WHERE normalized_name IN (${placeholders})
       OR name LIKE ? 
       ORDER BY verification_status DESC, article_count DESC
@@ -828,7 +828,7 @@ export class AuthorProfileService {
     
     while (true) {
       const existing = await this.d1Service.db.prepare(`
-        SELECT id FROM authors WHERE slug = ?
+        SELECT id FROM persons WHERE slug = ?
       `).bind(slug).first();
       
       if (!existing) {
@@ -869,7 +869,7 @@ export class AuthorProfileService {
     // Update any missing information
     if (newData.title) {
       await this.d1Service.db.prepare(`
-        UPDATE authors SET title = ?, updated_at = CURRENT_TIMESTAMP
+        UPDATE persons SET title = ?, date_modified = CURRENT_TIMESTAMP
         WHERE id = ? AND (title IS NULL OR title = '')
       `).bind(newData.title, authorId).run();
     }
@@ -886,7 +886,7 @@ export class AuthorProfileService {
 
   private async getAuthorFollowerCount(authorId: number): Promise<number> {
     const result = await this.d1Service.db.prepare(`
-      SELECT follower_count FROM authors WHERE id = ?
+      SELECT follower_count FROM persons WHERE id = ?
     `).bind(authorId).first<{ follower_count: number }>();
 
     return result?.follower_count || 0;
@@ -894,7 +894,7 @@ export class AuthorProfileService {
 
   private async getSourceFollowerCount(sourceId: string): Promise<number> {
     const result = await this.d1Service.db.prepare(`
-      SELECT follower_count FROM news_sources WHERE id = ?
+      SELECT follower_count FROM organizations WHERE id = ?
     `).bind(sourceId).first<{ follower_count: number }>();
 
     return result?.follower_count || 0;

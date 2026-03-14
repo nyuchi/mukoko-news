@@ -25,7 +25,7 @@ export interface GlobalMetrics {
   // Top content
   trendingArticles: Array<{
     id: number
-    title: string
+    headline: string
     likes: number
     views: number
     category: string
@@ -407,14 +407,14 @@ export class RealtimeCountersDO {
       // Get trending articles (most liked/viewed in last 24 hours)
       const trendingArticles = await db
         .prepare(`
-          SELECT a.id, a.title, a.category,
+          SELECT a.id, a.headline, a.article_section_id,
                  COUNT(DISTINCT l.user_id) as likes,
                  a.view_count as views
           FROM articles a
-          LEFT JOIN user_likes l ON a.id = l.article_id 
+          LEFT JOIN user_likes l ON a.id = l.article_id
             AND datetime(l.created_at) > datetime('now', '-24 hours')
-          WHERE datetime(a.created_at) > datetime('now', '-7 days')
-          GROUP BY a.id, a.title, a.category, a.view_count
+          WHERE datetime(a.date_created) > datetime('now', '-7 days')
+          GROUP BY a.id, a.headline, a.article_section_id, a.view_count
           ORDER BY (COUNT(DISTINCT l.user_id) * 2 + a.view_count) DESC
           LIMIT 10
         `)
@@ -422,10 +422,10 @@ export class RealtimeCountersDO {
       
       this.metrics.trendingArticles = trendingArticles.results.map((article: any) => ({
         id: article.id,
-        title: article.title,
+        headline: article.headline,
         likes: article.likes,
         views: article.views,
-        category: article.category
+        category: article.article_section_id
       }))
       
       // Get trending categories
@@ -434,8 +434,8 @@ export class RealtimeCountersDO {
           SELECT c.id, c.name, 
                  COUNT(DISTINCT a.id) as articles,
                  COUNT(DISTINCT l.user_id) as engagement
-          FROM categories c
-          JOIN articles a ON c.id = a.category
+          FROM article_sections c
+          JOIN articles a ON c.id = a.article_section_id
           LEFT JOIN user_likes l ON a.id = l.article_id
             AND datetime(l.created_at) > datetime('now', '-24 hours')
           WHERE c.enabled = true

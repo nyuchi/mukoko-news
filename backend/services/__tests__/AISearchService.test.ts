@@ -49,20 +49,20 @@ describe('AISearchService', () => {
     {
       id: 1,
       slug: 'article-1',
-      title: 'Zimbabwe Elections Update',
+      headline: 'Zimbabwe Elections Update',
       description: 'Latest news on elections',
-      source: 'The Herald',
-      category: 'politics',
-      published_at: '2024-01-15T10:00:00Z',
+      publisher_name: 'The Herald',
+      article_section_id: 'politics',
+      date_published: '2024-01-15T10:00:00Z',
     },
     {
       id: 2,
       slug: 'article-2',
-      title: 'Economic Growth Report',
+      headline: 'Economic Growth Report',
       description: 'Zimbabwe economy shows growth',
-      source: 'Daily News',
-      category: 'economy',
-      published_at: '2024-01-14T10:00:00Z',
+      publisher_name: 'Daily News',
+      article_section_id: 'economy',
+      date_published: '2024-01-14T10:00:00Z',
     },
   ];
 
@@ -160,7 +160,7 @@ describe('AISearchService', () => {
         matches: [{ id: '1', score: 0.9 }],
       });
       mockDb._statement.all.mockResolvedValue({
-        results: sampleArticles.filter(a => a.category === 'politics')
+        results: sampleArticles.filter(a => a.article_section_id === 'politics')
       });
 
       await service.semanticSearch('elections', { category: 'politics' });
@@ -181,7 +181,7 @@ describe('AISearchService', () => {
       });
 
       expect(mockDb.prepare).toHaveBeenCalledWith(
-        expect.stringContaining('published_at')
+        expect.stringContaining('date_published')
       );
     });
 
@@ -232,7 +232,7 @@ describe('AISearchService', () => {
 
     it('should apply filters', async () => {
       mockDb._statement.all.mockResolvedValue({
-        results: sampleArticles.filter(a => a.source === 'The Herald')
+        results: sampleArticles.filter(a => a.publisher_name === 'The Herald')
       });
 
       await service.keywordSearch('news', { source: 'The Herald' });
@@ -327,8 +327,8 @@ describe('AISearchService', () => {
     it('should return trending topics', async () => {
       mockDb._statement.all.mockResolvedValue({
         results: [
-          { title: 'Zimbabwe Elections Update' },
-          { title: 'Economic Growth Report' },
+          { headline: 'Zimbabwe Elections Update' },
+          { headline: 'Economic Growth Report' },
         ],
       });
 
@@ -344,7 +344,7 @@ describe('AISearchService', () => {
 
     it('should limit topics to requested count', async () => {
       mockDb._statement.all.mockResolvedValue({
-        results: [{ title: 'Test' }],
+        results: [{ headline: 'Test' }],
       });
 
       mockAI.run.mockResolvedValue({
@@ -370,7 +370,7 @@ describe('AISearchService', () => {
 
     it('should filter empty topics', async () => {
       mockDb._statement.all.mockResolvedValue({
-        results: [{ title: 'Test' }],
+        results: [{ headline: 'Test' }],
       });
 
       mockAI.run.mockResolvedValue({
@@ -392,11 +392,11 @@ describe('AISearchService', () => {
 
       const result = await service.indexArticle({
         id: 1,
-        title: 'Test Article',
+        headline: 'Test Article',
         description: 'Test description',
-        content: 'Full article content',
-        category: 'politics',
-        source: 'The Herald',
+        article_body: 'Full article content',
+        article_section_id: 'politics',
+        publisher_name: 'The Herald',
       });
 
       expect(result).toBe(true);
@@ -404,8 +404,8 @@ describe('AISearchService', () => {
         expect.objectContaining({
           id: '1',
           metadata: {
-            category: 'politics',
-            source: 'The Herald',
+            article_section_id: 'politics',
+            publisher_name: 'The Herald',
           },
         }),
       ]);
@@ -417,10 +417,10 @@ describe('AISearchService', () => {
 
       const result = await service.indexArticle({
         id: 1,
-        title: 'Test Article',
+        headline: 'Test Article',
         description: 'Test description',
-        category: 'politics',
-        source: 'The Herald',
+        article_section_id: 'politics',
+        publisher_name: 'The Herald',
       });
 
       expect(result).toBe(true);
@@ -432,10 +432,10 @@ describe('AISearchService', () => {
 
       const result = await service.indexArticle({
         id: 1,
-        title: 'Test',
+        headline: 'Test',
         description: 'Test',
-        category: 'test',
-        source: 'test',
+        article_section_id: 'test',
+        publisher_name: 'test',
       });
 
       expect(result).toBe(false);
@@ -450,8 +450,8 @@ describe('AISearchService', () => {
       mockVectorize.upsert.mockResolvedValue(undefined);
 
       const articles = [
-        { id: 1, title: 'Article 1', description: 'Desc 1', category: 'politics', source: 'Source 1' },
-        { id: 2, title: 'Article 2', description: 'Desc 2', category: 'economy', source: 'Source 2' },
+        { id: 1, headline: 'Article 1', description: 'Desc 1', article_section_id: 'politics', publisher_name: 'Source 1' },
+        { id: 2, headline: 'Article 2', description: 'Desc 2', article_section_id: 'economy', publisher_name: 'Source 2' },
       ];
 
       const result = await service.batchIndexArticles(articles);
@@ -469,8 +469,8 @@ describe('AISearchService', () => {
       const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
       const articles = [
-        { id: 1, title: 'Article 1', description: 'Desc 1', category: 'politics', source: 'Source 1' },
-        { id: 2, title: 'Article 2', description: 'Desc 2', category: 'economy', source: 'Source 2' },
+        { id: 1, headline: 'Article 1', description: 'Desc 1', article_section_id: 'politics', publisher_name: 'Source 1' },
+        { id: 2, headline: 'Article 2', description: 'Desc 2', article_section_id: 'economy', publisher_name: 'Source 2' },
       ];
 
       const result = await service.batchIndexArticles(articles);
@@ -488,10 +488,10 @@ describe('AISearchService', () => {
       // Create 25 articles
       const articles = Array(25).fill(null).map((_, i) => ({
         id: i + 1,
-        title: `Article ${i + 1}`,
+        headline: `Article ${i + 1}`,
         description: `Desc ${i + 1}`,
-        category: 'test',
-        source: 'test',
+        article_section_id: 'test',
+        publisher_name: 'test',
       }));
 
       await service.batchIndexArticles(articles);

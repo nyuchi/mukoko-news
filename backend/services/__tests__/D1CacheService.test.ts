@@ -242,60 +242,60 @@ describe('D1CacheService', () => {
 
   describe('Article Data Mapping', () => {
     interface RSSArticle {
-      title: string;
+      headline: string;
       description?: string;
-      content?: string;
+      article_body?: string;
       pubDate?: string;
       link?: string;
-      author?: string;
+      author_name?: string;
       imageUrl?: string;
-      source?: string;
-      category?: string;
+      publisher_name?: string;
+      article_section_id?: string;
     }
 
     const mapRSSToD1Article = (rss: RSSArticle) => ({
-      title: rss.title,
+      headline: rss.headline,
       description: rss.description || '',
-      content: rss.content || rss.description || '',
-      published_at: rss.pubDate || new Date().toISOString(),
-      original_url: rss.link || '',
-      author: rss.author || '',
-      image_url: rss.imageUrl || '',
-      source: rss.source || 'Unknown',
-      category_id: rss.category || 'general',
+      article_body: rss.article_body || rss.description || '',
+      date_published: rss.pubDate || new Date().toISOString(),
+      main_entity_of_page: rss.link || '',
+      author_name: rss.author_name || '',
+      image: rss.imageUrl || '',
+      publisher_name: rss.publisher_name || 'Unknown',
+      article_section_id: rss.article_section_id || 'general',
     });
 
     it('should map required fields', () => {
-      const rss = { title: 'Test Article' };
+      const rss = { headline: 'Test Article' };
       const d1 = mapRSSToD1Article(rss);
 
-      expect(d1.title).toBe('Test Article');
-      expect(d1.source).toBe('Unknown');
-      expect(d1.category_id).toBe('general');
+      expect(d1.headline).toBe('Test Article');
+      expect(d1.publisher_name).toBe('Unknown');
+      expect(d1.article_section_id).toBe('general');
     });
 
     it('should map optional fields when present', () => {
       const rss = {
-        title: 'Test',
+        headline: 'Test',
         description: 'Description',
-        author: 'Author Name',
+        author_name: 'Author Name',
         imageUrl: 'https://example.com/image.jpg',
       };
       const d1 = mapRSSToD1Article(rss);
 
       expect(d1.description).toBe('Description');
-      expect(d1.author).toBe('Author Name');
-      expect(d1.image_url).toBe('https://example.com/image.jpg');
+      expect(d1.author_name).toBe('Author Name');
+      expect(d1.image).toBe('https://example.com/image.jpg');
     });
 
-    it('should use description as content fallback', () => {
+    it('should use description as article_body fallback', () => {
       const rss = {
-        title: 'Test',
+        headline: 'Test',
         description: 'Description text',
       };
       const d1 = mapRSSToD1Article(rss);
 
-      expect(d1.content).toBe('Description text');
+      expect(d1.article_body).toBe('Description text');
     });
   });
 
