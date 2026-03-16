@@ -1,4 +1,4 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://mukoko-news-backend.nyuchi.workers.dev';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://mukoko-news-api.fly.dev';
 
 interface Article {
   id: string;

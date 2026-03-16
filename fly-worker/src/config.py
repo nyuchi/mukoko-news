@@ -6,16 +6,23 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     """Fly.io worker settings. All secrets set via `fly secrets set`."""
 
-    # Fly.io Managed Postgres (DATABASE_URL is auto-set by Fly.io)
+    # Database — Supabase direct connection
     database_url: str = "postgresql://localhost:5432/mukoko_news"
 
     # AI services
     anthropic_api_key: str = ""
     voyage_api_key: str = ""
 
-    # D1 sync target (Cloudflare Worker URL that proxies D1 writes)
-    d1_sync_url: str = ""
-    d1_sync_secret: str = ""
+    # API authentication
+    api_secret: str = ""  # Bearer token for frontend-to-backend auth
+    admin_session_secret: str = ""  # Admin dashboard auth
+
+    # OIDC (id.mukoko.com)
+    oidc_issuer_url: str = "https://id.mukoko.com"
+    oidc_client_secret: str = ""
+
+    # CORS
+    cors_origins: str = "https://news.mukoko.com,https://mukoko-news.vercel.app,http://localhost:3000"
 
     # Worker config
     log_level: str = "info"

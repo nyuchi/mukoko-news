@@ -1,7 +1,7 @@
 [project]
-name = "mukoko-fly-worker"
-version = "1.0.0"
-description = "Mukoko News data processing worker — RSS collection, AI processing, database sync"
+name = "mukoko-news-api"
+version = "2.0.0"
+description = "Mukoko News API backend — FastAPI on Fly.io with Supabase Postgres"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115",

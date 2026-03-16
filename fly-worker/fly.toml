@@ -1,7 +1,13 @@
-app = "mukoko-news-worker"
+app = "mukoko-news-api"
 primary_region = "jnb"
 
 [build]
+
+[env]
+  # Non-secret env vars. Secrets set via: fly secrets set KEY=VALUE
+  CORS_ORIGINS = "https://news.mukoko.com,https://mukoko-news.vercel.app,http://localhost:3000"
+  LOG_LEVEL = "info"
+  ENVIRONMENT = "production"
 
 [http_service]
   internal_port = 8080
@@ -20,6 +26,6 @@ primary_region = "jnb"
     grace_period = "10s"
 
 [[vm]]
-  memory = "512mb"
+  memory = "1024mb"
   cpu_kind = "shared"
   cpus = 1

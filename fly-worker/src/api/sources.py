@@ -1,0 +1,129 @@
+"""Source endpoints — /api/sources, /api/countries."""
+
+from fastapi import APIRouter, Depends, Query
+
+from src.db import get_pool
+from src.api.auth import require_api_key
+
+router = APIRouter(prefix="/api", tags=["sources"])
+
+
+@router.get("/sources")
+async def get_sources(
+    _token: str | None = Depends(require_api_key),
+):
+    """Get all enabled news organizations with article counts."""
+    pool = await get_pool()
+
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT o.id, o.name, o.url, o.rss_feed_url, o.area_served,
+                      o.article_section_id, o.health_status, o.priority,
+                      o.last_fetched_at, o.total_fetch_count, o.total_error_count,
+                      o.last_error,
+                      COUNT(a.id) AS article_count,
+                      MAX(a.date_published) AS latest_article_at
+               FROM organizations o
+               LEFT JOIN articles a ON a.publisher_id = o.id AND a.status = 'published'
+               WHERE o.enabled = TRUE
+               GROUP BY o.id
+               ORDER BY o.priority DESC, o.name"""
+        )
+
+    sources = []
+    for r in rows:
+        sources.append({
+            "id": r["id"],
+            "name": r["name"],
+            "url": r.get("url"),
+            "rss_feed_url": r.get("rss_feed_url"),
+            "area_served": r.get("area_served"),
+            "article_section_id": r.get("article_section_id"),
+            "health_status": r.get("health_status", "unknown"),
+            "priority": r.get("priority", 0),
+            "last_fetched_at": r["last_fetched_at"].isoformat() if r.get("last_fetched_at") else None,
+            "total_fetch_count": r.get("total_fetch_count", 0),
+            "total_error_count": r.get("total_error_count", 0),
+            "last_error": r.get("last_error"),
+            "article_count": r["article_count"],
+            "latest_article_at": r["latest_article_at"].isoformat() if r.get("latest_article_at") else None,
+        })
+
+    return {"sources": sources, "total": len(sources)}
+
+
+@router.get("/countries")
+async def get_countries(
+    _token: str | None = Depends(require_api_key),
+):
+    """Get all enabled countries."""
+    pool = await get_pool()
+
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT id, name, flag_emoji, color, region, in_language, timezone, priority
+               FROM countries
+               WHERE enabled = TRUE
+               ORDER BY priority DESC, name"""
+        )
+
+    countries = [
+        {
+            "id": r["id"],
+            "code": r["id"],
+            "name": r["name"],
+            "flag_emoji": r.get("flag_emoji"),
+            "color": r.get("color"),
+            "region": r.get("region"),
+            "in_language": r.get("in_language"),
+            "timezone": r.get("timezone"),
+        }
+        for r in rows
+    ]
+
+    return {"countries": countries}
+
+
+@router.get("/countries/{country_id}")
+async def get_country(
+    country_id: str,
+    _token: str | None = Depends(require_api_key),
+):
+    """Get a single country."""
+    pool = await get_pool()
+
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT * FROM countries WHERE id = $1", country_id
+        )
+
+    if not row:
+        return {"error": "Country not found"}, 404
+
+    return {
+        "country": {
+            "id": row["id"],
+            "code": row["id"],
+            "name": row["name"],
+            "flag_emoji": row.get("flag_emoji"),
+        }
+    }
+
+
+@router.get("/countries/stats/articles")
+async def get_country_article_stats(
+    _token: str | None = Depends(require_api_key),
+):
+    """Get article counts per country."""
+    pool = await get_pool()
+
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT about_country_id AS country_id, COUNT(*) AS article_count
+               FROM articles
+               WHERE status = 'published'
+               GROUP BY about_country_id
+               ORDER BY article_count DESC"""
+        )
+
+    return {"stats": [dict(r) for r in rows]}

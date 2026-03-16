@@ -1,12 +1,11 @@
 """APScheduler job configuration.
 
-All scheduled jobs for the Fly.io worker:
+All scheduled jobs for the Fly.io backend:
 - RSS feed collection (every 15 min) — includes inline AI processing
 - Engagement score recalculation (every 5 min)
 - Trending topics refresh (every 30 min)
 - Source health check (every 6 hours)
 - Stale data cleanup (daily at 3:00 UTC)
-- Database sync to D1 (every 10 min)
 """
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -24,7 +23,6 @@ def create_scheduler() -> AsyncIOScheduler:
     from src.jobs.trending import refresh_trending
     from src.jobs.health_checker import check_source_health
     from src.jobs.cleanup import cleanup_stale_data
-    from src.jobs.sync import sync_to_d1
 
     # RSS collection + inline AI processing: every 15 minutes
     scheduler.add_job(
@@ -68,15 +66,6 @@ def create_scheduler() -> AsyncIOScheduler:
         CronTrigger(hour=3, minute=0),
         id="cleanup",
         name="Stale Data Cleanup",
-        max_instances=1,
-    )
-
-    # Sync to D1: every 10 minutes
-    scheduler.add_job(
-        sync_to_d1,
-        IntervalTrigger(minutes=10),
-        id="sync",
-        name="Database Sync to D1",
         max_instances=1,
     )
 
