@@ -201,4 +201,5 @@ async def trigger_collection(_admin: str = Depends(require_admin)):
         await collect_feeds()
         return {"success": True, "message": "Feed collection triggered"}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        print(f"[ADMIN] Feed collection error: {e}")
+        return {"success": False, "error": "Feed collection failed"}

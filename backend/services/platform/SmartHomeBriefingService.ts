@@ -318,9 +318,14 @@ export class SmartHomeBriefingService {
   }
 
   private makeAudioFriendly(text: string): string {
-    return text
-      // Remove HTML tags
-      .replace(/<[^>]+>/g, '')
+    // Remove HTML tags iteratively to handle nested/malformed tags like <scr<script>ipt>
+    let cleaned = text;
+    let prev = '';
+    while (prev !== cleaned) {
+      prev = cleaned;
+      cleaned = cleaned.replace(/<[^>]+>/g, '');
+    }
+    return cleaned
       // Expand common abbreviations
       .replace(/\bPM\b/g, 'Prime Minister')
       .replace(/\bMP\b/g, 'Member of Parliament')
