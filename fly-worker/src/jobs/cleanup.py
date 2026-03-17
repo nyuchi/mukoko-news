@@ -19,50 +19,50 @@ async def cleanup_stale_data() -> None:
     async with pool.acquire() as conn:
         # 1. Delete archived articles older than 90 days
         result = await conn.execute(
-            """DELETE FROM articles
+            """DELETE FROM news.news_article
                WHERE status = 'archived'
-                 AND date_published < $1""",
+                 AND datepublished < $1""",
             cutoff,
         )
         stats["archived"] = _parse_count(result)
 
         # 2. Clean orphaned article_keywords (article deleted)
         result = await conn.execute(
-            """DELETE FROM article_keywords
-               WHERE article_id NOT IN (SELECT id FROM articles)"""
+            """DELETE FROM news.article_keyword
+               WHERE article_id NOT IN (SELECT id FROM news.news_article)"""
         )
         stats["orphaned_links"] = _parse_count(result)
 
-        # 3. Clean orphaned article_authors
+        # 3. Clean orphaned article_authorships
         await conn.execute(
-            """DELETE FROM article_authors
-               WHERE article_id NOT IN (SELECT id FROM articles)"""
+            """DELETE FROM news.article_authorship
+               WHERE article_id NOT IN (SELECT id FROM news.news_article)"""
         )
 
         # 4. Remove expired trending cache (backup for TTL)
         result = await conn.execute(
-            "DELETE FROM trending_cache WHERE expires_at < NOW()"
+            "DELETE FROM news.trending_cache WHERE expires_at < NOW()"
         )
         stats["expired_cache"] = _parse_count(result)
 
         # 5. Clean old collection logs (keep 30 days)
         log_cutoff = datetime.now(timezone.utc) - timedelta(days=30)
         result = await conn.execute(
-            "DELETE FROM collection_log WHERE created_at < $1", log_cutoff
+            "DELETE FROM system.collection_log WHERE created_at < $1", log_cutoff
         )
         stats["old_logs"] = _parse_count(result)
 
         # 6. Clean old sync logs (keep 30 days)
         await conn.execute(
-            "DELETE FROM sync_log WHERE created_at < $1", log_cutoff
+            "DELETE FROM sync.sync_log WHERE created_at < $1", log_cutoff
         )
 
         # 7. Recalculate keyword article counts
         await conn.execute(
-            """UPDATE defined_terms SET
+            """UPDATE news.defined_term SET
                article_count = (
-                   SELECT COUNT(*) FROM article_keywords
-                   WHERE article_keywords.term_id = defined_terms.id
+                   SELECT COUNT(*) FROM news.article_keyword
+                   WHERE news.article_keyword.term_id = news.defined_term.id
                )"""
         )
 
