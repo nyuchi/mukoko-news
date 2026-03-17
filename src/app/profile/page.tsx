@@ -1,3 +1,6 @@
+// MIGRATION NOTE: This consumer-facing page is migrating to the Mukoko super app (app.mukoko.com).
+// This repo (mukoko-news) is becoming the news platform layer.
+// See CLAUDE.md "Consumer → Super App Migration" section.
 "use client";
 
 import { useState } from "react";

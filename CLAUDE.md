@@ -4,13 +4,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Mukoko News is a Pan-African digital news aggregation platform. "Mukoko" means "Beehive" in Shona - where community gathers and stores knowledge. Primary market is Zimbabwe with expansion across 16 African countries.
+Mukoko News is a **Pan-African news platform & API**. "Mukoko" means "Beehive" in Shona — where community gathers and stores knowledge. Primary market is Zimbabwe with expansion across 16 African countries.
 
-**Architecture**: Next.js 15 frontend with Fly.io backend
+**This is a platform, not a consumer app.** The interactive reading experience (feeds, NewsBytes, personalized content, saved articles) is migrating to the **Mukoko super app** (`app.mukoko.com`). This repository is the **news platform layer**: backend API, publisher onboarding, content moderation, MCP server, embed widgets, RSS distribution, open data analytics, and admin management.
 
-- `src/` - Next.js 15 frontend (App Router)
-- `fly-worker/` - Fly.io FastAPI backend (Python, production)
-- `backend/` - Cloudflare Workers API (archived, replaced by fly-worker)
+### Three Codebases
+
+| Directory | Runtime | Purpose |
+|-----------|---------|---------|
+| `src/` | Next.js 15 on Vercel | Platform dashboard + consumer pages (migrating out) |
+| `fly-worker/` | FastAPI on Fly.io | **Production news API** — RSS ingestion, AI processing, engagement, search |
+| `mcp-server/` | Node.js (stdio) | **MCP server** — Model Context Protocol for AI clients |
+| `backend/services/platform/` | TypeScript (design) | **Platform services** — publisher, webhooks, API keys, moderation (next migration target to fly-worker) |
+| `database/migrations/` | SQL | Schema migrations (Postgres + platform tables) |
+
+> **Note on `backend/`**: The Cloudflare Workers HTTP layer (Hono) is archived and no longer deployed. However, `backend/services/platform/` contains the **active design** for 10 platform services that are the next migration target to fly-worker. Do not treat `backend/` as entirely dead.
 
 ## Common Commands
 
@@ -23,17 +31,15 @@ npm run start            # Start production server
 npm run lint             # ESLint check
 npm run lint:fix         # ESLint auto-fix
 npm run typecheck        # TypeScript check
+npm run test             # Vitest single run
+npm run test:watch       # Vitest watch mode
+npm run test:coverage    # Vitest with v8 coverage
 npm run clean            # Clean build artifacts
-
-# Backend (fly-worker)
-cd fly-worker && uvicorn src.main:app --reload --port 8080  # Local dev
-cd fly-worker && pytest                                      # Run tests
 ```
 
 ### Backend (`cd fly-worker`)
 
 ```bash
-# Development
 uvicorn src.main:app --reload --port 8080  # Local dev server
 pytest                                      # Run tests
 pytest --cov                                # Tests with coverage
@@ -46,7 +52,50 @@ fly secrets set KEY=VALUE                   # Set environment secrets
 fly logs                                    # View production logs
 ```
 
+### MCP Server (`cd mcp-server`)
+
+```bash
+npm install              # Install dependencies
+node src/index.js        # Run MCP server (stdio transport)
+```
+
 ## Architecture
+
+### Platform Layer (This Repo)
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  PLATFORM FRONTEND — Next.js 15 (Vercel) — news.mukoko.com      │
+│  ┌────────────────────────────────────────────────────────────┐  │
+│  │ /platform/*          Platform Dashboard                    │  │
+│  │   /publishers        Publisher claiming & verification     │  │
+│  │   /authors           Author portal                         │  │
+│  │   /tools/embed       Widget builder                        │  │
+│  │   /tools/mcp         MCP server setup docs                 │  │
+│  │   /tools/rss         RSS feed configuration                │  │
+│  │   /feed              Publisher feed management              │  │
+│  ├────────────────────────────────────────────────────────────┤  │
+│  │ /admin/*             Admin Dashboard (sources, users, etc) │  │
+│  ├────────────────────────────────────────────────────────────┤  │
+│  │ CONSUMER PAGES (migrating to super app)                    │  │
+│  │   / /discover /newsbytes /search /saved /profile /insights │  │
+│  └────────────────────────────────────────────────────────────┘  │
+└──────────────────────┬───────────────────────────────────────────┘
+                       │ Bearer Token Auth (API_SECRET)
+┌──────────────────────┼───────────────────────────────────────────┐
+│  NEWS API — FastAPI on Fly.io — mukoko-news-api.fly.dev          │
+│  12 API Routers (42+ endpoints) + 6 Background Jobs              │
+│  ┌──────────┬──────────┬──────────┬──────────────────┐           │
+│  │ Postgres │ CouchDB  │ Doris    │ Anthropic Claude │           │
+│  │ Supabase │ Doc Store│ Analytics│ AI Processing    │           │
+│  └──────────┴──────────┴──────────┴──────────────────┘           │
+└──────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────┐
+│  MCP SERVER — @mukoko/mcp-server — stdio transport               │
+│  9 tools + 5 resources for Claude Desktop, Claude Code, Cursor   │
+└──────────────────────────────────────────────────────────────────┘
+```
 
 ### Frontend Stack
 
@@ -68,6 +117,14 @@ fly logs                                    # View production logs
 - **AI**: Anthropic Claude (keyword extraction, quality scoring)
 - **Search**: Hybrid Doris funnel + Postgres hydration (ILIKE fallback)
 - **Auth**: Bearer token (API_SECRET), OIDC JWT from id.mukoko.com (planned)
+
+### MCP Server Stack
+
+- **Package**: `@mukoko/mcp-server` v1.0.0
+- **SDK**: `@modelcontextprotocol/sdk` v1.12.1
+- **Transport**: Stdio (for Claude Desktop, Claude Code, Cursor)
+- **API**: Connects to `https://mukoko-news-api.fly.dev` with Bearer token
+- **Validation**: Zod schemas for all tool inputs
 
 ### Backend Services Pattern
 
@@ -95,10 +152,10 @@ Services are in `fly-worker/src/services/`:
 
 ### Access Control
 
-- **Admin routes** (`/api/admin/*`) - Protected, requires admin role
+- **Admin routes** (`/api/admin/*`) - Protected, requires ADMIN_SESSION_SECRET
 - **API routes** (`/api/*`) - Protected with bearer token (API_SECRET or OIDC JWT)
-- **Public routes** - `/api/health` only
-- Non-admin roles (moderator, support, author, user) are currently disabled
+- **Public routes** - `/api/health`, `/api/analytics/*`
+- **Platform API keys** (planned) - 5-tier self-service keys (free → enterprise)
 
 ### Design System (Nyuchi Brand v6)
 
@@ -124,41 +181,64 @@ Services are in `fly-worker/src/services/`:
 src/
 ├── app/                     # Next.js App Router
 │   ├── layout.tsx           # Root layout with providers
-│   ├── page.tsx             # Home feed page
+│   ├── page.tsx             # Home feed page (migrating to super app)
 │   ├── globals.css          # Tailwind styles and CSS variables
-│   ├── admin/               # Admin dashboard
+│   │
+│   ├── platform/            # ── PLATFORM DASHBOARD ──
+│   │   ├── layout.tsx       # Platform layout with sidebar nav
+│   │   ├── page.tsx         # Dashboard: stats, quick actions, features, super app banner
+│   │   ├── publishers/
+│   │   │   └── page.tsx     # Claim/verify news sources (4-step onboarding)
+│   │   ├── authors/
+│   │   │   └── page.tsx     # Author portal (blog connect, API publish, write on platform)
+│   │   ├── feed/
+│   │   │   └── page.tsx     # Publisher feed management
+│   │   └── tools/
+│   │       ├── page.tsx     # Tools hub (embed, MCP, RSS)
+│   │       ├── embed/
+│   │       │   └── page.tsx # Widget builder (5 layouts, 4 feed types)
+│   │       ├── mcp/
+│   │       │   └── page.tsx # MCP server setup (Claude Desktop, Code, Cursor)
+│   │       └── rss/
+│   │           └── page.tsx # RSS feed config (country + category feeds)
+│   │
+│   ├── admin/               # ── ADMIN DASHBOARD ──
 │   │   ├── analytics/       # Admin analytics
 │   │   ├── sources/         # RSS source management
 │   │   ├── system/          # System settings
 │   │   └── users/           # User management
-│   ├── article/[id]/        # Article detail page
-│   ├── categories/          # Categories page
-│   ├── discover/            # Discover page (country/category filtering, tag cloud, sources)
-│   │   ├── page.tsx         # Discover page with log-scaled tag cloud, source/category/country browsing
+│   │
+│   ├── embed/               # ── EMBEDDABLE WIDGETS ──
+│   │   ├── page.tsx         # Embed documentation & live preview
+│   │   ├── layout.tsx       # Embed SEO metadata
+│   │   ├── iframe/
+│   │   │   ├── page.tsx     # Iframe renderer (5 layouts, 4 feed types)
+│   │   │   └── layout.tsx   # Iframe layout with Suspense
 │   │   └── __tests__/
-│   │       └── discover-page.test.tsx  # Discover page, tag cloud, sources section (14 tests)
-│   ├── sources/             # News sources directory page
-│   │   ├── page.tsx         # Sources page with search, country filter, sort, health indicators
+│   │       ├── embed-iframe.test.tsx  # Widget rendering (42 tests)
+│   │       └── widget.test.ts        # widget.js behavior (38 tests)
+│   │
+│   ├── sources/             # ── NEWS SOURCES DIRECTORY ──
+│   │   ├── page.tsx         # Sources with search, filter, sort, health
 │   │   ├── layout.tsx       # Sources SEO metadata
 │   │   └── __tests__/
-│   │       └── sources-page.test.tsx   # Sources page rendering, filtering, sorting (13 tests)
-│   ├── embed/               # Embeddable news card widgets (promotion framework)
-│   │   ├── page.tsx         # Embed documentation & live preview page
-│   │   ├── layout.tsx       # Embed SEO metadata layout
-│   │   ├── iframe/
-│   │   │   ├── page.tsx     # Iframe widget renderer (5 layouts, 4 feed types)
-│   │   │   └── layout.tsx   # Iframe layout with Suspense boundary
-│   │   └── __tests__/
-│   │       ├── embed-iframe.test.tsx  # Widget rendering, params, themes (42 tests)
-│   │       └── widget.test.ts        # widget.js script behavior (38 tests)
+│   │       └── sources-page.test.tsx  # Sources page tests (13 tests)
+│   │
+│   ├── article/[id]/        # Article detail page
+│   ├── categories/          # Categories page
+│   │
+│   │   # ── CONSUMER PAGES (migrating to Mukoko super app) ──
+│   ├── discover/            # Discover page (country/category/tag cloud)
 │   ├── newsbytes/           # TikTok-style vertical feed
 │   ├── search/              # Search page
 │   ├── profile/             # User profile/settings
 │   ├── saved/               # Saved articles
 │   ├── insights/            # Analytics insights
+│   │
 │   ├── help/                # Help pages
 │   ├── privacy/             # Privacy policy
 │   └── terms/               # Terms of service
+│
 ├── components/
 │   ├── layout/
 │   │   ├── header.tsx       # Navigation header
@@ -175,7 +255,7 @@ src/
 │   │   ├── error-boundary.tsx  # React error boundary component
 │   │   ├── skeleton.tsx        # Skeleton loading components
 │   │   ├── discover-skeleton.tsx # Page-specific skeletons
-│   │   ├── json-ld.tsx         # Schema.org JSON-LD components
+│   │   ├── json-ld.tsx         # Schema.org JSON-LD components (8 types)
 │   │   └── breadcrumb.tsx      # Breadcrumb navigation
 │   ├── article-card.tsx     # Main article display component
 │   ├── hero-card.tsx        # Featured article card with large image
@@ -198,13 +278,13 @@ src/
 ├── contexts/
 │   ├── preferences-context.tsx # User preferences (countries, categories)
 │   └── __tests__/
-│       └── preferences-context.test.tsx # Context tests
+│       └── preferences-context.test.tsx
 └── lib/
     ├── api.ts               # API client with fetch utilities
     ├── utils.ts             # Utility functions (cn, formatTimeAgo, isValidImageUrl, safeCssUrl)
     ├── constants.ts         # Centralized countries and categories data
     ├── source-profiles.ts   # News source configurations
-    └── __tests__/           # Unit tests
+    └── __tests__/
         ├── api.test.ts      # Tests for API client
         ├── utils.test.ts    # Tests for utility functions
         └── constants.test.ts # Tests for constants and helpers
@@ -213,7 +293,7 @@ src/
 ## Backend Structure
 
 ```text
-fly-worker/
+fly-worker/                  # ── PRODUCTION NEWS API ──
 ├── src/
 │   ├── main.py              # FastAPI app, CORS, router registration, lifespan
 │   ├── config.py            # pydantic-settings configuration
@@ -231,7 +311,7 @@ fly-worker/
 │   │   ├── authors.py       # /api/authors, /api/trending-authors, /api/featured-authors
 │   │   ├── stats.py         # /api/health, /api/stats
 │   │   ├── admin.py         # /api/admin/* (6 endpoints)
-│   │   ├── analytics.py     # /api/analytics/* (8 public endpoints)
+│   │   ├── analytics.py     # /api/analytics/* (8 public open data endpoints)
 │   │   └── user.py          # /api/user/bookmarks (stub)
 │   ├── jobs/                # Background jobs (6 scheduled)
 │   │   ├── rss_collector.py # RSS fetch + AI processing pipeline
@@ -255,17 +335,269 @@ fly-worker/
 └── requirements.txt         # Python dependencies
 ```
 
-**Note**: `backend/` contains the archived Cloudflare Workers backend (Hono/TypeScript). It is no longer deployed. All production traffic goes through `fly-worker/`.
+```text
+mcp-server/                  # ── MCP SERVER ──
+├── src/
+│   └── index.js             # MCP server (9 tools, 5 resources)
+├── package.json             # @mukoko/mcp-server, bin: mukoko-mcp
+└── node_modules/
+```
+
+```text
+backend/                     # ── PLATFORM SERVICES (design, migration target) ──
+├── services/
+│   └── platform/            # 10 TypeScript platform services
+│       ├── index.ts         # Service exports & types
+│       ├── PublisherService.ts      # Publisher registration, DNS verification, article push
+│       ├── APIKeyService.ts         # 5-tier API key management (free→enterprise)
+│       ├── WebhookService.ts        # Event-driven webhooks, HMAC signing, retry
+│       ├── ContentModerationService.ts # AI moderation, cultural alignment, fact-checking
+│       ├── OpenDataService.ts       # Open data manifesto, bulk export, PII audit
+│       ├── SmartHomeBriefingService.ts # Alexa, Google Assistant, HomePod briefings
+│       ├── SSEStreamService.ts      # Server-sent events for real-time updates
+│       ├── FeedOutputService.ts     # Feed formatting & output
+│       └── DynamicDataService.ts    # Dynamic categories, keywords, sources, countries
+└── ...                      # Archived Cloudflare Workers HTTP layer (Hono)
+```
+
+```text
+database/
+└── migrations/
+    ├── ...                  # Core schema migrations
+    └── 024_platform_services_tables.sql  # Platform tables (11 tables + seed data)
+```
+
+## MCP Server
+
+The MCP server (`mcp-server/`) exposes the Mukoko News API to any MCP-compatible AI client.
+
+### Tools (9)
+
+| Tool | Endpoint | Description |
+|------|----------|-------------|
+| `search_articles` | GET /api/search | Search articles by query, country, category |
+| `get_latest_articles` | GET /api/feeds | Latest articles with filtering and sorting |
+| `get_article` | GET /api/article/:id | Single article by UUID or slug |
+| `get_trending` | GET /api/stories/trending | Trending story clusters |
+| `get_news_bytes` | GET /api/news-bytes | Short-form articles for quick consumption |
+| `get_related_articles` | GET /api/article/:id/related | Related articles by keyword overlap |
+| `list_sources` | GET /api/sources | All RSS sources with health status |
+| `get_stats` | GET /api/stats | Platform statistics |
+| `get_keywords` | GET /api/keywords | Trending keywords for topics |
+
+### Resources (5)
+
+| URI | Description |
+|-----|-------------|
+| `mukoko://openapi` | OpenAPI 3.0 schema reference |
+| `mukoko://countries` | All 16 Pan-African countries |
+| `mukoko://categories` | Content categories with article counts |
+| `mukoko://sources` | News sources with health status |
+| `mukoko://keywords` | Trending keywords |
+
+### Client Setup
+
+**Claude Desktop** (`claude_desktop_config.json`):
+```json
+{
+  "mcpServers": {
+    "mukoko-news": {
+      "command": "node",
+      "args": ["/path/to/mcp-server/src/index.js"],
+      "env": { "MUKOKO_API_SECRET": "your-secret" }
+    }
+  }
+}
+```
+
+**Claude Code**: `claude mcp add mukoko-news node /path/to/mcp-server/src/index.js`
+
+**Environment**: `MUKOKO_API_SECRET` (required), `MUKOKO_API_URL` (optional, defaults to production)
+
+## Platform Services
+
+These services are defined in `backend/services/platform/` (TypeScript) and are the next migration target to `fly-worker/` (Python). They represent the B2B/B2D platform capabilities.
+
+### Publisher Portal
+
+**Service**: `PublisherService.ts` | **Frontend**: `src/app/platform/publishers/page.tsx`
+
+Publishers can claim ownership of news sources aggregated by Mukoko:
+
+1. **Find Source** — Search the directory of aggregated sources
+2. **Verify Ownership** — DNS TXT record verification (`mukoko-verify=<token>`)
+3. **Connect API** — Direct article push via REST API (like Apple News)
+4. **Manage & Monitor** — Analytics, content appearance, metadata control
+
+**Verification Levels**:
+- `unverified` → Submitted application, awaiting review
+- `basic` → Domain ownership verified via DNS
+- `verified` → Editorial review passed, organization confirmed
+- `premium` → Partnership agreement, priority distribution
+
+Verified and premium publishers get auto-approval for submitted articles.
+
+### API Key Management
+
+**Service**: `APIKeyService.ts`
+
+| Tier | Rate Limit | Permissions | Price |
+|------|-----------|-------------|-------|
+| `free` | 100/day, 1/sec | Public data read-only | Free |
+| `developer` | 10,000/day, 10/sec | Full API read | $29/mo |
+| `business` | 100,000/day, 50/sec | Full API + batch | $149/mo |
+| `enterprise` | Unlimited, 200/sec | Full API + batch + webhooks + SLA | Contact |
+| `open_data` | Unlimited, 5/sec | Public analytics read-only | Free |
+
+Key format: `mk_live_xxxx` (standard), `mk_od_xxxx` (open data). SHA-256 hashed at rest.
+
+### Webhook System
+
+**Service**: `WebhookService.ts`
+
+14 event types across 5 categories:
+- **Articles**: `article.published`, `article.updated`, `article.deleted`, `article.flagged`
+- **Breaking**: `breaking_news`
+- **Sources**: `source.added`, `source.removed`, `source.health_changed`
+- **Categories**: `category.created`, `category.trending`
+- **Keywords**: `keyword.discovered`, `keyword.trending`
+- **Publishers**: `publisher.verified`, `publisher.article_submitted`
+- **Moderation**: `moderation.completed`
+
+Features: HMAC-SHA256 signing, filters (countries, categories, min_quality_score), exponential backoff retry (2s, 4s, 8s), delivery audit trail.
+
+### Content Moderation
+
+**Service**: `ContentModerationService.ts`
+
+11 flag types: fake_news, misleading, hate_speech, incitement, bias, stereotype, unverified, manipulative, plagiarism, quality, cultural_insensitivity.
+
+- **Cultural alignment scoring**: African perspective, local context, respectful language, community relevance
+- **Fact-check signals**: claim detection, verifiability, sources cited, known misinformation patterns
+- Auto-approve threshold: 80+, auto-flag threshold: <40
+
+### Open Data
+
+**Service**: `OpenDataService.ts`
+
+Mukoko is an open data platform. All non-PII analytics are public (`/api/analytics/*` — no auth required).
+
+- License: CC BY 4.0
+- Data categories: Articles, Sources, Categories, Keywords, Analytics
+- Privacy boundary: No PII (emails, phone numbers, IPs, device IDs, precise location)
+- Access: API, RSS/Atom feeds, CouchDB replication, bulk CSV export
+
+### Smart Home Briefings
+
+**Service**: `SmartHomeBriefingService.ts`
+
+- **Alexa Flash Briefing**: uid, updateDate, titleText, mainText, redirectionUrl
+- **Google Assistant**: speech, displayText, carousel items
+- **Apple HomePod**: SSML markup for voice-friendly output
+- **Generic IoT**: greeting, summary, stories, metadata
+
+Time-aware greetings, country/category filtering, configurable story limits.
+
+### SSE Streaming
+
+**Service**: `SSEStreamService.ts`
+
+Real-time Server-Sent Events for: new articles, breaking news, trending updates, source health changes. Event log for client reconnection replay.
+
+## Platform Database Tables
+
+Defined in `database/migrations/024_platform_services_tables.sql` (11 tables):
+
+| Table | Purpose |
+|-------|---------|
+| `api_keys` | Self-service developer keys (tier, permissions, rate limits, usage) |
+| `publishers` | Publisher registration & verification (domain, level, token, analytics) |
+| `webhook_subscriptions` | Event subscriptions (url, events, secret, filters, failure tracking) |
+| `webhook_deliveries` | Delivery audit trail (status, attempts, response, retry schedule) |
+| `content_moderation_log` | AI moderation results (score, flags, recommendation, cultural alignment) |
+| `keywords` | Auto-discovered trending keywords (term, slug, trending_score, aliases) |
+| `dynamic_sources` | Extended source management (verified, added_by: system/admin/publisher/discovery) |
+| `dynamic_countries` | Database-driven country config (currencies, timezones, languages) |
+| `tags` | Entity/topic/location/event/person/organization tags |
+| `pii_audit_log` | PII removal tracking for open data compliance |
+| `sse_event_log` | Event log for SSE client reconnection replay |
+
+Seed data: All 16 Pan-African countries with currencies, timezones, languages.
 
 ## Database
 
 **Postgres** (Supabase) with schemas: `public`, `news`, `engagement`, `identity`, `system`, `sync`.
 
 Migrations in `fly-worker/src/db.py` (applied via `_migrations` tracking table).
+Platform migrations in `database/migrations/024_platform_services_tables.sql`.
 
 **Key Tables** (news schema): `news_article`, `feed_source`, `news_media_organization`, `defined_term`, `article_keyword`, `article_authorship`, `trending_cache`, `country`, `collection_log`
 
 **Key Tables** (other schemas): `engagement.interest_category`, `identity.person`, `system.collection_log`
+
+**Platform Tables**: `api_keys`, `publishers`, `webhook_subscriptions`, `webhook_deliveries`, `content_moderation_log`, `keywords`, `dynamic_sources`, `dynamic_countries`, `tags`, `pii_audit_log`, `sse_event_log`
+
+## Schema.org Compliance
+
+All content follows [Schema.org](https://schema.org) conventions. JSON-LD structured data is rendered via `src/components/ui/json-ld.tsx` with XSS prevention (`safeJsonLdStringify()`).
+
+### Implemented Schema.org Types (8)
+
+| Component | Schema.org Type | Where Used |
+|-----------|----------------|------------|
+| `ArticleJsonLd` | [NewsArticle](https://schema.org/NewsArticle) | Article detail pages (`/article/[id]`) |
+| `OrganizationJsonLd` | [Organization](https://schema.org/Organization) | Root layout (`layout.tsx`) |
+| `BreadcrumbJsonLd` | [BreadcrumbList](https://schema.org/BreadcrumbList) | Article pages, category pages |
+| `WebSiteJsonLd` | [WebSite](https://schema.org/WebSite) | Root layout |
+| `WebPageJsonLd` | [WebPage](https://schema.org/WebPage) | Static pages (help, privacy, terms) |
+| `ItemListJsonLd` | [ItemList](https://schema.org/ItemList) | Feed pages, search results |
+| `CollectionPageJsonLd` | [CollectionPage](https://schema.org/CollectionPage) | Discover page, categories |
+| `SoftwareApplicationJsonLd` | [SoftwareApplication](https://schema.org/SoftwareApplication) | App promotion |
+
+### Schema.org in API Responses
+
+All API article responses follow Schema.org `NewsArticle` property naming:
+- `headline`, `description`, `datePublished`, `dateModified`
+- `mainEntityOfPage` (canonical URL), `articleBody`, `wordCount`
+- `author` → `{ name }`, `publisher` → `{ name }`
+- `articleSection`, `inLanguage`, `keywords`
+- `image` → `{ url }`
+
+The MCP server preserves these conventions in all tool responses.
+
+### JSON-LD Security
+
+All JSON-LD output uses `safeJsonLdStringify()` to prevent XSS:
+- `<` → `\u003c` (prevents `</script>` injection)
+- `>` → `\u003e` (prevents HTML tag injection)
+- `&` → `\u0026` (prevents HTML entity issues)
+
+Component: `src/components/ui/json-ld.tsx`
+Tests: `src/components/__tests__/json-ld.test.tsx` (14 tests including injection payloads)
+
+## Consumer → Super App Migration
+
+The following consumer-facing pages are migrating to the **Mukoko super app** (`app.mukoko.com`). They remain functional in this repo but are not the primary focus of development:
+
+| Page | Route | Status |
+|------|-------|--------|
+| Home Feed | `/` | Migrating — sectioned feed with top stories, categories |
+| Discover | `/discover` | Migrating — tag cloud, country/category browsing |
+| NewsBytes | `/newsbytes` | Migrating — TikTok-style vertical feed |
+| Search | `/search` | Migrating — hybrid search UI |
+| Saved | `/saved` | Migrating — bookmarked articles |
+| Profile | `/profile` | Migrating — user settings and preferences |
+| Insights | `/insights` | Migrating — analytics insights dashboard |
+
+**What stays in this repo**:
+- Platform dashboard (`/platform/*`)
+- Admin dashboard (`/admin/*`)
+- Embed widgets (`/embed/*`)
+- Sources directory (`/sources/*`)
+- Article detail (`/article/[id]`)
+- Static pages (help, privacy, terms)
+- The entire backend API (fly-worker)
+- MCP server
 
 ## API
 
@@ -289,31 +621,55 @@ Migrations in `fly-worker/src/db.py` (applied via `_migrations` tracking table).
    - JWTs with 2 dots are accepted but not yet validated
    - Full OIDC validation is a future milestone
 
+3. **Platform API Keys** (planned) - Self-service keys for third-party developers
+   - 5 tiers: free, developer, business, enterprise, open_data
+   - See "API Key Management" in Platform Services section
+
 ### Key Endpoints
 
+**Feeds & Articles**:
 - `GET /api/feeds` - Articles feed with filtering, pagination, sorting
 - `GET /api/feeds/sectioned` - Sectioned feed (top stories, by category, latest)
 - `GET /api/article/:id` - Single article (UUID or slug)
 - `GET /api/article/:id/related` - Related articles
+- `GET /api/news-bytes` - NewsBytes (short-form articles)
+
+**Discovery**:
 - `GET /api/categories` - All enabled categories with counts
 - `GET /api/trending-categories` - Trending categories with growth rate
 - `GET /api/keywords` - Trending keywords for tag cloud
 - `GET /api/sources` - RSS sources with health and article counts
 - `GET /api/countries` - All 16 Pan-African countries
-- `GET /api/news-bytes` - NewsBytes (short-form articles)
 - `GET /api/search` - Hybrid search (Doris funnel → Postgres hydration → ILIKE fallback)
 - `GET /api/stories/trending` - Trending story clusters
+
+**Authors**:
 - `GET /api/authors` - Authors by article count
 - `GET /api/trending-authors` - Trending authors (last 7d)
 - `GET /api/featured-authors` - Top authors by total output
-- `GET /api/stats` - Database statistics
+
+**Engagement**:
 - `POST /api/articles/:id/like` - Like article
 - `POST /api/articles/:id/save` - Bookmark article
 - `POST /api/articles/:id/view` - Track view
 - `GET /api/articles/:id/engagement` - Engagement counts
-- `GET /api/user/bookmarks` - User bookmarks (stub, needs OIDC)
-- `GET /api/analytics/*` - Public analytics (8 endpoints)
+
+**Public Analytics** (no auth):
+- `GET /api/analytics/overview` - Platform-wide stats
+- `GET /api/analytics/articles/top` - Top articles by engagement
+- `GET /api/analytics/articles/:id/performance` - Single article performance
+- `GET /api/analytics/sources` - Source reliability and performance
+- `GET /api/analytics/sources/:id/performance` - Single source performance
+- `GET /api/analytics/geo` - Geographic readership distribution
+- `GET /api/analytics/categories` - Category performance
+- `GET /api/analytics/trending` - Trending topics with scores
+
+**Admin** (requires ADMIN_SESSION_SECRET):
 - `GET /api/admin/*` - Admin endpoints (6 endpoints)
+
+**User**:
+- `GET /api/user/bookmarks` - User bookmarks (stub, needs OIDC)
+- `GET /api/stats` - Database statistics
 
 **API Auth Middleware**: `fly-worker/src/api/auth.py`
 **OpenAPI Schema**: `api-schema.yml`
@@ -340,6 +696,13 @@ fly secrets set COUCHDB_URL=http://...
 fly secrets set DORIS_HTTP_URL=http://...
 ```
 
+### MCP Server
+
+```bash
+MUKOKO_API_SECRET=your-api-secret        # Required: Bearer token for API
+MUKOKO_API_URL=https://mukoko-news-api.fly.dev  # Optional: defaults to production
+```
+
 ## Deployment
 
 **Frontend**: Auto-deploys to Vercel on push to main
@@ -348,6 +711,8 @@ fly secrets set DORIS_HTTP_URL=http://...
 ```bash
 cd fly-worker && fly deploy
 ```
+
+**MCP Server**: Distributed as npm package (`@mukoko/mcp-server`), runs locally on user machines via stdio transport.
 
 **CI/CD Pipeline** (`.github/workflows/deploy.yml`):
 1. Test frontend (typecheck, lint, build)
@@ -604,16 +969,6 @@ Components: `src/components/ui/skeleton.tsx`, `src/components/ui/discover-skelet
 - Error handling: AbortError → timeout message
 - Response validation required (non-OK throws)
 
-### JSON-LD Security Pattern
-
-All JSON-LD structured data uses `safeJsonLdStringify()` to prevent XSS:
-- Escapes `<` to `\u003c` (prevents `</script>` injection)
-- Escapes `>` to `\u003e` (prevents HTML tag injection)
-- Escapes `&` to `\u0026` (prevents HTML entity issues)
-
-Component: `src/components/ui/json-ld.tsx`
-Tests: `src/components/__tests__/json-ld.test.tsx`
-
 ### Image URL Validation
 
 Use `isValidImageUrl()` from `src/lib/utils.ts` before rendering user-provided image URLs:
@@ -669,7 +1024,8 @@ The embed module provides embeddable news card iframes for sister apps (e.g., we
 
 ## Pan-African Country Support
 
-Supported countries (16 total) defined in `src/lib/constants.ts`:
+Supported countries (16 total) defined in `src/lib/constants.ts` (frontend) and `database/migrations/024_platform_services_tables.sql` (backend seed):
+
 - Zimbabwe (ZW) - Primary market
 - South Africa (ZA)
 - Kenya (KE)
@@ -688,29 +1044,64 @@ Supported countries (16 total) defined in `src/lib/constants.ts`:
 - Mozambique (MZ)
 
 RSS articles inherit `country_id` from source configuration.
-Country data is centralized in `src/lib/constants.ts` (single source of truth).
+Country data is centralized in `src/lib/constants.ts` (frontend) and `dynamic_countries` table (platform).
 
 ## Key Features
 
-1. **Multi-Auth Support**: OIDC, Mobile SMS, Web3 wallets
-2. **Real-time Features**: Durable Objects for live counters and analytics
-3. **AI-Powered Services**: Content processing, semantic search, insights
-4. **NewsBytes**: TikTok-style vertical feed with mobile-first design
-5. **RSS Feed Aggregation**: Multiple sources with content processing pipeline
-6. **Admin Dashboard**: User management, analytics, source configuration
-7. **Personalized Feeds**: Country/category filtering with localStorage persistence
-8. **Onboarding Flow**: Modal-based country/category selection
-9. **Dark Mode**: System detection or manual toggle with next-themes
-10. **Schema.org SEO**: JSON-LD structured data (NewsArticle, Organization, BreadcrumbList)
-11. **Mobile Bottom Navigation**: Quick access to Home, Discover, NewsBytes, Search, Profile
-12. **Breadcrumb Navigation**: Clear navigation hierarchy on article pages
-13. **Embed Location Cards**: Embeddable news card widgets for sister apps (5 layouts, 4 feed types, 16 countries)
-14. **News Sources Page**: Browse all sources with search, country filter, sort options, and health indicators
-15. **Tag Cloud**: Logarithmic-scaled trending topics with em-based sizing (prevents outlier dominance)
+### Platform Features
+1. **Publisher Portal**: Claim news sources, DNS verification, push API, analytics
+2. **API Key Management**: 5-tier self-service keys (free → enterprise)
+3. **Webhook System**: 14 event types, HMAC signing, retry with backoff
+4. **Content Moderation**: AI + pattern detection, cultural alignment, fact-checking
+5. **MCP Server**: 9 tools + 5 resources for AI clients (Claude, Cursor)
+6. **Open Data Analytics**: Public API — business intelligence for the people
+7. **Embed Widgets**: 5 layouts, 4 feed types, 16 countries, sandboxed iframes
+8. **RSS Distribution**: Country-specific and category-specific feeds
+9. **Smart Home Briefings**: Alexa, Google Assistant, HomePod
+10. **SSE Streaming**: Real-time article and breaking news events
+
+### News API Features
+11. **RSS Feed Aggregation**: 56+ sources with AI-powered content processing
+12. **AI Keyword Extraction**: 3-stage (DB match → section → Claude AI)
+13. **Quality Scoring**: Deterministic textstat-based scoring (0-100)
+14. **Story Clustering**: Jaccard similarity on headlines, groups related coverage
+15. **Hybrid Search**: Doris funnel → Postgres hydration → ILIKE fallback
+16. **Engagement Scoring**: Composite score from views, likes, bookmarks, shares
+17. **Trending Topics**: Logarithmic-scaled tag cloud, cached every 30min
+
+### Frontend Features
+18. **Schema.org SEO**: 8 JSON-LD types (NewsArticle, Organization, BreadcrumbList, WebSite, WebPage, ItemList, CollectionPage, SoftwareApplication)
+19. **Dark Mode**: System detection or manual toggle with next-themes
+20. **Personalized Feeds**: Country/category filtering with localStorage persistence
+21. **WCAG AAA**: 7:1 contrast ratios, semantic HTML, keyboard navigation
+22. **Admin Dashboard**: User management, analytics, source configuration
 
 ## Key Files
 
-### Frontend
+### Platform Frontend
+- `src/app/platform/page.tsx` - Platform dashboard with stats, quick actions, super app banner
+- `src/app/platform/publishers/page.tsx` - Publisher claiming (4-step: find → verify → connect → manage)
+- `src/app/platform/authors/page.tsx` - Author portal (blog connect, API publish)
+- `src/app/platform/tools/mcp/page.tsx` - MCP server setup (Claude Desktop, Code, Cursor)
+- `src/app/platform/tools/embed/page.tsx` - Widget builder (5 layouts, 4 feed types)
+- `src/app/platform/tools/rss/page.tsx` - RSS feed config (country + category feeds)
+- `src/app/platform/layout.tsx` - Platform layout with sidebar navigation
+
+### MCP Server
+- `mcp-server/src/index.js` - MCP server (9 tools, 5 resources, Schema.org conventions)
+- `mcp-server/package.json` - @mukoko/mcp-server, bin: mukoko-mcp
+
+### Platform Services (migration target)
+- `backend/services/platform/index.ts` - Service exports & types
+- `backend/services/platform/PublisherService.ts` - Publisher registration, DNS verification, article push
+- `backend/services/platform/APIKeyService.ts` - 5-tier API key management
+- `backend/services/platform/WebhookService.ts` - Event-driven webhooks, HMAC signing
+- `backend/services/platform/ContentModerationService.ts` - AI moderation, cultural alignment
+- `backend/services/platform/OpenDataService.ts` - Open data manifesto, bulk export
+- `backend/services/platform/SmartHomeBriefingService.ts` - Alexa, Google, HomePod briefings
+- `database/migrations/024_platform_services_tables.sql` - Platform database tables
+
+### News Frontend
 - `src/app/layout.tsx` - Root layout with providers, bottom nav, and Organization JSON-LD
 - `src/app/page.tsx` - Home feed with simplified layout (Featured + Latest)
 - `src/app/globals.css` - Tailwind config, CSS variables, and font imports
@@ -721,19 +1112,17 @@ Country data is centralized in `src/lib/constants.ts` (single source of truth).
 - `src/components/article-card.tsx` - Main article display component
 - `src/components/share-modal.tsx` - Share/engagement modal with social sharing
 - `src/components/onboarding-modal.tsx` - Country/category selection onboarding
-- `src/components/ui/json-ld.tsx` - Schema.org JSON-LD with XSS prevention (ArticleJsonLd, WebPageJsonLd, SoftwareApplicationJsonLd, OrganizationJsonLd, etc.)
+- `src/components/ui/json-ld.tsx` - Schema.org JSON-LD with XSS prevention (8 types)
 - `src/components/ui/engagement-bar.tsx` - Article engagement buttons (like, save, share)
 - `src/components/ui/breadcrumb.tsx` - Breadcrumb navigation component
 - `src/components/layout/bottom-nav.tsx` - Mobile bottom navigation
 - `src/components/ui/skeleton.tsx` - Skeleton loading components
 - `src/components/ui/error-boundary.tsx` - Error boundary component
-- `vitest.config.ts` - Frontend test configuration
 - `src/app/embed/page.tsx` - Embed documentation page with live previews
-- `src/app/embed/iframe/page.tsx` - Embed iframe widget (5 layouts: cards, compact, hero, ticker, list)
+- `src/app/embed/iframe/page.tsx` - Embed iframe widget (5 layouts)
 - `public/embed/widget.js` - Lightweight embed script (~2KB) for sister apps
-- `src/app/discover/page.tsx` - Discover page with log-scaled tag cloud, source/category/country browsing
-- `src/app/sources/page.tsx` - Sources directory with search, filters, sort, and health status indicators
-- `src/app/sources/layout.tsx` - Sources page SEO metadata
+- `src/app/discover/page.tsx` - Discover page with log-scaled tag cloud
+- `src/app/sources/page.tsx` - Sources directory with search, filters, health indicators
 
 ### Backend (fly-worker)
 - `fly-worker/src/main.py` - FastAPI app entry point, CORS, router registration
@@ -742,6 +1131,7 @@ Country data is centralized in `src/lib/constants.ts` (single source of truth).
 - `fly-worker/src/api/auth.py` - Bearer token authentication middleware
 - `fly-worker/src/api/feeds.py` - Feed endpoints (most critical, powers homepage)
 - `fly-worker/src/api/search.py` - Hybrid search (Doris → Postgres → ILIKE fallback)
+- `fly-worker/src/api/analytics.py` - Public open data analytics (8 endpoints, no auth)
 - `fly-worker/src/jobs/rss_collector.py` - RSS collection + AI processing pipeline
 - `fly-worker/src/jobs/ai_processor.py` - Keyword extraction + quality scoring
 - `fly-worker/src/services/keyword_extractor.py` - 3-stage keyword extraction
@@ -753,3 +1143,4 @@ Country data is centralized in `src/lib/constants.ts` (single source of truth).
 - `tailwind.config.ts` - Tailwind CSS configuration
 - `eslint.config.js` - Flat ESLint 9 config
 - `api-schema.yml` - OpenAPI documentation
+- `vitest.config.ts` - Frontend test configuration
