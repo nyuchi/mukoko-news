@@ -1,6 +1,6 @@
 """RSS feed collection job.
 
-Fetches RSS feeds from all enabled organizations, parses articles,
+Fetches RSS feeds from all enabled feed sources, parses articles,
 deduplicates, inserts new articles, then runs AI processing inline.
 """
 
@@ -25,15 +25,17 @@ async def collect_feeds() -> None:
     stats = {"sources": 0, "fetched": 0, "inserted": 0, "errors": 0, "skipped": 0}
 
     try:
-        # Load enabled sources sorted by priority
+        # Load enabled sources sorted by priority (JOIN feed_source + organization)
         async with pool.acquire() as conn:
             sources = await conn.fetch("""
-                SELECT id, name, url, rss_feed_url, area_served, article_section_id,
-                       in_language, health_status, consecutive_failures,
-                       last_fetched_at
-                FROM organizations
-                WHERE enabled = TRUE
-                ORDER BY priority DESC, consecutive_failures ASC
+                SELECT fs.id, fs.organization_id, org.name AS org_name,
+                       fs.feed_url, fs.country, fs.article_section_slug,
+                       fs.language, fs.health_status, fs.consecutive_failures,
+                       fs.last_fetched_at
+                FROM news.feed_source fs
+                JOIN news.news_media_organization org ON fs.organization_id = org.id
+                WHERE fs.is_active = TRUE
+                ORDER BY fs.priority DESC, fs.consecutive_failures ASC
             """)
 
         stats["sources"] = len(sources)
@@ -64,7 +66,7 @@ async def collect_feeds() -> None:
         # Log the run
         async with pool.acquire() as conn:
             await conn.execute(
-                """INSERT INTO collection_log
+                """INSERT INTO system.collection_log
                    (job_type, status, articles_collected, articles_processed,
                     errors, duration_ms, metadata, started_at, completed_at)
                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)""",
@@ -84,7 +86,7 @@ async def collect_feeds() -> None:
         duration = int((time.time() - start) * 1000)
         async with pool.acquire() as conn:
             await conn.execute(
-                """INSERT INTO collection_log
+                """INSERT INTO system.collection_log
                    (job_type, status, errors, duration_ms, error_message,
                     started_at, completed_at)
                    VALUES ($1, $2, $3, $4, $5, $6, $7)""",
@@ -100,8 +102,8 @@ async def collect_feeds() -> None:
 
 async def _process_batch(
     sources: list, pool, stats: dict
-) -> list[int]:
-    """Fetch and process a batch of RSS sources. Returns new article IDs."""
+) -> list[str]:
+    """Fetch and process a batch of RSS sources. Returns new article IDs (UUID strings)."""
     new_ids = []
 
     async with httpx.AsyncClient(
@@ -116,7 +118,7 @@ async def _process_batch(
                     continue
 
                 # Fetch the feed
-                url = source_dict["rss_feed_url"]
+                url = source_dict["feed_url"]
                 response = await client.get(url)
                 if response.status_code != 200:
                     await _record_failure(pool, source_dict, f"HTTP {response.status_code}")
@@ -145,19 +147,19 @@ async def _process_batch(
     return new_ids
 
 
-async def _insert_articles(pool, articles: list[dict], stats: dict) -> list[int]:
-    """Insert new articles, skipping duplicates. Returns list of new article IDs."""
+async def _insert_articles(pool, articles: list[dict], stats: dict) -> list[str]:
+    """Insert new articles, skipping duplicates. Returns list of new article ID strings."""
     new_ids = []
 
     async with pool.acquire() as conn:
         for article in articles:
-            # Check for duplicate by rss_guid or main_entity_of_page
+            # Check for duplicate by source_feed_id or mainentityofpage
             existing = await conn.fetchval(
-                """SELECT id FROM articles
-                   WHERE rss_guid = $1 OR main_entity_of_page = $2
+                """SELECT id FROM news.news_article
+                   WHERE source_feed_id = $1 OR mainentityofpage = $2
                    LIMIT 1""",
-                article["rss_guid"],
-                article["main_entity_of_page"],
+                article["source_feed_id"],
+                article["mainentityofpage"],
             )
 
             if existing:
@@ -174,38 +176,46 @@ async def _insert_articles(pool, articles: list[dict], stats: dict) -> list[int]
             # Ensure unique slug
             slug = article["slug"]
             slug_exists = await conn.fetchval(
-                "SELECT 1 FROM articles WHERE slug = $1", slug
+                "SELECT 1 FROM news.news_article WHERE slug = $1", slug
             )
             if slug_exists:
-                slug = f"{slug}-{article['content_hash'][:8]}"
+                slug = f"{slug}-{article['source_fingerprint'][:8]}"
+
+            # Look up interest_category UUID from slug
+            category_slug = article.get("articlesection", "general")
+            category_id = await conn.fetchval(
+                "SELECT id FROM engagement.interest_category WHERE slug = $1",
+                category_slug,
+            )
 
             # Insert
             article_id = await conn.fetchval(
-                """INSERT INTO articles
-                   (headline, description, article_body, article_body_processed,
-                    slug, main_entity_of_page, rss_guid, image,
-                    author_name, publisher_id, publisher_name,
-                    article_section_id, about_country_id,
-                    date_published, content_hash, in_language,
-                    word_count, reading_time_minutes)
-                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
-                   RETURNING id""",
+                """INSERT INTO news.news_article
+                   (headline, description, articlebody, article_body_processed,
+                    slug, mainentityofpage, source_feed_id, image,
+                    author, publisher_organization_id, publisher,
+                    articlesection, primary_interest_category_id, primary_location_country,
+                    datepublished, source_fingerprint, inlanguage,
+                    wordcount, reading_time_minutes, status, ingestion_method)
+                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10,$11::jsonb,$12,$13,$14,$15,$16,$17,$18,$19,'published','rss_feed')
+                   RETURNING id::text""",
                 article["headline"],
                 article.get("description", ""),
                 raw_body,
                 cleaned_body,
                 slug,
-                article["main_entity_of_page"],
-                article["rss_guid"],
+                article["mainentityofpage"],
+                article["source_feed_id"],
                 article.get("image"),
-                article.get("author_name"),
-                article["publisher_id"],
-                article["publisher_name"],
-                article.get("article_section_id"),
-                article.get("about_country_id", "ZW"),
-                article["date_published"],
-                article["content_hash"],
-                article.get("in_language", "en"),
+                article.get("author"),
+                article["publisher_organization_id"],
+                article.get("publisher"),
+                category_slug,
+                category_id,
+                article.get("primary_location_country", "ZW"),
+                article["datepublished"],
+                article["source_fingerprint"],
+                article.get("inlanguage", "en"),
                 word_count,
                 reading_time,
             )
@@ -218,10 +228,10 @@ async def _insert_articles(pool, articles: list[dict], stats: dict) -> list[int]
 
 
 async def _record_success(pool, source: dict, articles_count: int) -> None:
-    """Update source on successful fetch."""
+    """Update feed source on successful fetch."""
     async with pool.acquire() as conn:
         await conn.execute(
-            """UPDATE organizations SET
+            """UPDATE news.feed_source SET
                last_fetched_at = NOW(),
                last_successful_fetch_at = NOW(),
                consecutive_failures = 0,
@@ -233,15 +243,14 @@ async def _record_success(pool, source: dict, articles_count: int) -> None:
 
 
 async def _record_failure(pool, source: dict, error: str) -> None:
-    """Update source on failed fetch."""
+    """Update feed source on failed fetch."""
     async with pool.acquire() as conn:
         await conn.execute(
-            """UPDATE organizations SET
+            """UPDATE news.feed_source SET
                last_fetched_at = NOW(),
                consecutive_failures = consecutive_failures + 1,
                total_error_count = total_error_count + 1,
-               last_error = $2,
-               last_error_at = NOW(),
+               last_fetch_error = $2,
                updated_at = NOW()
                WHERE id = $1""",
             source["id"],

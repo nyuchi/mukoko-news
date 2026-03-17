@@ -7,9 +7,9 @@ class TestScoreArticle:
     def test_high_quality_article(self):
         article = {
             "headline": "Zimbabwe Economy Shows Strong Recovery Signs in Q1 2026",
-            "article_body": " ".join(["word"] * 500),
-            "image": "https://example.com/img.jpg",
-            "author_name": "Jane Reporter",
+            "articlebody": " ".join(["word"] * 500),
+            "image": {"url": "https://example.com/img.jpg"},
+            "author": {"@type": "Person", "name": "Jane Reporter"},
         }
         result = score_article(article)
         assert result["quality_score"] > 50
@@ -18,9 +18,9 @@ class TestScoreArticle:
     def test_low_quality_article(self):
         article = {
             "headline": "Hi",
-            "article_body": "Short.",
+            "articlebody": "Short.",
             "image": None,
-            "author_name": None,
+            "author": None,
         }
         result = score_article(article)
         assert result["quality_score"] < 50
@@ -33,9 +33,9 @@ class TestScoreArticle:
     def test_score_bounded(self):
         article = {
             "headline": "A" * 200,
-            "article_body": " ".join(["word"] * 10000),
-            "image": "img.jpg",
-            "author_name": "Author",
+            "articlebody": " ".join(["word"] * 10000),
+            "image": {"url": "img.jpg"},
+            "author": {"@type": "Person", "name": "Author"},
         }
         result = score_article(article)
         assert 0 <= result["quality_score"] <= 100

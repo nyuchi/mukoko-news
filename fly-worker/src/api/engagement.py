@@ -12,7 +12,7 @@ router = APIRouter(prefix="/api", tags=["engagement"])
 
 @router.post("/articles/{article_id}/like")
 async def like_article(
-    article_id: int = Path(...),
+    article_id: str = Path(...),
     _token: str | None = Depends(require_api_key),
 ):
     """Toggle like on an article. Increments/decrements like_count."""
@@ -21,18 +21,18 @@ async def like_article(
     async with pool.acquire() as conn:
         # Check article exists
         exists = await conn.fetchval(
-            "SELECT 1 FROM articles WHERE id = $1", article_id
+            "SELECT 1 FROM news.news_article WHERE id = $1::uuid", article_id
         )
         if not exists:
             raise HTTPException(status_code=404, detail="Article not found")
 
         # For anonymous users, just increment (no toggle)
         await conn.execute(
-            "UPDATE articles SET like_count = like_count + 1, updated_at = NOW() WHERE id = $1",
+            "UPDATE news.news_article SET like_count = like_count + 1, updated_at = NOW() WHERE id = $1::uuid",
             article_id,
         )
         new_count = await conn.fetchval(
-            "SELECT like_count FROM articles WHERE id = $1", article_id
+            "SELECT like_count FROM news.news_article WHERE id = $1::uuid", article_id
         )
 
     return {"success": True, "liked": True, "message": "Article liked", "likes": new_count}
@@ -40,7 +40,7 @@ async def like_article(
 
 @router.post("/articles/{article_id}/save")
 async def save_article(
-    article_id: int = Path(...),
+    article_id: str = Path(...),
     _token: str | None = Depends(require_api_key),
 ):
     """Toggle save/bookmark on an article."""
@@ -48,17 +48,17 @@ async def save_article(
 
     async with pool.acquire() as conn:
         exists = await conn.fetchval(
-            "SELECT 1 FROM articles WHERE id = $1", article_id
+            "SELECT 1 FROM news.news_article WHERE id = $1::uuid", article_id
         )
         if not exists:
             raise HTTPException(status_code=404, detail="Article not found")
 
         await conn.execute(
-            "UPDATE articles SET bookmark_count = bookmark_count + 1, updated_at = NOW() WHERE id = $1",
+            "UPDATE news.news_article SET bookmark_count = bookmark_count + 1, updated_at = NOW() WHERE id = $1::uuid",
             article_id,
         )
         new_count = await conn.fetchval(
-            "SELECT bookmark_count FROM articles WHERE id = $1", article_id
+            "SELECT bookmark_count FROM news.news_article WHERE id = $1::uuid", article_id
         )
 
     return {"success": True, "saved": True, "message": "Article saved", "saves": new_count}
@@ -66,7 +66,7 @@ async def save_article(
 
 @router.post("/articles/{article_id}/view")
 async def track_view(
-    article_id: int = Path(...),
+    article_id: str = Path(...),
     body: dict = Body(default={}),
     _token: str | None = Depends(require_api_key),
 ):
@@ -75,11 +75,11 @@ async def track_view(
 
     async with pool.acquire() as conn:
         result = await conn.execute(
-            "UPDATE articles SET view_count = view_count + 1, updated_at = NOW() WHERE id = $1",
+            "UPDATE news.news_article SET view_count = view_count + 1, updated_at = NOW() WHERE id = $1::uuid",
             article_id,
         )
         views = await conn.fetchval(
-            "SELECT view_count FROM articles WHERE id = $1", article_id
+            "SELECT view_count FROM news.news_article WHERE id = $1::uuid", article_id
         )
 
     return {"success": True, "views": views or 0}
@@ -87,7 +87,7 @@ async def track_view(
 
 @router.get("/articles/{article_id}/engagement")
 async def get_engagement(
-    article_id: int = Path(...),
+    article_id: str = Path(...),
     _token: str | None = Depends(require_api_key),
 ):
     """Get engagement counts for an article."""
@@ -96,7 +96,7 @@ async def get_engagement(
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             """SELECT like_count, bookmark_count, share_count, view_count
-               FROM articles WHERE id = $1""",
+               FROM news.news_article WHERE id = $1::uuid""",
             article_id,
         )
 

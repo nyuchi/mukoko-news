@@ -12,7 +12,7 @@ class TestComputeScore:
             "like_count": 0,
             "bookmark_count": 0,
             "share_count": 0,
-            "date_published": datetime.now(timezone.utc),
+            "datepublished": datetime.now(timezone.utc),
         }
         assert _compute_score(article) == 0.0
 
@@ -22,7 +22,7 @@ class TestComputeScore:
             "like_count": 10,
             "bookmark_count": 5,
             "share_count": 3,
-            "date_published": datetime.now(timezone.utc),
+            "datepublished": datetime.now(timezone.utc),
         }
         score = _compute_score(article)
         # raw = 100*1 + 10*3 + 5*5 + 3*2 = 100 + 30 + 25 + 6 = 161
@@ -38,14 +38,14 @@ class TestComputeScore:
             "like_count": 5,
             "bookmark_count": 0,
             "share_count": 0,
-            "date_published": datetime.now(timezone.utc),
+            "datepublished": datetime.now(timezone.utc),
         }
         old = {
             "view_count": 50,
             "like_count": 5,
             "bookmark_count": 0,
             "share_count": 0,
-            "date_published": datetime.now(timezone.utc) - timedelta(hours=96),
+            "datepublished": datetime.now(timezone.utc) - timedelta(hours=96),
         }
 
         recent_score = _compute_score(recent)
@@ -59,7 +59,7 @@ class TestComputeScore:
             "like_count": None,
             "bookmark_count": None,
             "share_count": None,
-            "date_published": datetime.now(timezone.utc),
+            "datepublished": datetime.now(timezone.utc),
         }
         assert _compute_score(article) == 0.0
 
@@ -69,7 +69,7 @@ class TestComputeScore:
             "like_count": 0,
             "bookmark_count": 0,
             "share_count": 0,
-            "date_published": None,
+            "datepublished": None,
         }
         score = _compute_score(article)
         assert score > 0  # Uses 0.5 decay fallback

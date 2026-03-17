@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Query
 
 from src.db import get_pool
 from src.api.auth import require_api_key
-from src.api.feeds import _row_to_article
+from src.api.feeds import _row_to_article, ARTICLE_SELECT, ARTICLE_FROM
 
 router = APIRouter(prefix="/api", tags=["authors"])
 
@@ -21,7 +21,7 @@ async def get_authors(
         rows = await conn.fetch(
             """SELECT id, name, slug, description, job_title, works_for, image,
                       article_count, total_views, verification_status
-               FROM persons
+               FROM identity.person
                WHERE article_count > 0
                ORDER BY article_count DESC
                LIMIT $1""",
@@ -43,7 +43,7 @@ async def get_author(
         author = await conn.fetchrow(
             """SELECT id, name, slug, description, job_title, works_for, image,
                       article_count, total_views, verification_status
-               FROM persons WHERE slug = $1 OR normalized_name = $1""",
+               FROM identity.person WHERE slug = $1 OR normalized_name = $1""",
             slug,
         )
 
@@ -51,13 +51,12 @@ async def get_author(
             raise HTTPException(status_code=404, detail="Author not found")
 
         articles = await conn.fetch(
-            """SELECT a.*, s.name AS section_name, s.emoji AS section_emoji, s.color AS section_color
-               FROM articles a
-               LEFT JOIN article_sections s ON a.article_section_id = s.id
-               JOIN article_authors aa ON aa.article_id = a.id
+            f"""SELECT {ARTICLE_SELECT}
+               {ARTICLE_FROM}
+               JOIN news.article_authorship aa ON aa.article_id = a.id
                WHERE aa.person_id = $1
                  AND a.status = 'published'
-               ORDER BY a.date_published DESC
+               ORDER BY a.datepublished DESC
                LIMIT 20""",
             author["id"],
         )
@@ -80,7 +79,7 @@ async def search_authors(
     async with pool.acquire() as conn:
         rows = await conn.fetch(
             """SELECT id, name, slug, article_count
-               FROM persons
+               FROM identity.person
                WHERE name ILIKE $1
                ORDER BY article_count DESC
                LIMIT $2""",

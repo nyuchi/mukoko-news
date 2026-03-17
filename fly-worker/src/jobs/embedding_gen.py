@@ -10,10 +10,11 @@ from src.db import get_pool
 from src.services.embedding import generate_embedding
 
 
-async def generate_embeddings_batch(article_ids: list[int]) -> None:
+async def generate_embeddings_batch(article_ids: list[str]) -> None:
     """Generate embeddings for a batch of articles.
 
     Called inline by rss_collector after ai_processor completes.
+    Article IDs are UUID strings.
     """
     if not article_ids:
         return
@@ -26,8 +27,8 @@ async def generate_embeddings_batch(article_ids: list[int]) -> None:
         try:
             async with pool.acquire() as conn:
                 article = await conn.fetchrow(
-                    """SELECT id, headline, description, article_body_processed
-                       FROM articles WHERE id = $1 AND embedding IS NULL""",
+                    """SELECT id::text, headline, description, article_body_processed
+                       FROM news.news_article WHERE id = $1::uuid AND embedding IS NULL""",
                     article_id,
                 )
 
@@ -49,11 +50,11 @@ async def generate_embeddings_batch(article_ids: list[int]) -> None:
             if embedding:
                 async with pool.acquire() as conn:
                     await conn.execute(
-                        """UPDATE articles SET
+                        """UPDATE news.news_article SET
                            embedding = $2,
-                           sync_status = 'pending',
+                           sync_status = 'pending_sync',
                            updated_at = NOW()
-                           WHERE id = $1""",
+                           WHERE id = $1::uuid""",
                         article_id,
                         json.dumps(embedding),
                     )
@@ -74,9 +75,9 @@ async def generate_missing_embeddings() -> None:
 
     async with pool.acquire() as conn:
         rows = await conn.fetch(
-            """SELECT id FROM articles
+            """SELECT id::text FROM news.news_article
                WHERE ai_processed = TRUE AND embedding IS NULL
-               ORDER BY date_created ASC
+               ORDER BY ingested_at ASC
                LIMIT 20"""
         )
 

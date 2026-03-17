@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, Query
 
 from src.db import get_pool
 from src.api.auth import require_api_key
-from src.api.feeds import _row_to_article
+from src.api.feeds import _row_to_article, ARTICLE_SELECT, ARTICLE_FROM
 
 router = APIRouter(prefix="/api", tags=["search"])
 
@@ -32,25 +32,24 @@ async def search_articles(
         idx = 2
 
         if category and category != "all":
-            conditions.append(f"a.article_section_id = ${idx}")
+            conditions.append(f"a.articlesection = ${idx}")
             params.append(category)
             idx += 1
 
         where = " AND ".join(conditions)
 
         rows = await conn.fetch(
-            f"""SELECT a.*, s.name AS section_name, s.emoji AS section_emoji, s.color AS section_color
-                FROM articles a
-                LEFT JOIN article_sections s ON a.article_section_id = s.id
+            f"""SELECT {ARTICLE_SELECT}
+                {ARTICLE_FROM}
                 WHERE {where}
-                ORDER BY a.date_published DESC
+                ORDER BY a.datepublished DESC
                 LIMIT ${idx}""",
             *params,
             limit,
         )
 
         total = await conn.fetchval(
-            f"SELECT COUNT(*) FROM articles a WHERE {where}",
+            f"SELECT COUNT(*) FROM news.news_article a WHERE {where}",
             *params,
         )
 
@@ -82,13 +81,12 @@ async def search_by_keyword(
 
     async with pool.acquire() as conn:
         rows = await conn.fetch(
-            """SELECT a.*, s.name AS section_name, s.emoji AS section_emoji, s.color AS section_color
-               FROM articles a
-               LEFT JOIN article_sections s ON a.article_section_id = s.id
-               JOIN article_keywords ak ON ak.article_id = a.id
+            f"""SELECT {ARTICLE_SELECT}
+               {ARTICLE_FROM}
+               JOIN news.article_keyword ak ON ak.article_id = a.id
                WHERE ak.term_id = $1
                  AND a.status = 'published'
-               ORDER BY a.date_published DESC
+               ORDER BY a.datepublished DESC
                LIMIT $2""",
             keyword,
             limit,
@@ -110,7 +108,7 @@ async def get_keywords(
         rows = await conn.fetch(
             """SELECT term_id AS id, term_name AS name, term_id AS slug,
                       'keyword' AS type, article_count
-               FROM trending_cache
+               FROM news.trending_cache
                WHERE scope = 'global'
                  AND expires_at > NOW()
                ORDER BY score DESC
@@ -123,7 +121,7 @@ async def get_keywords(
             rows = await conn.fetch(
                 """SELECT dt.id, dt.name, dt.term_code AS slug,
                           dt.term_type AS type, dt.article_count
-                   FROM defined_terms dt
+                   FROM news.defined_term dt
                    WHERE dt.enabled = TRUE
                      AND dt.article_count > 0
                    ORDER BY dt.article_count DESC
@@ -132,7 +130,7 @@ async def get_keywords(
             )
 
         total = await conn.fetchval(
-            "SELECT COUNT(*) FROM defined_terms WHERE enabled = TRUE AND article_count > 0"
+            "SELECT COUNT(*) FROM news.defined_term WHERE enabled = TRUE AND article_count > 0"
         )
 
     return {

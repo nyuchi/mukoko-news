@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Path, Query
 
 from src.db import get_pool
 from src.api.auth import require_api_key
-from src.api.feeds import _row_to_article, _cluster_articles
+from src.api.feeds import _row_to_article, _cluster_articles, ARTICLE_SELECT, ARTICLE_FROM
 
 router = APIRouter(prefix="/api", tags=["stories"])
 
@@ -21,12 +21,11 @@ async def get_trending_stories(
 
     async with pool.acquire() as conn:
         rows = await conn.fetch(
-            """SELECT a.*, s.name AS section_name, s.emoji AS section_emoji, s.color AS section_color
-               FROM articles a
-               LEFT JOIN article_sections s ON a.article_section_id = s.id
+            f"""SELECT {ARTICLE_SELECT}
+               {ARTICLE_FROM}
                WHERE a.status = 'published'
-                 AND a.date_published >= NOW() - INTERVAL '48 hours'
-               ORDER BY a.engagement_score DESC, a.date_published DESC
+                 AND a.datepublished >= NOW() - INTERVAL '48 hours'
+               ORDER BY a.engagement_score DESC, a.datepublished DESC
                LIMIT $1""",
             limit * 3,  # Fetch extra for clustering
         )
@@ -48,7 +47,7 @@ async def get_trending_stories(
 
 @router.get("/stories/cluster/{article_id}")
 async def get_story_cluster(
-    article_id: int = Path(...),
+    article_id: str = Path(...),
     _token: str | None = Depends(require_api_key),
 ):
     """Get all articles in the same story cluster as the given article."""
@@ -57,7 +56,7 @@ async def get_story_cluster(
     async with pool.acquire() as conn:
         # Get the source article
         source = await conn.fetchrow(
-            "SELECT id, headline, article_section_id FROM articles WHERE id = $1",
+            "SELECT id, headline, primary_interest_category_id FROM news.news_article WHERE id = $1::uuid",
             article_id,
         )
         if not source:
@@ -65,15 +64,14 @@ async def get_story_cluster(
 
         # Find similar articles by shared keywords
         rows = await conn.fetch(
-            """SELECT a.*, s.name AS section_name, s.emoji AS section_emoji, s.color AS section_color
-               FROM articles a
-               LEFT JOIN article_sections s ON a.article_section_id = s.id
+            f"""SELECT {ARTICLE_SELECT}
+               {ARTICLE_FROM}
                WHERE a.status = 'published'
-                 AND a.article_section_id = $1
-                 AND a.date_published >= NOW() - INTERVAL '72 hours'
-               ORDER BY a.date_published DESC
+                 AND a.primary_interest_category_id = $1
+                 AND a.datepublished >= NOW() - INTERVAL '72 hours'
+               ORDER BY a.datepublished DESC
                LIMIT 30""",
-            source["article_section_id"],
+            source["primary_interest_category_id"],
         )
 
     articles = [_row_to_article(r) for r in rows]

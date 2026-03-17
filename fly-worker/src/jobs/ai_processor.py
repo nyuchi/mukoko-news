@@ -4,18 +4,17 @@ Runs inline after RSS collection. Extracts keywords, scores quality,
 generates content hash, and links keywords to articles.
 """
 
-import json
-
 from src.db import get_pool
 from src.services.content_cleaner import extract_text, count_words
 from src.services.keyword_extractor import extract_keywords
 from src.services.quality_scorer import score_article
 
 
-async def process_articles_batch(article_ids: list[int]) -> None:
+async def process_articles_batch(article_ids: list[str]) -> None:
     """Process a batch of newly inserted articles with AI.
 
     Called inline by rss_collector after inserting new articles.
+    Article IDs are UUID strings.
     """
     if not article_ids:
         return
@@ -44,9 +43,9 @@ async def process_unprocessed() -> None:
 
     async with pool.acquire() as conn:
         rows = await conn.fetch(
-            """SELECT id FROM articles
+            """SELECT id::text FROM news.news_article
                WHERE ai_processed = FALSE
-               ORDER BY date_created ASC
+               ORDER BY ingested_at ASC
                LIMIT 50"""
         )
 
@@ -56,14 +55,14 @@ async def process_unprocessed() -> None:
         await process_articles_batch(ids)
 
 
-async def _process_single(pool, article_id: int) -> None:
+async def _process_single(pool, article_id: str) -> None:
     """Process a single article: keywords, quality, update record."""
     async with pool.acquire() as conn:
         article = await conn.fetchrow(
-            """SELECT id, headline, description, article_body,
-                      article_body_processed, article_section_id,
-                      author_name, image, publisher_id
-               FROM articles WHERE id = $1""",
+            """SELECT id::text, headline, description, articlebody,
+                      article_body_processed, articlesection,
+                      author, image, publisher_organization_id
+               FROM news.news_article WHERE id = $1::uuid""",
             article_id,
         )
 
@@ -73,7 +72,7 @@ async def _process_single(pool, article_id: int) -> None:
     article_dict = dict(article)
 
     # 1. Extract plain text if not already done
-    plain_text = extract_text(article_dict.get("article_body", "") or "")
+    plain_text = extract_text(article_dict.get("articlebody", "") or "")
     word_count = count_words(plain_text)
 
     # 2. Score quality
@@ -84,21 +83,22 @@ async def _process_single(pool, article_id: int) -> None:
     async with pool.acquire() as conn:
         # Load known terms
         known_terms = await conn.fetch(
-            "SELECT id, name, term_code FROM defined_terms WHERE enabled = TRUE"
+            "SELECT id, name, term_code FROM news.defined_term WHERE enabled = TRUE"
         )
         known_terms = [dict(t) for t in known_terms]
 
         # Load section classification keywords
         section_keywords = []
-        section_id = article_dict.get("article_section_id")
-        if section_id:
+        section_slug = article_dict.get("articlesection")
+        if section_slug:
             section = await conn.fetchrow(
-                "SELECT classification_keywords FROM article_sections WHERE id = $1",
-                section_id,
+                "SELECT classification_keywords FROM engagement.interest_category WHERE slug = $1",
+                section_slug,
             )
             if section and section["classification_keywords"]:
                 kw_data = section["classification_keywords"]
                 if isinstance(kw_data, str):
+                    import json
                     section_keywords = json.loads(kw_data)
                 else:
                     section_keywords = kw_data
@@ -108,32 +108,32 @@ async def _process_single(pool, article_id: int) -> None:
     # 4. Write results
     async with pool.acquire() as conn:
         async with conn.transaction():
-            # Update article
+            # Update article — keywords is TEXT[], pass as Python list directly
             keyword_names = [k["name"] for k in keywords]
             await conn.execute(
-                """UPDATE articles SET
+                """UPDATE news.news_article SET
                    ai_processed = TRUE,
                    ai_processed_at = NOW(),
                    quality_score = $2,
-                   word_count = $3,
+                   wordcount = $3,
                    keywords = $4,
                    updated_at = NOW(),
-                   sync_status = 'pending'
-                   WHERE id = $1""",
+                   sync_status = 'pending_sync'
+                   WHERE id = $1::uuid""",
                 article_id,
                 quality_score,
                 word_count,
-                json.dumps(keyword_names),
+                keyword_names,
             )
 
             # Upsert keywords and create links
             for kw in keywords:
                 # Ensure the term exists
                 await conn.execute(
-                    """INSERT INTO defined_terms (id, name, term_code, article_count)
+                    """INSERT INTO news.defined_term (id, name, term_code, article_count)
                        VALUES ($1, $2, $3, 1)
                        ON CONFLICT (id) DO UPDATE SET
-                           article_count = defined_terms.article_count + 1,
+                           article_count = news.defined_term.article_count + 1,
                            updated_at = NOW()""",
                     kw["term_id"],
                     kw["name"],
@@ -142,8 +142,8 @@ async def _process_single(pool, article_id: int) -> None:
 
                 # Link article to keyword
                 await conn.execute(
-                    """INSERT INTO article_keywords (article_id, term_id, relevance_score, source)
-                       VALUES ($1, $2, $3, $4)
+                    """INSERT INTO news.article_keyword (article_id, term_id, relevance_score, source)
+                       VALUES ($1::uuid, $2, $3, $4)
                        ON CONFLICT (article_id, term_id) DO NOTHING""",
                     article_id,
                     kw["term_id"],
