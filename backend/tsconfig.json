@@ -14,7 +14,7 @@
     "noImplicitAny": false,
     "strictNullChecks": false
   },
-  "include": ["*.ts", "services/**/*.ts", "admin/**/*.ts"],
+  "include": ["*.ts", "services/**/*.ts", "admin/**/*.ts", "middleware/**/*.ts"],
   "exclude": [
     "node_modules",
     "build",

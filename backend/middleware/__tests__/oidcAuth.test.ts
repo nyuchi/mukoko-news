@@ -19,7 +19,8 @@ vi.mock('../../services/OIDCAuthService.js', () => {
   }));
 
   // Add static method
-  MockOIDCAuthService.extractBearerToken = (authHeader: string | null): string | null => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (MockOIDCAuthService as any).extractBearerToken = (authHeader: string | null): string | null => {
     if (!authHeader) return null;
     const parts = authHeader.split(' ');
     if (parts.length !== 2 || parts[0].toLowerCase() !== 'bearer') return null;

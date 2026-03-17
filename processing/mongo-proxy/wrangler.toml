@@ -1,0 +1,25 @@
+# Mukoko News — MongoDB Proxy Worker
+#
+# Thin JS Worker that provides MongoDB access via Service Binding.
+# Python Workers can't use the MongoDB Node.js driver directly (Pyodide limitation),
+# so this Worker acts as an internal bridge.
+#
+# Deploy: cd processing/mongo-proxy && npx wrangler deploy
+# The Python Worker connects via Service Binding (MONGO binding).
+
+name = "mukoko-mongo-proxy"
+main = "src/index.js"
+compatibility_date = "2025-12-01"
+compatibility_flags = ["nodejs_compat"]
+
+account_id = "125a2dfbc21f76a25c980609609e8218"
+
+# SECURITY: Disable public *.workers.dev route — only accessible via Service Binding
+workers_dev = false
+
+# Co-locate with MongoDB Atlas (AF_SOUTH_1)
+[placement]
+mode = "smart"
+
+[observability]
+enabled = true

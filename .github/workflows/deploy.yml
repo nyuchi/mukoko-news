@@ -76,10 +76,36 @@ jobs:
         cd backend
         npm run test:build
 
+  test-api:
+    runs-on: ubuntu-latest
+    name: Test Python API Worker
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v5
+
+    - name: Install Python dependencies
+      run: |
+        cd fly-worker
+        uv sync --group dev
+
+    - name: Run Python tests
+      run: |
+        cd fly-worker
+        uv run pytest
+
+    - name: Type check Python
+      run: |
+        cd fly-worker
+        uv run pyright
+
   deploy-backend:
     runs-on: ubuntu-latest
     name: Deploy Backend
-    needs: [test-frontend, test-backend]
+    needs: [test-frontend, test-backend, test-api]
     if: github.ref == 'refs/heads/main'
 
     steps:
@@ -147,5 +173,5 @@ jobs:
         done
 
         echo "Backend health check failed after $max_retries attempts (HTTP $response)"
-        echo "This may be due to Cloudflare bot protection. Check Cloudflare dashboard."
+        echo "Check Fly.io dashboard for deployment status."
         exit 0

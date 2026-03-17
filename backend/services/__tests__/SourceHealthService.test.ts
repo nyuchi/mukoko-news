@@ -1,7 +1,7 @@
 /**
  * Tests for SourceHealthService
- * Covers health classification, alert generation, fetch result recording,
- * batch recording, and the full health summary pipeline.
+ * Covers health classification, alert generation, health summary pipeline,
+ * and admin read operations. Write operations (recording) moved to Python Worker.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -24,72 +24,72 @@ describe('SourceHealthService', () => {
   describe('classifyHealth', () => {
     it('should classify source as healthy with no errors', () => {
       expect(service.classifyHealth({
-        total_error_count: 0,
-        total_fetch_count: 20,
+        error_count: 0,
+        fetch_count: 20,
         consecutive_failures: 0,
       })).toBe('healthy');
     });
 
     it('should classify source as healthy with low error rate', () => {
       expect(service.classifyHealth({
-        total_error_count: 1,
-        total_fetch_count: 20,
+        error_count: 1,
+        fetch_count: 20,
         consecutive_failures: 0,
       })).toBe('healthy');
     });
 
     it('should classify source as degraded after 3 consecutive failures', () => {
       expect(service.classifyHealth({
-        total_error_count: 3,
-        total_fetch_count: 10,
+        error_count: 3,
+        fetch_count: 10,
         consecutive_failures: 3,
       })).toBe('degraded');
     });
 
     it('should classify source as degraded with high error rate', () => {
       expect(service.classifyHealth({
-        total_error_count: 4,
-        total_fetch_count: 10,
+        error_count: 4,
+        fetch_count: 10,
         consecutive_failures: 0,
       })).toBe('degraded');
     });
 
     it('should classify source as failing after 5 consecutive failures', () => {
       expect(service.classifyHealth({
-        total_error_count: 5,
-        total_fetch_count: 10,
+        error_count: 5,
+        fetch_count: 10,
         consecutive_failures: 5,
       })).toBe('failing');
     });
 
     it('should classify source as failing with 50%+ error rate', () => {
       expect(service.classifyHealth({
-        total_error_count: 6,
-        total_fetch_count: 10,
+        error_count: 6,
+        fetch_count: 10,
         consecutive_failures: 1,
       })).toBe('failing');
     });
 
     it('should classify source as critical after 10 consecutive failures', () => {
       expect(service.classifyHealth({
-        total_error_count: 10,
-        total_fetch_count: 15,
+        error_count: 10,
+        fetch_count: 15,
         consecutive_failures: 10,
       })).toBe('critical');
     });
 
     it('should classify source as critical with 15 consecutive failures', () => {
       expect(service.classifyHealth({
-        total_error_count: 15,
-        total_fetch_count: 20,
+        error_count: 15,
+        fetch_count: 20,
         consecutive_failures: 15,
       })).toBe('critical');
     });
 
     it('should classify new source with zero fetches as healthy', () => {
       expect(service.classifyHealth({
-        total_error_count: 0,
-        total_fetch_count: 0,
+        error_count: 0,
+        fetch_count: 0,
         consecutive_failures: 0,
       })).toBe('healthy');
     });
@@ -97,8 +97,8 @@ describe('SourceHealthService', () => {
     it('should not classify as degraded by error rate with fewer than 5 fetches', () => {
       // 2/4 = 50% error rate, but < 5 fetches so rate check doesn't trigger
       expect(service.classifyHealth({
-        total_error_count: 2,
-        total_fetch_count: 4,
+        error_count: 2,
+        fetch_count: 4,
         consecutive_failures: 0,
       })).toBe('healthy');
     });
@@ -106,114 +106,10 @@ describe('SourceHealthService', () => {
     it('should prioritize consecutive failures over error rate', () => {
       // Consecutive failures = 10 (critical), even though error rate is low overall
       expect(service.classifyHealth({
-        total_error_count: 10,
-        total_fetch_count: 100,
+        error_count: 10,
+        fetch_count: 100,
         consecutive_failures: 10,
       })).toBe('critical');
-    });
-  });
-
-  describe('recordFetchResult', () => {
-    it('should record a successful fetch with last_successful_fetch_at', async () => {
-      await service.recordFetchResult('source-1', true);
-
-      expect(mockDb.prepare).toHaveBeenCalledTimes(1);
-      const sql = mockDb.prepare.mock.calls[0][0];
-      expect(sql).toContain('total_fetch_count = total_fetch_count + 1');
-      expect(sql).toContain('last_successful_fetch_at = datetime');
-      expect(sql).toContain('consecutive_failures = 0');
-      expect(sql).toContain('last_error = NULL');
-      expect(mockStatement.bind).toHaveBeenCalledWith('source-1');
-      expect(mockStatement.run).toHaveBeenCalled();
-    });
-
-    it('should not update last_successful_fetch_at on failure', async () => {
-      await service.recordFetchResult('source-1', false, 'HTTP 404: Not Found');
-
-      expect(mockDb.prepare).toHaveBeenCalledTimes(1);
-      const sql = mockDb.prepare.mock.calls[0][0];
-      expect(sql).toContain('total_error_count = total_error_count + 1');
-      expect(sql).toContain('consecutive_failures = COALESCE(consecutive_failures, 0) + 1');
-      expect(sql).toContain('last_error = ?');
-      expect(sql).toContain('last_error_at = datetime');
-      expect(sql).not.toContain('last_successful_fetch_at');
-      expect(mockStatement.bind).toHaveBeenCalledWith('HTTP 404: Not Found', 'source-1');
-    });
-
-    it('should use default error message if none provided', async () => {
-      await service.recordFetchResult('source-1', false);
-
-      expect(mockStatement.bind).toHaveBeenCalledWith('Unknown error', 'source-1');
-    });
-
-    it('should not throw on database error', async () => {
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-      mockStatement.run.mockRejectedValue(new Error('DB error'));
-
-      // Should not throw
-      await service.recordFetchResult('source-1', true);
-
-      expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('[SourceHealth]'),
-        expect.any(Error)
-      );
-      consoleSpy.mockRestore();
-    });
-  });
-
-  describe('recordHealthBatch', () => {
-    it('should batch multiple health updates into a single db.batch call', async () => {
-      const results = [
-        { sourceId: 'source-1', success: true },
-        { sourceId: 'source-2', success: false, error: 'HTTP 500' },
-        { sourceId: 'source-3', success: true },
-      ];
-
-      await service.recordHealthBatch(results);
-
-      // Should prepare 3 statements and call db.batch once
-      expect(mockDb.prepare).toHaveBeenCalledTimes(3);
-      expect(mockDb.batch).toHaveBeenCalledTimes(1);
-      expect(mockDb.batch).toHaveBeenCalledWith(expect.arrayContaining([
-        expect.anything(),
-        expect.anything(),
-        expect.anything(),
-      ]));
-    });
-
-    it('should do nothing for empty results', async () => {
-      await service.recordHealthBatch([]);
-
-      expect(mockDb.prepare).not.toHaveBeenCalled();
-      expect(mockDb.batch).not.toHaveBeenCalled();
-    });
-
-    it('should use correct SQL for success vs failure', async () => {
-      await service.recordHealthBatch([
-        { sourceId: 'ok', success: true },
-        { sourceId: 'bad', success: false, error: 'Timeout' },
-      ]);
-
-      const calls = mockDb.prepare.mock.calls;
-      // First call = success SQL
-      expect(calls[0][0]).toContain('last_successful_fetch_at = datetime');
-      expect(calls[0][0]).toContain('consecutive_failures = 0');
-      // Second call = failure SQL
-      expect(calls[1][0]).toContain('total_error_count = total_error_count + 1');
-      expect(calls[1][0]).not.toContain('last_successful_fetch_at');
-    });
-
-    it('should not throw on database error', async () => {
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-      mockDb.batch.mockRejectedValue(new Error('Batch DB error'));
-
-      await service.recordHealthBatch([{ sourceId: 'source-1', success: true }]);
-
-      expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('[SourceHealth]'),
-        expect.any(Error)
-      );
-      consoleSpy.mockRestore();
     });
   });
 
@@ -239,42 +135,42 @@ describe('SourceHealthService', () => {
             id: 'healthy-source',
             name: 'Healthy Source',
             url: 'https://example.com/rss',
-            area_served: 'ZW',
-            article_section_id: 'general',
-            total_error_count: 0,
-            total_fetch_count: 20,
+            country_id: 'ZW',
+            category: 'general',
+            error_count: 0,
+            fetch_count: 20,
             consecutive_failures: 0,
             last_error: null,
             last_error_at: null,
-            last_successful_fetch_at: new Date().toISOString(),
+            last_success_at: new Date().toISOString(),
             last_fetched_at: new Date().toISOString(),
           },
           {
             id: 'failing-source',
             name: 'Failing Source',
             url: 'https://bad.com/rss',
-            area_served: 'KE',
-            article_section_id: 'general',
-            total_error_count: 7,
-            total_fetch_count: 10,
+            country_id: 'KE',
+            category: 'general',
+            error_count: 7,
+            fetch_count: 10,
             consecutive_failures: 7,
             last_error: 'HTTP 500: Internal Server Error',
             last_error_at: new Date().toISOString(),
-            last_successful_fetch_at: null,
+            last_success_at: null,
             last_fetched_at: new Date().toISOString(),
           },
           {
             id: 'critical-source',
             name: 'Critical Source',
             url: 'https://dead.com/rss',
-            area_served: 'NG',
-            article_section_id: 'general',
-            total_error_count: 15,
-            total_fetch_count: 15,
+            country_id: 'NG',
+            category: 'general',
+            error_count: 15,
+            fetch_count: 15,
             consecutive_failures: 15,
             last_error: 'Request timeout (15s)',
             last_error_at: new Date().toISOString(),
-            last_successful_fetch_at: null,
+            last_success_at: null,
             last_fetched_at: new Date().toISOString(),
           },
         ],
@@ -295,14 +191,14 @@ describe('SourceHealthService', () => {
             id: 'bad-source',
             name: 'Bad Source',
             url: 'https://bad.com/rss',
-            area_served: 'ZW',
-            article_section_id: 'general',
-            total_error_count: 5,
-            total_fetch_count: 10,
+            country_id: 'ZW',
+            category: 'general',
+            error_count: 5,
+            fetch_count: 10,
             consecutive_failures: 5,
             last_error: 'HTTP 403: Forbidden',
             last_error_at: new Date().toISOString(),
-            last_successful_fetch_at: null,
+            last_success_at: null,
             last_fetched_at: new Date().toISOString(),
           },
         ],
@@ -324,14 +220,14 @@ describe('SourceHealthService', () => {
             id: 'dead-source',
             name: 'Dead Source',
             url: 'https://dead.com/rss',
-            area_served: 'ZW',
-            article_section_id: 'general',
-            total_error_count: 12,
-            total_fetch_count: 20,
+            country_id: 'ZW',
+            category: 'general',
+            error_count: 12,
+            fetch_count: 20,
             consecutive_failures: 12,
             last_error: 'DNS resolution failed',
             last_error_at: new Date().toISOString(),
-            last_successful_fetch_at: null,
+            last_success_at: null,
             last_fetched_at: new Date().toISOString(),
           },
         ],
@@ -344,7 +240,7 @@ describe('SourceHealthService', () => {
       expect(criticalAlerts[0].type).toBe('consecutive_failures');
     });
 
-    it('should generate stale source alert based on last_successful_fetch_at', async () => {
+    it('should generate stale source alert based on last_success_at', async () => {
       const staleSuccessDate = new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString(); // 72 hours ago
 
       mockStatement.all.mockResolvedValue({
@@ -353,14 +249,14 @@ describe('SourceHealthService', () => {
             id: 'stale-source',
             name: 'Stale Source',
             url: 'https://stale.com/rss',
-            area_served: 'ZW',
-            article_section_id: 'general',
-            total_error_count: 0,
-            total_fetch_count: 10,
+            country_id: 'ZW',
+            category: 'general',
+            error_count: 0,
+            fetch_count: 10,
             consecutive_failures: 0,
             last_error: null,
             last_error_at: null,
-            last_successful_fetch_at: staleSuccessDate,
+            last_success_at: staleSuccessDate,
             last_fetched_at: new Date().toISOString(), // fetched recently but success was long ago
           },
         ],
@@ -376,7 +272,7 @@ describe('SourceHealthService', () => {
       expect(staleAlerts[0].details.last_success_at).toBe(staleSuccessDate);
     });
 
-    it('should fall back to last_fetched_at for stale alert when no last_successful_fetch_at', async () => {
+    it('should fall back to last_fetched_at for stale alert when no last_success_at', async () => {
       const staleFetchDate = new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString();
 
       mockStatement.all.mockResolvedValue({
@@ -385,14 +281,14 @@ describe('SourceHealthService', () => {
             id: 'stale-source',
             name: 'Stale Source',
             url: 'https://stale.com/rss',
-            area_served: 'ZW',
-            article_section_id: 'general',
-            total_error_count: 0,
-            total_fetch_count: 10,
+            country_id: 'ZW',
+            category: 'general',
+            error_count: 0,
+            fetch_count: 10,
             consecutive_failures: 0,
             last_error: null,
             last_error_at: null,
-            last_successful_fetch_at: null,
+            last_success_at: null,
             last_fetched_at: staleFetchDate,
           },
         ],
@@ -412,14 +308,14 @@ describe('SourceHealthService', () => {
             id: 'flaky-source',
             name: 'Flaky Source',
             url: 'https://flaky.com/rss',
-            area_served: 'ZW',
-            article_section_id: 'general',
-            total_error_count: 8,
-            total_fetch_count: 12,
+            country_id: 'ZW',
+            category: 'general',
+            error_count: 8,
+            fetch_count: 12,
             consecutive_failures: 1,
             last_error: 'HTTP 503: Service Unavailable',
             last_error_at: new Date().toISOString(),
-            last_successful_fetch_at: new Date().toISOString(),
+            last_success_at: new Date().toISOString(),
             last_fetched_at: new Date().toISOString(),
           },
         ],
@@ -440,14 +336,14 @@ describe('SourceHealthService', () => {
             id: 'broken-source',
             name: 'Broken Source',
             url: 'https://broken.com/rss',
-            area_served: 'ZW',
-            article_section_id: 'general',
-            total_error_count: 5,
-            total_fetch_count: 5,
+            country_id: 'ZW',
+            category: 'general',
+            error_count: 5,
+            fetch_count: 5,
             consecutive_failures: 5,
             last_error: 'Received HTML page instead of RSS feed',
             last_error_at: new Date().toISOString(),
-            last_successful_fetch_at: null,
+            last_success_at: null,
             last_fetched_at: new Date().toISOString(),
           },
         ],
@@ -472,28 +368,28 @@ describe('SourceHealthService', () => {
             id: 'warning-source',
             name: 'Warning Source',
             url: 'https://warn.com/rss',
-            area_served: 'ZW',
-            article_section_id: 'general',
-            total_error_count: 3,
-            total_fetch_count: 10,
+            country_id: 'ZW',
+            category: 'general',
+            error_count: 3,
+            fetch_count: 10,
             consecutive_failures: 3,
             last_error: 'Timeout',
             last_error_at: new Date().toISOString(),
-            last_successful_fetch_at: null,
+            last_success_at: null,
             last_fetched_at: new Date().toISOString(),
           },
           {
             id: 'critical-source',
             name: 'Critical Source',
             url: 'https://crit.com/rss',
-            area_served: 'ZW',
-            article_section_id: 'general',
-            total_error_count: 12,
-            total_fetch_count: 12,
+            country_id: 'ZW',
+            category: 'general',
+            error_count: 12,
+            fetch_count: 12,
             consecutive_failures: 12,
             last_error: 'DNS error',
             last_error_at: new Date().toISOString(),
-            last_successful_fetch_at: null,
+            last_success_at: null,
             last_fetched_at: new Date().toISOString(),
           },
         ],
@@ -514,7 +410,7 @@ describe('SourceHealthService', () => {
       expect(summary.sources).toHaveLength(0);
     });
 
-    it('should include last_successful_fetch_at in source health status', async () => {
+    it('should include last_success_at in source health status', async () => {
       const successDate = new Date().toISOString();
       mockStatement.all.mockResolvedValue({
         results: [
@@ -522,14 +418,14 @@ describe('SourceHealthService', () => {
             id: 'source-1',
             name: 'Test Source',
             url: 'https://test.com/rss',
-            area_served: 'ZW',
-            article_section_id: 'general',
-            total_error_count: 0,
-            total_fetch_count: 10,
+            country_id: 'ZW',
+            category: 'general',
+            error_count: 0,
+            fetch_count: 10,
             consecutive_failures: 0,
             last_error: null,
             last_error_at: null,
-            last_successful_fetch_at: successDate,
+            last_success_at: successDate,
             last_fetched_at: successDate,
           },
         ],
@@ -547,14 +443,14 @@ describe('SourceHealthService', () => {
         id: 'test-source',
         name: 'Test Source',
         url: 'https://test.com/rss',
-        area_served: 'ZW',
-        article_section_id: 'general',
-        total_error_count: 2,
-        total_fetch_count: 20,
+        country_id: 'ZW',
+        category: 'general',
+        error_count: 2,
+        fetch_count: 20,
         consecutive_failures: 0,
         last_error: null,
         last_error_at: null,
-        last_successful_fetch_at: new Date().toISOString(),
+        last_success_at: new Date().toISOString(),
         last_fetched_at: new Date().toISOString(),
       });
 
@@ -579,37 +475,37 @@ describe('SourceHealthService', () => {
         id: 'test-source',
         name: 'Test Source',
         url: 'https://test.com/rss',
-        area_served: null,
-        article_section_id: null,
-        total_error_count: 0,
-        total_fetch_count: 0,
+        country_id: null,
+        category: null,
+        error_count: 0,
+        fetch_count: 0,
         consecutive_failures: 0,
         last_error: null,
         last_error_at: null,
-        last_successful_fetch_at: null,
+        last_success_at: null,
         last_fetched_at: null,
       });
 
       const health = await service.getSourceHealth('test-source');
 
-      expect(health!.area_served).toBe('ZW');
-      expect(health!.article_section_id).toBe('general');
+      expect(health!.country_id).toBe('ZW');
+      expect(health!.category).toBe('general');
     });
 
-    it('should return last_successful_fetch_at from database', async () => {
+    it('should return last_success_at from database', async () => {
       const successDate = '2026-01-15T10:00:00.000Z';
       mockStatement.first.mockResolvedValue({
         id: 'test-source',
         name: 'Test Source',
         url: 'https://test.com/rss',
-        area_served: 'ZW',
-        article_section_id: 'general',
-        total_error_count: 3,
-        total_fetch_count: 20,
+        country_id: 'ZW',
+        category: 'general',
+        error_count: 3,
+        fetch_count: 20,
         consecutive_failures: 2,
         last_error: 'Timeout',
         last_error_at: new Date().toISOString(),
-        last_successful_fetch_at: successDate,
+        last_success_at: successDate,
         last_fetched_at: new Date().toISOString(),
       });
 
@@ -618,13 +514,13 @@ describe('SourceHealthService', () => {
       expect(health!.last_success_at).toBe(successDate);
     });
 
-    it('should select last_successful_fetch_at in the SQL query', async () => {
+    it('should select last_success_at in the SQL query', async () => {
       mockStatement.first.mockResolvedValue(null);
 
       await service.getSourceHealth('test-source');
 
       const sql = mockDb.prepare.mock.calls[0][0];
-      expect(sql).toContain('last_successful_fetch_at');
+      expect(sql).toContain('last_success_at');
     });
   });
 
@@ -637,8 +533,8 @@ describe('SourceHealthService', () => {
       expect(mockDb.prepare).toHaveBeenCalled();
       const sql = mockDb.prepare.mock.calls[0][0];
       expect(sql).toContain('consecutive_failures >= ?');
-      expect(sql).toContain('total_error_count');
-      expect(sql).toContain('last_successful_fetch_at');
+      expect(sql).toContain('error_count');
+      expect(sql).toContain('last_success_at');
       expect(mockStatement.bind).toHaveBeenCalledWith(5, 0.5);
     });
 
@@ -649,14 +545,14 @@ describe('SourceHealthService', () => {
             id: 'bad-source',
             name: 'Bad Source',
             url: 'https://bad.com/rss',
-            area_served: 'ZW',
-            article_section_id: 'general',
-            total_error_count: 8,
-            total_fetch_count: 10,
+            country_id: 'ZW',
+            category: 'general',
+            error_count: 8,
+            fetch_count: 10,
             consecutive_failures: 8,
             last_error: 'Connection refused',
             last_error_at: new Date().toISOString(),
-            last_successful_fetch_at: null,
+            last_success_at: null,
             last_fetched_at: new Date().toISOString(),
           },
         ],
@@ -676,7 +572,7 @@ describe('SourceHealthService', () => {
 
       expect(mockDb.prepare).toHaveBeenCalledTimes(1);
       const sql = mockDb.prepare.mock.calls[0][0];
-      expect(sql).toContain('total_error_count = 0');
+      expect(sql).toContain('error_count = 0');
       expect(sql).toContain('consecutive_failures = 0');
       expect(sql).toContain('last_error = NULL');
       expect(sql).toContain('last_error_at = NULL');

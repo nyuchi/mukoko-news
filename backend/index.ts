@@ -7,13 +7,11 @@ import { D1Service } from "../database/D1Service.js";
 import { D1CacheService } from "./services/D1CacheService.js";
 import { AnalyticsEngineService } from "./services/AnalyticsEngineService.js";
 import { ArticleService } from "./services/ArticleService.js";
-import { ArticleAIService } from "./services/ArticleAIService.js";
+import { ProcessingClient } from "./services/ProcessingClient.js";
 import { AuthorProfileService } from "./services/AuthorProfileService.js";
 import { NewsSourceManager } from "./services/NewsSourceManager.js";
-import { SimpleRSSService } from "./services/SimpleRSSService.js";
-import { CloudflareImagesService } from "./services/CloudflareImagesService.js";
-// AI and Search services
-import { AISearchService } from "./services/AISearchService.js";
+// SimpleRSSService removed — RSS collection delegated to Python Worker via ProcessingClient
+// AISearchService removed — search delegated to Python Worker via ProcessingClient
 // Security services
 import { RateLimitService } from "./services/RateLimitService.js";
 import { CSRFService } from "./services/CSRFService.js";
@@ -38,24 +36,6 @@ import { AuthProviderService, UserRole } from "./services/AuthProviderService.js
 // Story clustering for feed sections
 import { normalizeTitle, titleSimilarity, clusterArticles, STOP_WORDS } from "./services/StoryClusteringService.js";
 
-// === Platform Services (Phases 1-4: Leapfrog competitors) ===
-// Infrastructure
-import { InfrastructureRegistry } from "./services/infrastructure/index.js";
-import { DataSyncService } from "./services/infrastructure/DataSyncService.js";
-import { createD1Cache } from "./services/infrastructure/D1KeyValueAdapter.js";
-// Platform services
-import { ContentModerationService } from "./services/platform/ContentModerationService.js";
-import { DynamicDataService } from "./services/platform/DynamicDataService.js";
-import { FeedOutputService } from "./services/platform/FeedOutputService.js";
-import { APIKeyService, TIER_CONFIGS } from "./services/platform/APIKeyService.js";
-import { PublisherService } from "./services/platform/PublisherService.js";
-import { WebhookService } from "./services/platform/WebhookService.js";
-import { SSEStreamService } from "./services/platform/SSEStreamService.js";
-import { SmartHomeBriefingService } from "./services/platform/SmartHomeBriefingService.js";
-import { OpenDataService } from "./services/platform/OpenDataService.js";
-// Pipeline services
-import { PIIRemovalService } from "./services/pipeline/PIIRemovalService.js";
-
 // Import admin interface
 import { getAdminHTML, getLoginHTML } from "./admin/index.js";
 
@@ -76,7 +56,6 @@ type Bindings = {
   PERFORMANCE_ANALYTICS: AnalyticsEngineDataset;
   AI_INSIGHTS_ANALYTICS: AnalyticsEngineDataset;
   AI: Ai;
-  VECTORIZE_INDEX: VectorizeIndex;
   IMAGES?: ImagesBinding;
   STORAGE?: R2Bucket; // R2 object storage for feeds, backups, uploads
   NODE_ENV: string;
@@ -93,25 +72,7 @@ type Bindings = {
   AUTH_ISSUER_URL: string; // OIDC issuer URL (id.mukoko.com)
   RESEND_API_KEY?: string; // Set via wrangler secret for email
   EMAIL_FROM?: string; // Default sender email address
-  // Infrastructure bindings (Fly.io services)
-  POSTGRES_URL?: string;
-  POSTGRES_AUTH_TOKEN?: string;
-  COUCHDB_URL?: string;
-  COUCHDB_USERNAME?: string;
-  COUCHDB_PASSWORD?: string;
-  COUCHDB_DATABASE?: string;
-  DORIS_HTTP_URL?: string;
-  DORIS_USERNAME?: string;
-  DORIS_PASSWORD?: string;
-  DORIS_DATABASE?: string;
-  NATS_HTTP_URL?: string;
-  NATS_AUTH_TOKEN?: string;
-  KAFKA_REST_PROXY_URL?: string;
-  KAFKA_AUTH_TOKEN?: string;
-  MEILISEARCH_URL?: string;
-  MEILISEARCH_API_KEY?: string;
-  DRAGONFLY_URL?: string;
-  DRAGONFLY_AUTH_TOKEN?: string;
+  DATA_PROCESSOR: Fetcher; // Service Binding to mukoko-news-api Python Worker
 };
 
 // Export Durable Object classes for Cloudflare
@@ -137,40 +98,21 @@ app.use("*", cors({
 }));
 app.use("*", logger());
 
-// Replace KV bindings with D1-backed adapters for strong consistency at scale.
-// KV is eventually consistent and breaks under 10K+ articles / 1K+ users.
-// D1 gives us: SQL queries, atomic writes, strong consistency, edge-native.
-app.use("*", async (c, next) => {
-  const authAdapter = createD1Cache(c.env.DB, 'auth');
-  const cacheAdapter = createD1Cache(c.env.DB, 'cache');
-  // Override KV bindings so all downstream code (AuthProviderService, RateLimitService, etc.)
-  // automatically uses D1 instead of KV — zero code changes in services.
-  (c.env as any).AUTH_STORAGE = authAdapter;
-  (c.env as any).CACHE_STORAGE = cacheAdapter;
-  return await next();
-});
-
 // Protect all /api/* routes with API key (except /health and /api/admin/*)
 // Public API requires bearer token from authorized clients (Vercel frontend)
 app.use("/api/*", async (c, next) => {
-  // Bypass API key auth for health check, admin routes, and auth routes
-  // Admin has its own auth; auth routes must be accessible to unauthenticated users
+  // Bypass API key auth for health check and admin routes (admin has its own auth)
   const bypassPaths = [
     '/api/health',
   ];
 
-  // Check if this is an admin route, auth route, bypass path, or public platform route
-  if (c.req.path.startsWith('/api/admin/') || c.req.path.startsWith('/api/auth/') || bypassPaths.includes(c.req.path)) {
+  // Check if this is an admin route or bypass path
+  if (c.req.path.startsWith('/api/admin/') || bypassPaths.includes(c.req.path)) {
     return await next();
   }
 
-  // Public v1 routes that don't require API key auth
-  const publicV1Paths = ['/api/v1/open-data/', '/api/v1/briefing/', '/api/v1/keys/tiers', '/api/v1/stream'];
-  if (publicV1Paths.some(p => c.req.path.startsWith(p))) {
-    return await next();
-  }
-
-  // Require API key for all other /api/* routes
+  // Require API key for all other /api/* routes (including /api/auth/*)
+  // Auth routes are called by trusted clients (Vercel, Expo) that have the API_SECRET
   return await requireApiKey()(c, next);
 });
 
@@ -200,93 +142,41 @@ function initializeServices(env: Bindings) {
     USER_ANALYTICS: env.USER_ANALYTICS,
     PERFORMANCE_ANALYTICS: env.PERFORMANCE_ANALYTICS
   });
-  const articleAIService = new ArticleAIService(env.AI, null, d1Service); // Vectorize disabled for now
   const authorProfileService = new AuthorProfileService(d1Service);
   const articleService = new ArticleService(env.DB);
   const newsSourceManager = new NewsSourceManager(env.DB);
 
-  // Initialize AI Search Service for semantic search
-  const aiSearchService = new AISearchService(
-    env.AI,
-    env.VECTORIZE_INDEX,
-    env.DB,
-    env.SEARCH_ANALYTICS
-  );
+  // Initialize Security Services
+  const rateLimitService = new RateLimitService(env.CACHE_STORAGE);
+  const csrfService = new CSRFService(env.CACHE_STORAGE);
 
-  // Initialize Security Services — backed by D1 instead of KV for strong consistency
-  const authCache = createD1Cache(env.DB, 'auth');
-  const cacheStore = createD1Cache(env.DB, 'cache');
-  const rateLimitService = new RateLimitService(cacheStore as unknown as KVNamespace);
-  const csrfService = new CSRFService(cacheStore as unknown as KVNamespace);
-
-  // Initialize CloudflareImagesService if available
-  let imagesService = null;
-  if (env.IMAGES && env.CLOUDFLARE_ACCOUNT_ID) {
-    imagesService = new CloudflareImagesService(env.IMAGES, env.CLOUDFLARE_ACCOUNT_ID);
-    console.log('[INIT] CloudflareImagesService initialized successfully');
-  } else {
-    console.warn('[INIT] CloudflareImagesService not initialized - IMAGES binding or CLOUDFLARE_ACCOUNT_ID not configured. RSS images will not be optimized.');
-  }
-
-  // Initialize enhancement services for SimpleRSSService
   const categoryManager = new CategoryManager(env.DB);
   const observabilityService = new ObservabilityService(env.DB, env.LOG_LEVEL || 'info');
   const userService = new D1UserService(env.DB);
 
-  // Initialize SimpleRSSService for RSS feed processing
-  const rssService = new SimpleRSSService(env.DB);
-
-  // Initialize SourceHealthService for monitoring and alerting
+  // Initialize SourceHealthService for D1-based health reads (fallback for admin)
+  // RSS collection + health recording delegated to Python Worker
   const sourceHealthService = new SourceHealthService(env.DB);
 
-  // === Platform Services ===
-  const infra = new InfrastructureRegistry(env);
-  const dataSyncService = new DataSyncService(env.DB, infra);
-  const moderationService = new ContentModerationService(env.AI, env.DB);
-  const dynamicDataService = new DynamicDataService(env.DB);
-  const feedOutputService = new FeedOutputService(env.DB);
-  const apiKeyService = new APIKeyService(env.DB, cacheStore as unknown as KVNamespace);
-  const publisherService = new PublisherService(env.DB);
-  const webhookService = new WebhookService(env.DB);
-  const sseStreamService = new SSEStreamService(env.DB);
-  const briefingService = new SmartHomeBriefingService(env.DB);
-  const openDataService = new OpenDataService(env.DB);
-  const piiService = new PIIRemovalService(env.DB);
+  // Initialize ProcessingClient — delegates data processing to Python Worker via Service Binding
+  const processingClient = new ProcessingClient(env.DATA_PROCESSOR);
 
-  console.log('[INIT] All services initialized - using SimpleRSSService for RSS processing');
-  console.log('[INIT] Platform services initialized - infrastructure:', infra.status);
+  console.log('[INIT] All services initialized - processing delegated to Python Worker via Service Binding');
 
   return {
     d1Service,
     cacheService,
     analyticsService,
-    articleAIService,
     authorProfileService,
     articleService,
     newsSourceManager,
     categoryManager,
     observabilityService,
     userService,
-    rssService,
-    aiSearchService,
     rateLimitService,
     csrfService,
-    authCache,
-    cacheStore,
     sourceHealthService,
-    // Platform services
-    infra,
-    dataSyncService,
-    moderationService,
-    dynamicDataService,
-    feedOutputService,
-    apiKeyService,
-    publisherService,
-    webhookService,
-    sseStreamService,
-    briefingService,
-    openDataService,
-    piiService,
+    processingClient
   };
 }
 
@@ -677,15 +567,26 @@ app.get("/api/health", async (c) => {
     const services = initializeServices(c.env);
     const health = await services.d1Service.healthCheck();
 
+    // Check Python Worker (processing API) health
+    let processingStatus = "unknown";
+    try {
+      const processingClient = new ProcessingClient(c.env.DATA_PROCESSOR);
+      const pyHealth = await processingClient._healthCheck();
+      processingStatus = pyHealth ? "operational" : "error";
+    } catch {
+      processingStatus = "error";
+    }
+
+    const allHealthy = health.healthy && processingStatus === "operational";
+
     return c.json({
-      status: health.healthy ? "healthy" : "unhealthy",
+      status: allHealthy ? "healthy" : "degraded",
       timestamp: new Date().toISOString(),
       services: {
         database: health.healthy ? "operational" : "error",
+        processing_api: processingStatus,
         analytics: !!(c.env.NEWS_ANALYTICS && c.env.SEARCH_ANALYTICS && c.env.CATEGORY_ANALYTICS),
         cache: "operational",
-        articles: "operational",
-        newsSources: "operational"
       },
       environment: c.env.NODE_ENV || "production",
       security: {
@@ -698,10 +599,10 @@ app.get("/api/health", async (c) => {
         publicRoutes: "/api/health, /api/admin/* (separate admin auth)"
       }
     });
-  } catch (error) {
+  } catch (error: any) {
     return c.json({
       status: "unhealthy",
-      error: error.message,
+      error: "Health check failed",
       timestamp: new Date().toISOString()
     }, 500);
   }
@@ -809,13 +710,13 @@ app.get("/api/admin/stats", async (c) => {
     
     // Get RSS source count directly from database
     const sourcesResult = await c.env.DB.prepare(
-      'SELECT COUNT(*) as count FROM organizations WHERE enabled = 1'
+      'SELECT COUNT(*) as count FROM rss_sources WHERE enabled = 1'
     ).first();
     const activeSources = sourcesResult.count;
-
-    // Get categories count directly from database
+    
+    // Get categories count directly from database  
     const categoriesResult = await c.env.DB.prepare(
-      'SELECT COUNT(*) as count FROM article_sections WHERE enabled = 1'
+      'SELECT COUNT(*) as count FROM categories WHERE enabled = 1'
     ).first();
     const categoriesCount = categoriesResult.count;
     
@@ -864,24 +765,26 @@ app.get("/api/categories", async (c) => {
 // This is separate from /api/admin/stats which may contain sensitive data
 app.get("/api/stats", async (c) => {
   try {
+    // Try Python Worker (MongoDB) first for enhanced stats
+    try {
+      const processingClient = new ProcessingClient(c.env.DATA_PROCESSOR);
+      const stats = await processingClient.getEnhancedStats();
+      return c.json(stats);
+    } catch (pyError) {
+      console.warn('[API] Python Worker stats unavailable, falling back to D1:', pyError);
+    }
+
+    // D1 fallback
     const services = initializeServices(c.env);
-
-    // Get basic database statistics - all public, aggregate data
     const totalArticles = await services.d1Service.getArticleCount();
-
-    // Get RSS source count
     const sourcesResult = await c.env.DB.prepare(
-      'SELECT COUNT(*) as count FROM organizations WHERE enabled = 1'
+      'SELECT COUNT(*) as count FROM rss_sources WHERE enabled = 1'
     ).first();
     const activeSources = sourcesResult?.count || 0;
-
-    // Get categories count
     const categoriesResult = await c.env.DB.prepare(
-      'SELECT COUNT(*) as count FROM article_sections WHERE enabled = 1'
+      'SELECT COUNT(*) as count FROM categories WHERE enabled = 1'
     ).first();
     const categoriesCount = categoriesResult?.count || 0;
-
-    // Get today's article count
     const todayArticles = await services.d1Service.getArticleCount({ today: true });
 
     return c.json({
@@ -891,6 +794,7 @@ app.get("/api/stats", async (c) => {
         categories: categoriesCount,
         today_articles: todayArticles
       },
+      source: 'd1_fallback',
       timestamp: new Date().toISOString()
     });
   } catch (error) {
@@ -915,8 +819,8 @@ app.get("/api/feeds", async (c) => {
 
     // Get articles directly from database
     let articlesQuery = `
-      SELECT id, headline, slug, description, content_snippet, author_name, publisher_name, publisher_id,
-             date_published, image, main_entity_of_page, article_section_id, about_country_id, view_count,
+      SELECT id, title, slug, description, content_snippet, author, source, source_id,
+             published_at, image_url, original_url, category_id, country_id, view_count,
              like_count, bookmark_count
       FROM articles
       WHERE status = 'published'
@@ -925,16 +829,16 @@ app.get("/api/feeds", async (c) => {
     let countQuery = `SELECT COUNT(*) as total FROM articles WHERE status = 'published'`;
 
     if (category && category !== 'all') {
-      articlesQuery += ` AND article_section_id = ?`;
-      countQuery += ` AND article_section_id = ?`;
+      articlesQuery += ` AND category_id = ?`;
+      countQuery += ` AND category_id = ?`;
       queryParams.push(category);
     }
 
     // Pan-African: filter by countries
     if (countries && countries.length > 0) {
       const placeholders = countries.map(() => '?').join(',');
-      articlesQuery += ` AND about_country_id IN (${placeholders})`;
-      countQuery += ` AND about_country_id IN (${placeholders})`;
+      articlesQuery += ` AND country_id IN (${placeholders})`;
+      countQuery += ` AND country_id IN (${placeholders})`;
       queryParams.push(...countries);
     }
 
@@ -944,8 +848,8 @@ app.get("/api/feeds", async (c) => {
       case 'trending':
         // Trending: recent articles with high engagement (weighted by recency)
         // Articles from last 7 days, sorted by (views + likes*3 + bookmarks*2) / age_in_hours
-        articlesQuery += ` AND date_published > datetime('now', '-7 days')`;
-        orderClause = `ORDER BY (view_count + like_count * 3 + bookmark_count * 2) DESC, date_published DESC`;
+        articlesQuery += ` AND published_at > datetime('now', '-7 days')`;
+        orderClause = `ORDER BY (view_count + like_count * 3 + bookmark_count * 2) DESC, published_at DESC`;
         break;
       case 'popular':
         // Popular: highest engagement regardless of date
@@ -953,7 +857,7 @@ app.get("/api/feeds", async (c) => {
         break;
       case 'latest':
       default:
-        orderClause = `ORDER BY date_published DESC`;
+        orderClause = `ORDER BY published_at DESC`;
         break;
     }
 
@@ -975,8 +879,8 @@ app.get("/api/feeds", async (c) => {
       try {
         const keywordsResult = await c.env.DB.prepare(`
           SELECT k.id, k.name, k.slug
-          FROM defined_terms k
-          INNER JOIN article_keywords akl ON k.id = akl.keyword_id
+          FROM keywords k
+          INNER JOIN article_keyword_links akl ON k.id = akl.keyword_id
           WHERE akl.article_id = ?
           ORDER BY akl.relevance_score DESC
           LIMIT 8
@@ -1020,24 +924,26 @@ app.get("/api/feeds/personalized", async (c) => {
     // Get user ID from header or session
     const userId = c.req.header("x-user-id") || c.req.header("x-session-id") || null;
 
-    // Initialize personalized feed service
     const feedService = new PersonalizedFeedService(c.env.DB);
 
-    // Get personalized feed (will use user's country preferences if no override)
+    // Pass ProcessingClient so the service can try Python numpy ranking.
+    // PersonalizedFeedService.getPersonalizedFeed() catches rankFeed() failures
+    // internally and falls back to the built-in TS scorer — no outer fallback needed.
+    const processingClient = new ProcessingClient(c.env.DATA_PROCESSOR);
     const result = await feedService.getPersonalizedFeed(userId, {
       limit,
       offset,
       excludeRead,
       diversityFactor,
       countries,  // Pan-African: pass country override
-    });
+    }, processingClient);
 
     // Fetch keywords for each article
     for (const article of result.articles) {
       const keywordsResult = await c.env.DB.prepare(`
         SELECT k.id, k.name, k.slug
-        FROM defined_terms k
-        INNER JOIN article_keywords akl ON k.id = akl.keyword_id
+        FROM keywords k
+        INNER JOIN article_keyword_links akl ON k.id = akl.keyword_id
         WHERE akl.article_id = ?
         ORDER BY akl.relevance_score DESC
         LIMIT 8
@@ -1139,40 +1045,37 @@ app.get("/api/feeds/sectioned", async (c) => {
           .filter(cat => VALID_CATEGORIES.has(cat))
       : [];
 
-    // normalizeTitle and titleSimilarity imported from StoryClusteringService
-    // with DoS prevention (title length limit: 500 chars, word limit: 50)
-
     // Build country filter clause
     let countryClause = '';
     const countryParams: string[] = [];
     if (countries && countries.length > 0) {
       const placeholders = countries.map(() => '?').join(',');
-      countryClause = ` AND about_country_id IN (${placeholders})`;
+      countryClause = ` AND country_id IN (${placeholders})`;
       countryParams.push(...countries);
     }
 
     // PERFORMANCE: Run independent queries in parallel
     // Phase 1: Fetch top stories and latest (independent of categories)
     const topStoriesQuery = `
-      SELECT id, headline, slug, description, content_snippet, author_name, publisher_name, publisher_id,
-             date_published, image, main_entity_of_page, article_section_id, about_country_id, view_count,
+      SELECT id, title, slug, description, content_snippet, author, source, source_id,
+             published_at, image_url, original_url, category_id, country_id, view_count,
              like_count, bookmark_count
       FROM articles
       WHERE status = 'published'
-        AND date_published > datetime('now', '-${CLUSTERING_CONFIG.TRENDING_HOURS} hours')
+        AND published_at > datetime('now', '-${CLUSTERING_CONFIG.TRENDING_HOURS} hours')
         ${countryClause}
-      ORDER BY (view_count + like_count * 3 + bookmark_count * 2) DESC, date_published DESC
+      ORDER BY (view_count + like_count * 3 + bookmark_count * 2) DESC, published_at DESC
       LIMIT ${CLUSTERING_CONFIG.TOP_STORIES_LIMIT}
     `;
 
     const latestQuery = `
-      SELECT id, headline, slug, description, content_snippet, author_name, publisher_name, publisher_id,
-             date_published, image, main_entity_of_page, article_section_id, about_country_id, view_count,
+      SELECT id, title, slug, description, content_snippet, author, source, source_id,
+             published_at, image_url, original_url, category_id, country_id, view_count,
              like_count, bookmark_count
       FROM articles
       WHERE status = 'published'
         ${countryClause}
-      ORDER BY date_published DESC
+      ORDER BY published_at DESC
       LIMIT ${CLUSTERING_CONFIG.LATEST_LIMIT}
     `;
 
@@ -1193,42 +1096,50 @@ app.get("/api/feeds/sectioned", async (c) => {
       articleCount: number;
     }
 
-    const clusters: StoryCluster[] = [];
-    const clusteredIds = new Set<string>();
-
-    for (const article of topStoriesRaw) {
-      if (clusteredIds.has(article.id)) continue;
-
-      const articleWords = normalizeTitle(article.title);
-      const cluster: StoryCluster = {
-        id: `cluster-${article.id}`,
-        primaryArticle: article,
-        relatedArticles: [],
-        articleCount: 1,
-      };
-
-      clusteredIds.add(article.id);
-
-      // Find related articles (same story from different sources)
-      for (const other of topStoriesRaw) {
-        if (clusteredIds.has(other.id)) continue;
-        if (article.source === other.source) continue; // Must be different sources
-
-        const otherWords = normalizeTitle(other.title);
-        const similarity = titleSimilarity(articleWords, otherWords);
-
-        // Group stories that exceed similarity threshold
-        if (similarity > CLUSTERING_CONFIG.SIMILARITY_THRESHOLD) {
-          cluster.relatedArticles.push(other);
-          cluster.articleCount++;
-          clusteredIds.add(other.id);
-
-          if (cluster.relatedArticles.length >= CLUSTERING_CONFIG.MAX_RELATED_PER_CLUSTER) break;
+    // Cluster similar stories — try Python Worker first, fall back to Jaccard TS
+    let clusters: StoryCluster[];
+    try {
+      const processingClient = new ProcessingClient(c.env.DATA_PROCESSOR);
+      const clusterResult = await processingClient.clusterArticles(topStoriesRaw, {
+        similarityThreshold: CLUSTERING_CONFIG.SIMILARITY_THRESHOLD,
+        maxRelatedPerCluster: CLUSTERING_CONFIG.MAX_RELATED_PER_CLUSTER,
+        maxClusters: CLUSTERING_CONFIG.MAX_CLUSTERS,
+      });
+      // Map snake_case Python response to camelCase for frontend compatibility
+      clusters = clusterResult.clusters.map(cl => ({
+        id: cl.id,
+        primaryArticle: cl.primary_article,
+        relatedArticles: cl.related_articles,
+        articleCount: cl.article_count,
+      }));
+    } catch (clusterErr) {
+      console.error('[feeds/sectioned] Python clustering failed, using Jaccard fallback:', clusterErr);
+      // TS Jaccard fallback
+      clusters = [];
+      const clusteredIds = new Set<string>();
+      for (const article of topStoriesRaw) {
+        if (clusteredIds.has(article.id)) continue;
+        const articleWords = normalizeTitle(article.title);
+        const cluster: StoryCluster = {
+          id: `cluster-${article.id}`,
+          primaryArticle: article,
+          relatedArticles: [],
+          articleCount: 1,
+        };
+        clusteredIds.add(article.id);
+        for (const other of topStoriesRaw) {
+          if (clusteredIds.has(other.id)) continue;
+          if (article.source === other.source) continue;
+          if (titleSimilarity(articleWords, normalizeTitle(other.title)) > CLUSTERING_CONFIG.SIMILARITY_THRESHOLD) {
+            cluster.relatedArticles.push(other);
+            cluster.articleCount++;
+            clusteredIds.add(other.id);
+            if (cluster.relatedArticles.length >= CLUSTERING_CONFIG.MAX_RELATED_PER_CLUSTER) break;
+          }
         }
+        clusters.push(cluster);
+        if (clusters.length >= CLUSTERING_CONFIG.MAX_CLUSTERS) break;
       }
-
-      clusters.push(cluster);
-      if (clusters.length >= CLUSTERING_CONFIG.MAX_CLUSTERS) break;
     }
 
     // Phase 2: Fetch category-based content with batch query (fixes N+1 pattern)
@@ -1246,21 +1157,21 @@ app.get("/api/feeds/sectioned", async (c) => {
     const categoryPlaceholders = categoriesToFetch.map(() => '?').join(',');
     const batchCategoryQuery = `
       WITH ranked_articles AS (
-        SELECT id, headline, slug, description, content_snippet, author_name, publisher_name, publisher_id,
-               date_published, image, main_entity_of_page, article_section_id, about_country_id, view_count,
+        SELECT id, title, slug, description, content_snippet, author, source, source_id,
+               published_at, image_url, original_url, category_id, country_id, view_count,
                like_count, bookmark_count,
-               ROW_NUMBER() OVER (PARTITION BY article_section_id ORDER BY date_published DESC) as rn
+               ROW_NUMBER() OVER (PARTITION BY category_id ORDER BY published_at DESC) as rn
         FROM articles
         WHERE status = 'published'
-          AND article_section_id IN (${categoryPlaceholders})
+          AND category_id IN (${categoryPlaceholders})
           ${countryClause}
       )
-      SELECT id, headline, slug, description, content_snippet, author_name, publisher_name, publisher_id,
-             date_published, image, main_entity_of_page, article_section_id, about_country_id, view_count,
+      SELECT id, title, slug, description, content_snippet, author, source, source_id,
+             published_at, image_url, original_url, category_id, country_id, view_count,
              like_count, bookmark_count
       FROM ranked_articles
       WHERE rn <= ${CLUSTERING_CONFIG.CATEGORY_LIMIT}
-      ORDER BY article_section_id, date_published DESC
+      ORDER BY category_id, published_at DESC
     `;
 
     // Build "Your News" query for user preferences
@@ -1268,14 +1179,14 @@ app.get("/api/feeds/sectioned", async (c) => {
     if (preferredCategories.length > 0) {
       const catPlaceholders = preferredCategories.map(() => '?').join(',');
       const yourNewsQuery = `
-        SELECT id, headline, slug, description, content_snippet, author_name, publisher_name, publisher_id,
-               date_published, image, main_entity_of_page, article_section_id, about_country_id, view_count,
+        SELECT id, title, slug, description, content_snippet, author, source, source_id,
+               published_at, image_url, original_url, category_id, country_id, view_count,
                like_count, bookmark_count
         FROM articles
         WHERE status = 'published'
-          AND article_section_id IN (${catPlaceholders})
+          AND category_id IN (${catPlaceholders})
           ${countryClause}
-        ORDER BY date_published DESC
+        ORDER BY published_at DESC
         LIMIT ${CLUSTERING_CONFIG.YOUR_NEWS_LIMIT}
       `;
       yourNewsPromise = c.env.DB.prepare(yourNewsQuery)
@@ -1333,9 +1244,29 @@ app.get("/api/feeds/sectioned", async (c) => {
 });
 
 // Debug endpoint to test single RSS feed fetch
-app.get("/api/test-feed", async (c) => {
+app.get("/api/admin/test-feed", async (c) => {
   const { XMLParser } = await import('fast-xml-parser');
   const feedUrl = c.req.query('url') || 'https://www.techzim.co.zw/feed/';
+
+  // Validate URL to prevent SSRF
+  try {
+    const parsed = new URL(feedUrl);
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+      return c.json({ error: "Only HTTP/HTTPS URLs allowed" }, 400);
+    }
+    const hostname = parsed.hostname.toLowerCase();
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '0.0.0.0' ||
+        hostname === '::1' || hostname === '[::1]' ||
+        hostname.startsWith('10.') || hostname.startsWith('192.168.') ||
+        /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(hostname) ||
+        hostname.startsWith('fe80:') || hostname.startsWith('fc00:') || hostname.startsWith('fd') ||
+        /^::ffff:(10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|127\.)/.test(hostname) ||
+        hostname === '169.254.169.254' || hostname.endsWith('.internal') || hostname.endsWith('.local')) {
+      return c.json({ error: "Internal URLs not allowed" }, 403);
+    }
+  } catch {
+    return c.json({ error: "Invalid URL" }, 400);
+  }
   try {
     const response = await fetch(feedUrl, {
       headers: {
@@ -1343,8 +1274,14 @@ app.get("/api/test-feed", async (c) => {
         'Accept': 'application/rss+xml, application/xml, text/xml, */*',
         'Accept-Language': 'en-US,en;q=0.9'
       },
-      redirect: 'follow'
+      redirect: 'manual'
     });
+
+    // Reject redirects to prevent SSRF bypass via redirect-to-internal-IP
+    if (response.status >= 300 && response.status < 400) {
+      const location = response.headers.get('Location');
+      return c.json({ error: "Feed URL redirected", redirect_url: location }, 400);
+    }
 
     const text = await response.text();
     const contentType = response.headers.get('content-type');
@@ -1401,15 +1338,15 @@ app.get("/api/test-feed", async (c) => {
   }
 });
 
-// Debug endpoint to test storing one article
-app.get("/api/test-store", async (c) => {
+// Debug endpoint to test storing one article (admin-only, moved to /api/admin/)
+app.get("/api/admin/test-store", async (c) => {
   try {
     const slug = `test-article-${Date.now()}`;
     await c.env.DB.prepare(`
       INSERT INTO articles (
-        headline, slug, description, article_body, author_name, publisher_name, publisher_id, source_url,
-        article_section_id, date_published, image, main_entity_of_page, rss_guid,
-        created_at, date_modified
+        title, slug, description, content, author, source, source_id, source_url,
+        category_id, published_at, image_url, original_url, rss_guid,
+        created_at, updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
     `).bind(
       'Test Article Title',
@@ -1435,32 +1372,24 @@ app.get("/api/test-store", async (c) => {
       articleCount: count?.count
     });
   } catch (error: any) {
+    console.error('[API] test-store error:', error);
     return c.json({
       success: false,
-      error: error.message,
-      stack: error.stack
+      error: "Failed to store test article"
     }, 500);
   }
 });
 
-// Simple RSS refresh endpoint - rebuild from scratch for reliability
-// No complex AI pipeline, just fetch, parse, categorize, store
+// RSS refresh endpoint — delegates to Python Worker for feed collection
 app.post("/api/refresh-rss", async (c) => {
   try {
-    console.log("[API] Starting simple RSS refresh...");
+    console.log("[API] Starting RSS refresh via Python Worker...");
     const startTime = Date.now();
 
-    // Initialize simple RSS service
-    const rssService = new SimpleRSSService(c.env.DB);
-    const sourceHealthService = new SourceHealthService(c.env.DB);
-
-    // Fetch and process all feeds
-    const results = await rssService.refreshAllFeeds();
+    const processingClient = new ProcessingClient(c.env.DATA_PROCESSOR);
+    const results = await processingClient.collectFeeds();
 
     const processingTime = Date.now() - startTime;
-
-    // Record per-source health results in a single batch for efficiency
-    await sourceHealthService.recordHealthBatch(results.sourceResults);
 
     console.log(`[API] RSS refresh completed in ${processingTime}ms:`, results);
 
@@ -1563,15 +1492,9 @@ app.post("/api/feed/collect", async (c) => {
     }
 
     const startTime = Date.now();
-    const rssService = new SimpleRSSService(c.env.DB);
-    const sourceHealthService = new SourceHealthService(c.env.DB);
-
-    // Fetch and process all feeds
-    const results = await rssService.refreshAllFeeds();
+    const processingClient = new ProcessingClient(c.env.DATA_PROCESSOR);
+    const results = await processingClient.collectFeeds();
     const processingTime = Date.now() - startTime;
-
-    // Record per-source health results in a single batch for efficiency
-    await sourceHealthService.recordHealthBatch(results.sourceResults);
 
     // Update last collection time
     if (c.env.CACHE_STORAGE) {
@@ -1601,21 +1524,20 @@ app.post("/api/feed/collect", async (c) => {
   }
 });
 
-// Backfill keywords for existing articles
+// Backfill keywords for existing articles — delegates to Python Worker
 app.post("/api/admin/backfill-keywords", async (c) => {
   try {
-    console.log("[API] Starting keyword backfill...");
+    console.log("[API] Starting keyword backfill via Python Worker...");
     const startTime = Date.now();
 
-    // Initialize simple RSS service
-    const rssService = new SimpleRSSService(c.env.DB);
+    const processingClient = new ProcessingClient(c.env.DATA_PROCESSOR);
 
     // Get all articles that don't have keywords
     const articlesWithoutKeywords = await c.env.DB
       .prepare(`
-        SELECT a.id, a.headline, a.description
+        SELECT a.id, a.title, a.description
         FROM articles a
-        LEFT JOIN article_keywords akl ON a.id = akl.article_id
+        LEFT JOIN article_keyword_links akl ON a.id = akl.article_id
         WHERE akl.id IS NULL
         LIMIT 200
       `)
@@ -1635,50 +1557,43 @@ app.post("/api/admin/backfill-keywords", async (c) => {
 
     for (const article of articlesWithoutKeywords.results) {
       try {
-        // Extract keywords
-        const keywords = rssService.extractKeywords(
+        const result = await processingClient.extractKeywords(
           article.title as string,
           (article.description as string) || ''
         );
 
-        if (keywords.length > 0) {
-          // Store keywords (this method is private, so we need to make it public or create a new method)
-          // For now, let's manually implement the storage logic
-          for (const keyword of keywords) {
-            const keywordId = keyword.toLowerCase().replace(/\s+/g, '-');
+        if (result.keywords && result.keywords.length > 0) {
+          for (const kw of result.keywords) {
+            const keywordId = kw.keyword.toLowerCase().replace(/\s+/g, '-');
             const keywordSlug = keywordId;
-            const keywordName = keyword.charAt(0).toUpperCase() + keyword.slice(1);
+            const keywordName = kw.keyword.charAt(0).toUpperCase() + kw.keyword.slice(1);
 
-            // Check if keyword exists
             const existingKeyword = await c.env.DB
-              .prepare('SELECT id FROM defined_terms WHERE id = ?')
+              .prepare('SELECT id FROM keywords WHERE id = ?')
               .bind(keywordId)
               .first();
 
             if (!existingKeyword) {
-              // Create keyword
               await c.env.DB
                 .prepare(`
-                  INSERT INTO defined_terms (id, name, slug, type, enabled, created_at, updated_at)
+                  INSERT INTO keywords (id, name, slug, type, enabled, created_at, updated_at)
                   VALUES (?, ?, ?, 'general', 1, datetime('now'), datetime('now'))
                 `)
                 .bind(keywordId, keywordName, keywordSlug)
                 .run();
             }
 
-            // Link keyword to article
             await c.env.DB
               .prepare(`
-                INSERT INTO article_keywords (article_id, keyword_id, relevance_score, source, created_at)
-                VALUES (?, ?, 1.0, 'auto', datetime('now'))
+                INSERT INTO article_keyword_links (article_id, keyword_id, relevance_score, source, created_at)
+                VALUES (?, ?, ?, 'ai', datetime('now'))
                 ON CONFLICT(article_id, keyword_id) DO NOTHING
               `)
-              .bind(article.id, keywordId)
+              .bind(article.id, keywordId, kw.confidence)
               .run();
 
-            // Update keyword article count
             await c.env.DB
-              .prepare('UPDATE defined_terms SET article_count = article_count + 1 WHERE id = ?')
+              .prepare('UPDATE keywords SET article_count = article_count + 1 WHERE id = ?')
               .bind(keywordId)
               .run();
 
@@ -1696,7 +1611,6 @@ app.post("/api/admin/backfill-keywords", async (c) => {
     }
 
     const processingTime = Date.now() - startTime;
-
     console.log(`[API] Keyword backfill completed in ${processingTime}ms`);
 
     return c.json({
@@ -1730,11 +1644,10 @@ app.post("/api/admin/bulk-pull", async (c) => {
     const batch = typeof body.batch === 'number' ? body.batch : 0;
     const batchSize = typeof body.batchSize === 'number' ? body.batchSize : 40;
 
-    console.log(`Starting BULK PULL using SimpleRSSService (batch ${batch}, size ${batchSize})...`);
+    console.log(`Starting BULK PULL via Python Worker (batch ${batch}, size ${batchSize})...`);
 
-    // Use SimpleRSSService for bulk pull with batching
-    const rssService = new SimpleRSSService(c.env.DB);
-    const results = await rssService.refreshAllFeeds({ batch, batchSize });
+    const processingClient = new ProcessingClient(c.env.DATA_PROCESSOR);
+    const results = await processingClient.collectFeeds({ batch, batchSize });
 
     // Track the bulk pull event for analytics
     const services = initializeServices(c.env);
@@ -1809,20 +1722,20 @@ app.post("/api/admin/migrate-article-countries", async (c) => {
     // Update articles to inherit country_id from their rss_source
     const result = await c.env.DB.prepare(`
       UPDATE articles
-      SET about_country_id = (
+      SET country_id = (
         SELECT rs.country_id
-        FROM organizations rs
-        WHERE rs.id = articles.publisher_id OR rs.name = articles.publisher_name
+        FROM rss_sources rs
+        WHERE rs.id = articles.source_id OR rs.name = articles.source
       )
-      WHERE about_country_id IS NULL OR about_country_id = ''
+      WHERE country_id IS NULL OR country_id = ''
     `).run();
 
     // Count how many were updated
     const countResult = await c.env.DB.prepare(`
       SELECT
         COUNT(*) as total,
-        COUNT(CASE WHEN about_country_id IS NOT NULL AND about_country_id != '' THEN 1 END) as with_country,
-        COUNT(CASE WHEN about_country_id IS NULL OR about_country_id = '' THEN 1 END) as without_country
+        COUNT(CASE WHEN country_id IS NOT NULL AND country_id != '' THEN 1 END) as with_country,
+        COUNT(CASE WHEN country_id IS NULL OR country_id = '' THEN 1 END) as without_country
       FROM articles
     `).first() as { total: number; with_country: number; without_country: number };
 
@@ -1898,7 +1811,7 @@ app.get("/api/admin/rss-config", async (c) => {
              daily_limit, articles_per_fetch, max_bulk_articles,
              quality_score, reliability_score, validation_status,
              last_fetched_at, fetch_count, error_count
-      FROM organizations
+      FROM rss_sources 
       ORDER BY priority DESC, name ASC
     `).all();
     
@@ -1956,7 +1869,7 @@ app.put("/api/admin/rss-source/:sourceId", async (c) => {
     
     // Update source configuration
     await services.d1Service.db.prepare(`
-      UPDATE organizations
+      UPDATE rss_sources 
       SET daily_limit = ?, 
           articles_per_fetch = ?, 
           max_bulk_articles = ?,
@@ -2124,7 +2037,7 @@ app.get("/api/admin/domains", async (c) => {
       SELECT td.id, td.domain, td.type, td.source_id, td.description, td.enabled, td.created_at,
              ns.name as source_name
       FROM trusted_domains td
-      LEFT JOIN organizations ns ON td.source_id = ns.id
+      LEFT JOIN news_sources ns ON td.source_id = ns.id
       WHERE 1=1
     `;
     const params: any[] = [];
@@ -2257,6 +2170,22 @@ app.get("/api/admin/analytics", async (c) => {
   }
 });
 
+// Content insights — MongoDB-powered engagement analytics
+app.get("/api/admin/content-insights", async (c) => {
+  try {
+    const countryId = c.req.query("country_id");
+    if (countryId && !/^[A-Z]{2}$/.test(countryId)) {
+      return c.json({ error: "Invalid country_id format (expected 2-letter ISO code)" }, 400);
+    }
+    const processingClient = new ProcessingClient(c.env.DATA_PROCESSOR);
+    const insights = await processingClient.getContentInsights(countryId || undefined);
+    return c.json({ success: true, ...insights });
+  } catch (error: any) {
+    console.error('[API] Error fetching content insights:', error);
+    return c.json({ error: "Failed to fetch content insights" }, 500);
+  }
+});
+
 // Cron job logs endpoint - view recent cron executions
 app.get("/api/admin/cron-logs", async (c) => {
   try {
@@ -2320,8 +2249,8 @@ app.get("/api/article/by-source-slug", async (c) => {
     // Fetch keywords for the article
     const keywordsResult = await c.env.DB.prepare(`
       SELECT k.id, k.name, k.slug
-      FROM defined_terms k
-      INNER JOIN article_keywords akl ON k.id = akl.keyword_id
+      FROM keywords k
+      INNER JOIN article_keyword_links akl ON k.id = akl.keyword_id
       WHERE akl.article_id = ?
       ORDER BY akl.relevance_score DESC
       LIMIT 10
@@ -2357,9 +2286,9 @@ app.get("/api/article/:id", async (c) => {
 
     // Fetch article by ID
     const article = await c.env.DB.prepare(`
-      SELECT id, headline, slug, description, article_body, content_snippet, author_name, publisher_name, publisher_id,
-             date_published, date_modified, image, main_entity_of_page, article_section_id, view_count,
-             like_count, bookmark_count, word_count, reading_time_minutes
+      SELECT id, title, slug, description, content, content_snippet, author, source, source_id,
+             published_at, updated_at, image_url, original_url, category_id, view_count,
+             like_count, bookmark_count, word_count, reading_time
       FROM articles
       WHERE id = ? AND status = 'published'
     `).bind(articleId).first();
@@ -2371,8 +2300,8 @@ app.get("/api/article/:id", async (c) => {
     // Fetch keywords for the article
     const keywordsResult = await c.env.DB.prepare(`
       SELECT k.id, k.name, k.slug
-      FROM defined_terms k
-      INNER JOIN article_keywords akl ON k.id = akl.keyword_id
+      FROM keywords k
+      INNER JOIN article_keyword_links akl ON k.id = akl.keyword_id
       WHERE akl.article_id = ?
       ORDER BY akl.relevance_score DESC
       LIMIT 10
@@ -2411,9 +2340,9 @@ app.get("/api/article/:id/related", async (c) => {
 
     // Get the source article's details
     const sourceArticle = await c.env.DB.prepare(`
-      SELECT id, headline, article_section_id, publisher_id, date_published,
-             (SELECT GROUP_CONCAT(k.name) FROM defined_terms k
-              INNER JOIN article_keywords akl ON k.id = akl.keyword_id
+      SELECT id, title, category_id, source_id, published_at,
+             (SELECT GROUP_CONCAT(k.name) FROM keywords k
+              INNER JOIN article_keyword_links akl ON k.id = akl.keyword_id
               WHERE akl.article_id = articles.id LIMIT 5) as keywords
       FROM articles WHERE id = ? AND status = 'published'
     `).bind(articleId).first();
@@ -2429,31 +2358,31 @@ app.get("/api/article/:id/related", async (c) => {
     // 4. Different source (cross-source coverage)
     const relatedResult = await c.env.DB.prepare(`
       WITH article_keywords AS (
-        SELECT keyword_id FROM article_keywords WHERE article_id = ?
+        SELECT keyword_id FROM article_keyword_links WHERE article_id = ?
       ),
       scored_articles AS (
         SELECT
-          a.id, a.headline, a.slug, a.description, a.publisher_name, a.publisher_id,
-          a.date_published, a.image, a.article_section_id, a.view_count,
+          a.id, a.title, a.slug, a.description, a.source, a.source_id,
+          a.published_at, a.image_url, a.category_id, a.view_count,
           -- Scoring: same category = 3pts, shared keywords = 2pts each, different source = 1pt, recency bonus
-          (CASE WHEN a.article_section_id = ? THEN 3 ELSE 0 END) +
-          (SELECT COUNT(*) * 2 FROM article_keywords akl
+          (CASE WHEN a.category_id = ? THEN 3 ELSE 0 END) +
+          (SELECT COUNT(*) * 2 FROM article_keyword_links akl
            WHERE akl.article_id = a.id AND akl.keyword_id IN (SELECT keyword_id FROM article_keywords)) +
-          (CASE WHEN a.publisher_id != ? THEN 1 ELSE 0 END) +
-          (CASE WHEN a.date_published > datetime('now', '-7 days') THEN 2 ELSE 0 END)
+          (CASE WHEN a.source_id != ? THEN 1 ELSE 0 END) +
+          (CASE WHEN a.published_at > datetime('now', '-7 days') THEN 2 ELSE 0 END)
           AS relevance_score,
           -- Flag if from different source (for "same story, different source" detection)
-          (CASE WHEN a.publisher_id != ? THEN 1 ELSE 0 END) AS is_cross_source
+          (CASE WHEN a.source_id != ? THEN 1 ELSE 0 END) AS is_cross_source
         FROM articles a
         WHERE a.id != ?
           AND a.status = 'published'
-          AND a.date_published > datetime('now', '-30 days')
+          AND a.published_at > datetime('now', '-30 days')
       )
-      SELECT id, headline, slug, description, publisher_name, publisher_id, date_published,
-             image, article_section_id, view_count, relevance_score, is_cross_source
+      SELECT id, title, slug, description, source, source_id, published_at,
+             image_url, category_id, view_count, relevance_score, is_cross_source
       FROM scored_articles
       WHERE relevance_score > 0
-      ORDER BY relevance_score DESC, date_published DESC
+      ORDER BY relevance_score DESC, published_at DESC
       LIMIT ?
     `).bind(
       articleId,
@@ -2481,7 +2410,7 @@ app.get("/api/stories/cluster/:articleId", async (c) => {
 
     // Get the source article
     const sourceArticle = await c.env.DB.prepare(`
-      SELECT id, headline, article_section_id, publisher_id, date_published, content_hash
+      SELECT id, title, category_id, source_id, published_at, content_hash
       FROM articles WHERE id = ? AND status = 'published'
     `).bind(articleId).first();
 
@@ -2495,25 +2424,25 @@ app.get("/api/stories/cluster/:articleId", async (c) => {
     // 3. Different sources to show cross-coverage
     const clusterResult = await c.env.DB.prepare(`
       WITH source_keywords AS (
-        SELECT keyword_id FROM article_keywords WHERE article_id = ?
+        SELECT keyword_id FROM article_keyword_links WHERE article_id = ?
       ),
       potential_matches AS (
         SELECT
-          a.id, a.headline, a.slug, a.description, a.publisher_name, a.publisher_id,
-          a.date_published, a.image, a.article_section_id, a.view_count, a.content_hash,
+          a.id, a.title, a.slug, a.description, a.source, a.source_id,
+          a.published_at, a.image_url, a.category_id, a.view_count, a.content_hash,
           -- Count shared keywords
-          (SELECT COUNT(*) FROM article_keywords akl
+          (SELECT COUNT(*) FROM article_keyword_links akl
            WHERE akl.article_id = a.id AND akl.keyword_id IN (SELECT keyword_id FROM source_keywords)) AS shared_keywords,
           -- Is this from a different source?
-          (CASE WHEN a.publisher_id != ? THEN 1 ELSE 0 END) AS is_different_source
+          (CASE WHEN a.source_id != ? THEN 1 ELSE 0 END) AS is_different_source
         FROM articles a
         WHERE a.id != ?
           AND a.status = 'published'
-          AND a.article_section_id = ?
-          AND a.date_published BETWEEN datetime(?, '-3 days') AND datetime(?, '+3 days')
+          AND a.category_id = ?
+          AND a.published_at BETWEEN datetime(?, '-3 days') AND datetime(?, '+3 days')
       )
-      SELECT id, headline, slug, description, publisher_name, publisher_id, date_published,
-             image, article_section_id, view_count, shared_keywords, is_different_source,
+      SELECT id, title, slug, description, source, source_id, published_at,
+             image_url, category_id, view_count, shared_keywords, is_different_source,
              (CASE WHEN content_hash = ? THEN 'duplicate' ELSE 'related' END) AS match_type
       FROM potential_matches
       WHERE shared_keywords >= 2 OR content_hash = ?
@@ -2521,7 +2450,7 @@ app.get("/api/stories/cluster/:articleId", async (c) => {
         CASE WHEN content_hash = ? THEN 0 ELSE 1 END,
         shared_keywords DESC,
         is_different_source DESC,
-        date_published DESC
+        published_at DESC
       LIMIT 10
     `).bind(
       articleId,
@@ -2568,24 +2497,24 @@ app.get("/api/stories/trending", async (c) => {
     const trendingResult = await c.env.DB.prepare(`
       WITH recent_articles AS (
         SELECT
-          a.id, a.headline, a.slug, a.description, a.publisher_name, a.publisher_id,
-          a.date_published, a.image, a.article_section_id, a.view_count,
+          a.id, a.title, a.slug, a.description, a.source, a.source_id,
+          a.published_at, a.image_url, a.category_id, a.view_count,
           a.like_count, a.bookmark_count
         FROM articles a
         WHERE a.status = 'published'
-          AND a.date_published > datetime('now', '-' || ? || ' hours')
+          AND a.published_at > datetime('now', '-' || ? || ' hours')
       ),
       keyword_groups AS (
         SELECT
           akl.keyword_id,
           k.name as keyword_name,
-          COUNT(DISTINCT ra.publisher_id) as source_count,
+          COUNT(DISTINCT ra.source_id) as source_count,
           COUNT(DISTINCT ra.id) as article_count,
           SUM(ra.view_count) as total_views,
           GROUP_CONCAT(DISTINCT ra.id) as article_ids
         FROM recent_articles ra
-        JOIN article_keywords akl ON ra.id = akl.article_id
-        JOIN defined_terms k ON akl.keyword_id = k.id
+        JOIN article_keyword_links akl ON ra.id = akl.article_id
+        JOIN keywords k ON akl.keyword_id = k.id
         WHERE k.category != 'meta'
         GROUP BY akl.keyword_id
         HAVING source_count >= 2
@@ -2605,10 +2534,10 @@ app.get("/api/stories/trending", async (c) => {
       const articleIds = t.article_ids.split(',').slice(0, 5);
 
       const articlesResult = await c.env.DB.prepare(`
-        SELECT id, headline, slug, publisher_name, publisher_id, date_published, image
+        SELECT id, title, slug, source, source_id, published_at, image_url
         FROM articles
         WHERE id IN (${articleIds.map(() => '?').join(',')})
-        ORDER BY date_published DESC
+        ORDER BY published_at DESC
       `).bind(...articleIds).all();
 
       trendingStories.push({
@@ -2640,28 +2569,28 @@ app.get("/api/news-bytes", async (c) => {
     const category = c.req.query("category");
 
     let query = `
-      SELECT id, headline, slug, description, content_snippet, author_name, publisher_name,
-             date_published, image, main_entity_of_page, article_section_id, view_count,
+      SELECT id, title, slug, description, content_snippet, author, source,
+             published_at, image_url, original_url, category_id, view_count,
              like_count, bookmark_count
       FROM articles
       WHERE status = 'published'
-      AND image IS NOT NULL
-      AND image != ''
+      AND image_url IS NOT NULL
+      AND image_url != ''
     `;
 
     let countQuery = `
       SELECT COUNT(*) as total FROM articles
       WHERE status = 'published'
-      AND image IS NOT NULL
-      AND image != ''
+      AND image_url IS NOT NULL
+      AND image_url != ''
     `;
 
     if (category && category !== 'all') {
-      query += ` AND article_section_id = ?`;
-      countQuery += ` AND article_section_id = ?`;
+      query += ` AND category_id = ?`;
+      countQuery += ` AND category_id = ?`;
     }
 
-    query += ` ORDER BY date_published DESC LIMIT ? OFFSET ?`;
+    query += ` ORDER BY published_at DESC LIMIT ? OFFSET ?`;
 
     const articlesResult = category && category !== 'all' ?
       await c.env.DB.prepare(query).bind(category, limit, offset).all() :
@@ -2701,23 +2630,26 @@ app.get("/api/search", async (c) => {
     const services = initializeServices(c.env);
     let searchResults: any[] = [];
     let searchMethod = "keyword";
+    let searchInsights: any[] | null = null;
 
-    // Try semantic search first if AI is enabled
-    if (useAI && c.env.VECTORIZE_INDEX) {
+    // Try semantic search via Python Worker first
+    if (useAI) {
       try {
-        const aiResults = await services.aiSearchService.semanticSearch(query.trim(), {
+        const processingClient = new ProcessingClient(c.env.DATA_PROCESSOR);
+        const aiResponse = await processingClient.search(query.trim(), {
           limit,
           category: category !== 'all' ? category : undefined,
           includeInsights: true
         });
 
-        if (aiResults && aiResults.length > 0) {
-          searchResults = aiResults;
-          searchMethod = "semantic";
-          console.log(`[SEARCH] Semantic search returned ${aiResults.length} results for "${query}"`);
+        if (aiResponse.results && aiResponse.results.length > 0) {
+          searchResults = aiResponse.results;
+          searchMethod = aiResponse.method || "semantic";
+          searchInsights = aiResponse.insights || null;
+          console.log(`[SEARCH] Python Worker search returned ${aiResponse.results.length} results for "${query}"`);
         }
       } catch (aiError) {
-        console.warn("[SEARCH] Semantic search failed, falling back to keyword:", aiError);
+        console.warn("[SEARCH] Python Worker search failed, falling back to keyword:", aiError);
       }
     }
 
@@ -2726,16 +2658,16 @@ app.get("/api/search", async (c) => {
       const searchTerm = `%${query.trim()}%`;
 
       let searchQuery = `
-        SELECT DISTINCT a.id, a.headline, a.slug, a.description, a.content_snippet,
-               a.author_name, a.publisher_name, a.date_published, a.image, a.main_entity_of_page,
-               a.article_section_id, a.view_count, a.like_count, a.bookmark_count
+        SELECT DISTINCT a.id, a.title, a.slug, a.description, a.content_snippet,
+               a.author, a.source, a.published_at, a.image_url, a.original_url,
+               a.category_id, a.view_count, a.like_count, a.bookmark_count
         FROM articles a
         LEFT JOIN article_keywords ak ON a.id = ak.article_id
         WHERE a.status = 'published'
         AND (
-          a.headline LIKE ? OR
+          a.title LIKE ? OR
           a.description LIKE ? OR
-          a.article_body LIKE ? OR
+          a.content LIKE ? OR
           a.content_snippet LIKE ? OR
           ak.keyword LIKE ?
         )
@@ -2744,11 +2676,11 @@ app.get("/api/search", async (c) => {
       const params: (string | number)[] = [searchTerm, searchTerm, searchTerm, searchTerm, searchTerm];
 
       if (category && category !== 'all') {
-        searchQuery += ` AND a.article_section_id = ?`;
+        searchQuery += ` AND a.category_id = ?`;
         params.push(category);
       }
 
-      searchQuery += ` ORDER BY a.date_published DESC LIMIT ?`;
+      searchQuery += ` ORDER BY a.published_at DESC LIMIT ?`;
       params.push(limit);
 
       const results = await c.env.DB.prepare(searchQuery).bind(...params).all();
@@ -2772,7 +2704,8 @@ app.get("/api/search", async (c) => {
       query: query.trim(),
       count: searchResults.length,
       category: category || 'all',
-      searchMethod
+      searchMethod,
+      ...(searchInsights ? { insights: searchInsights } : {})
     });
   } catch (error) {
     console.error("Error searching articles:", error);
@@ -2815,14 +2748,14 @@ app.get("/api/sources", async (c) => {
         rs.last_error,
         COALESCE(counts.article_count, 0) as article_count,
         counts.latest_article_at
-      FROM organizations rs
+      FROM rss_sources rs
       LEFT JOIN (
-        SELECT publisher_id,
+        SELECT source_id,
                COUNT(*) as article_count,
-               MAX(date_published) as latest_article_at
+               MAX(published_at) as latest_article_at
         FROM articles
-        GROUP BY publisher_id
-      ) counts ON counts.publisher_id = rs.id
+        GROUP BY source_id
+      ) counts ON counts.source_id = rs.id
       WHERE rs.enabled = 1
       ORDER BY article_count DESC, rs.priority DESC, rs.name ASC
     `).all();
@@ -2845,7 +2778,7 @@ app.get("/api/keywords", async (c) => {
     // Get top keywords ordered by article_count
     const keywords = await c.env.DB.prepare(`
       SELECT id, name, slug, type, article_count
-      FROM defined_terms
+      FROM keywords
       WHERE enabled = 1 AND article_count > 0
       ORDER BY article_count DESC
       LIMIT ?
@@ -2896,12 +2829,11 @@ app.post("/api/refresh", async (c) => {
       }
     }
 
-    // Trigger RSS refresh by calling the admin endpoint internally
-    const services = initializeServices(c.env);
+    // Delegate to Python Worker for RSS collection
+    const processingClient = new ProcessingClient(c.env.DATA_PROCESSOR);
     console.log('[USER_REFRESH] User-triggered refresh initiated by:', userId);
 
-    // Call RSS service directly instead of HTTP request
-    const result = await services.rssService.refreshAllFeeds();
+    const result = await processingClient.collectFeeds();
 
     // Track refresh in analytics
     if (c.env.NEWS_INTERACTIONS) {
@@ -3392,7 +3324,7 @@ app.get("/api/user/me/follows/authors", async (c) => {
              a.follower_count, a.article_count, a.is_verified,
              uf.followed_at
       FROM user_follows uf
-      JOIN persons a ON uf.follow_id = CAST(a.id AS TEXT)
+      JOIN authors a ON uf.follow_id = CAST(a.id AS TEXT)
       WHERE uf.user_id = ? AND uf.follow_type = 'author'
       ORDER BY uf.followed_at DESC
       LIMIT ? OFFSET ?
@@ -3426,7 +3358,7 @@ app.get("/api/user/me/follows/sources", async (c) => {
              ns.follower_count, ns.article_count, ns.country_id,
              uf.followed_at
       FROM user_follows uf
-      JOIN organizations ns ON uf.follow_id = ns.id
+      JOIN news_sources ns ON uf.follow_id = ns.id
       WHERE uf.user_id = ? AND uf.follow_type = 'source'
       ORDER BY uf.followed_at DESC
       LIMIT ? OFFSET ?
@@ -3456,7 +3388,7 @@ app.get("/api/user/me/follows/categories", async (c) => {
       SELECT c.id, c.name, c.emoji, c.color, c.description,
              uf.followed_at
       FROM user_follows uf
-      JOIN article_sections c ON uf.follow_id = c.id
+      JOIN categories c ON uf.follow_id = c.id
       WHERE uf.user_id = ? AND uf.follow_type = 'category'
       ORDER BY uf.followed_at DESC
     `).bind(userId).all();
@@ -3730,10 +3662,10 @@ app.get("/api/admin/ai-pipeline-status", async (c) => {
         COUNT(DISTINCT CASE WHEN a.verification_status = 'verified' THEN a.id END) as verified_authors,
         COUNT(DISTINCT aa.article_id) as articles_with_authors,
         AVG(aa.confidence_score) as avg_confidence
-      FROM persons a
+      FROM authors a
       LEFT JOIN article_authors aa ON a.id = aa.author_id
     `).first();
-
+    
     // Get keyword extraction statistics  
     const keywordStats = await services.d1Service.db.prepare(`
       SELECT 
@@ -3741,7 +3673,7 @@ app.get("/api/admin/ai-pipeline-status", async (c) => {
         COUNT(DISTINCT ak.article_id) as articles_with_keywords,
         AVG(ak.confidence_score) as avg_keyword_confidence,
         MAX(k.usage_count) as most_used_keyword_count
-      FROM defined_terms k
+      FROM keywords k
       LEFT JOIN article_keywords ak ON k.id = ak.keyword_id
     `).first();
     
@@ -3872,110 +3804,82 @@ app.post("/api/admin/ai-test", async (c) => {
       });
     }
 
-    // Test 3: Content cleaning test
+    // Test 3: Content cleaning test (via Python Worker)
+    const processingClient = new ProcessingClient(c.env.DATA_PROCESSOR);
     const cleaningStart = Date.now();
     try {
-      if (!results.ai_available) {
-        results.tests.push({
-          name: "Content Cleaning",
-          status: 'skipped',
-          duration_ms: 0,
-          error: "Skipped due to AI binding unavailable"
-        });
-      } else {
-        const dirtyContent = `${testText} <img src="test.jpg"/> ~~random~~ chars!!! http://example.com/image.png ADVERTISEMENT`;
-        const cleanResult = await services.articleAIService.cleanContent(dirtyContent, {
-          removeImages: true,
-          removeRandomChars: true,
-          normalizeWhitespace: true,
-          extractImageUrls: true,
-          minContentLength: 50
-        });
+      const dirtyContent = `${testText} <img src="test.jpg"/> ~~random~~ chars!!! http://example.com/image.png ADVERTISEMENT`;
+      const cleanResult = await processingClient.cleanContent(dirtyContent, {
+        removeImages: true,
+        extractImageUrls: true,
+        minContentLength: 50
+      });
 
-        results.tests.push({
-          name: "Content Cleaning",
-          status: cleanResult.cleanedContent.length > 0 ? 'passed' : 'failed',
-          duration_ms: Date.now() - cleaningStart,
-          result: {
-            original_length: dirtyContent.length,
-            cleaned_length: cleanResult.cleanedContent.length,
-            removed_chars: cleanResult.removedCharCount,
-            extracted_images: cleanResult.extractedImages.length,
-            sample: cleanResult.cleanedContent.substring(0, 200)
-          }
-        });
-      }
+      results.tests.push({
+        name: "Content Cleaning (Python Worker)",
+        status: cleanResult.cleaned_content.length > 0 ? 'passed' : 'failed',
+        duration_ms: Date.now() - cleaningStart,
+        result: {
+          original_length: dirtyContent.length,
+          cleaned_length: cleanResult.cleaned_content.length,
+          removed_chars: cleanResult.removed_char_count,
+          extracted_images: cleanResult.extracted_images.length,
+          sample: cleanResult.cleaned_content.substring(0, 200)
+        }
+      });
     } catch (error) {
       results.tests.push({
-        name: "Content Cleaning",
+        name: "Content Cleaning (Python Worker)",
         status: 'failed',
         duration_ms: Date.now() - cleaningStart,
         error: error instanceof Error ? error.message : "Unknown error"
       });
     }
 
-    // Test 4: Keyword extraction test
+    // Test 4: Keyword extraction test (via Python Worker)
     const keywordStart = Date.now();
     try {
-      if (!results.ai_available) {
-        results.tests.push({
-          name: "Keyword Extraction",
-          status: 'skipped',
-          duration_ms: 0,
-          error: "Skipped due to AI binding unavailable"
-        });
-      } else {
-        const keywords = await services.articleAIService.extractKeywords(testTitle, testText, 'politics');
+      const kwResult = await processingClient.extractKeywords(testTitle, testText, 'politics');
 
-        results.tests.push({
-          name: "Keyword Extraction",
-          status: keywords && keywords.length > 0 ? 'passed' : 'failed',
-          duration_ms: Date.now() - keywordStart,
-          result: {
-            keyword_count: keywords?.length || 0,
-            keywords: keywords?.slice(0, 5).map((k: any) => ({
-              keyword: k.keyword,
-              confidence: k.confidence,
-              category: k.category
-            }))
-          }
-        });
-      }
+      results.tests.push({
+        name: "Keyword Extraction (Python Worker)",
+        status: kwResult.keywords && kwResult.keywords.length > 0 ? 'passed' : 'failed',
+        duration_ms: Date.now() - keywordStart,
+        result: {
+          keyword_count: kwResult.keywords?.length || 0,
+          keywords: kwResult.keywords?.slice(0, 5).map((k: any) => ({
+            keyword: k.keyword,
+            confidence: k.confidence,
+            category: k.category
+          }))
+        }
+      });
     } catch (error) {
       results.tests.push({
-        name: "Keyword Extraction",
+        name: "Keyword Extraction (Python Worker)",
         status: 'failed',
         duration_ms: Date.now() - keywordStart,
         error: error instanceof Error ? error.message : "Unknown error"
       });
     }
 
-    // Test 5: Quality scoring test
+    // Test 5: Quality scoring test (via Python Worker)
     const qualityStart = Date.now();
     try {
-      if (!results.ai_available) {
-        results.tests.push({
-          name: "Quality Scoring",
-          status: 'skipped',
-          duration_ms: 0,
-          error: "Skipped due to AI binding unavailable"
-        });
-      } else {
-        const qualityScore = await services.articleAIService.calculateQualityScore(testTitle, testText);
+      const qualityResult = await processingClient.scoreQuality(testTitle, testText);
 
-        results.tests.push({
-          name: "Quality Scoring",
-          status: typeof qualityScore === 'number' ? 'passed' : 'failed',
-          duration_ms: Date.now() - qualityStart,
-          result: {
-            quality_score: qualityScore,
-            quality_rating: qualityScore > 0.8 ? 'Excellent' : qualityScore > 0.6 ? 'Good' : qualityScore > 0.4 ? 'Fair' : 'Needs Improvement'
-          }
-        });
-      }
+      results.tests.push({
+        name: "Quality Scoring (Python Worker)",
+        status: typeof qualityResult.quality_score === 'number' ? 'passed' : 'failed',
+        duration_ms: Date.now() - qualityStart,
+        result: {
+          quality_score: qualityResult.quality_score,
+          quality_rating: qualityResult.quality_score > 0.8 ? 'Excellent' : qualityResult.quality_score > 0.6 ? 'Good' : qualityResult.quality_score > 0.4 ? 'Fair' : 'Needs Improvement'
+        }
+      });
     } catch (error) {
       results.tests.push({
-        name: "Quality Scoring",
+        name: "Quality Scoring (Python Worker)",
         status: 'failed',
         duration_ms: Date.now() - qualityStart,
         error: error instanceof Error ? error.message : "Unknown error"
@@ -4008,34 +3912,34 @@ app.get("/api/admin/authors", async (c) => {
         a.*,
         COUNT(DISTINCT aa.article_id) as article_count,
         AVG(ar.quality_score) as avg_article_quality,
-        MAX(ar.date_published) as last_article_date
-      FROM persons a
+        MAX(ar.published_at) as last_article_date
+      FROM authors a
       LEFT JOIN article_authors aa ON a.id = aa.author_id
       LEFT JOIN articles ar ON aa.article_id = ar.id
     `;
-
+    
     const params = [];
     if (outlet) {
       query += ` WHERE a.outlet = ?`;
       params.push(outlet);
     }
-
+    
     query += `
       GROUP BY a.id
       ORDER BY article_count DESC, a.created_at DESC
       LIMIT ?
     `;
     params.push(limit);
-
+    
     const authors = await services.d1Service.db.prepare(query).bind(...params).all();
-
+    
     // Get outlets summary
     const outlets = await services.d1Service.db.prepare(`
-      SELECT
+      SELECT 
         outlet,
         COUNT(*) as author_count,
         SUM(article_count) as total_articles
-      FROM persons
+      FROM authors 
       WHERE outlet IS NOT NULL
       GROUP BY outlet
       ORDER BY author_count DESC
@@ -4078,11 +3982,11 @@ app.get("/api/admin/content-quality", async (c) => {
     // Top quality articles by category
     const topByCategory = await services.d1Service.db.prepare(`
       SELECT 
-        article_section_id,
-        headline,
+        category,
+        title,
         quality_score,
-        date_published,
-        (SELECT name FROM persons WHERE id = (
+        published_at,
+        (SELECT name FROM authors WHERE id = (
           SELECT author_id FROM article_authors WHERE article_id = articles.id LIMIT 1
         )) as author_name
       FROM articles 
@@ -4264,13 +4168,13 @@ app.get("/api/admin/authors/detailed", async (c) => {
         COUNT(DISTINCT ao.outlet_id) as outlet_count,
         COUNT(DISTINCT aa.article_id) as total_articles,
         AVG(ar.quality_score) as avg_quality,
-        MAX(ar.date_published) as last_article,
+        MAX(ar.published_at) as last_article,
         GROUP_CONCAT(DISTINCT ns.name) as outlets_list
-      FROM persons a
+      FROM authors a
       LEFT JOIN author_outlets ao ON a.id = ao.author_id
       LEFT JOIN article_authors aa ON a.id = aa.author_id
       LEFT JOIN articles ar ON aa.article_id = ar.id
-      LEFT JOIN organizations ns ON ao.outlet_id = ns.id
+      LEFT JOIN news_sources ns ON ao.outlet_id = ns.id
     `;
     
     const params = [];
@@ -4309,7 +4213,7 @@ app.get("/api/admin/authors/detailed", async (c) => {
         SELECT 
           a.normalized_name,
           COUNT(DISTINCT ao.outlet_id) as outlet_count
-        FROM persons a
+        FROM authors a
         LEFT JOIN author_outlets ao ON a.id = ao.author_id
         GROUP BY a.normalized_name
       ) a
@@ -4347,11 +4251,11 @@ app.get("/api/admin/categories/with-authors", async (c) => {
         COUNT(DISTINCT aa.article_id) as total_articles,
         AVG(ace.avg_quality_score) as category_quality,
         GROUP_CONCAT(DISTINCT a.name) as top_authors
-      FROM article_sections c
+      FROM categories c
       LEFT JOIN author_category_expertise ace ON c.id = ace.category_id
-      LEFT JOIN persons a ON ace.author_id = a.id AND ace.expertise_level IN ('expert', 'specialist')
+      LEFT JOIN authors a ON ace.author_id = a.id AND ace.expertise_level IN ('expert', 'specialist')
       LEFT JOIN article_authors aa ON a.id = aa.author_id
-      LEFT JOIN articles ar ON aa.article_id = ar.id AND ar.article_section_id = c.id
+      LEFT JOIN articles ar ON aa.article_id = ar.id AND ar.category = c.id
       GROUP BY c.id
       ORDER BY expert_authors DESC, total_articles DESC
     `).all();
@@ -4480,19 +4384,29 @@ app.get("/api/admin/category-insights", async (c) => {
 // Get trending categories
 app.get("/api/trending-categories", async (c) => {
   try {
+    const limit = parseInt(c.req.query('limit') || '8');
+
+    // Try Python Worker (MongoDB aggregation with growth rates)
+    try {
+      const processingClient = new ProcessingClient(c.env.DATA_PROCESSOR);
+      const result = await processingClient.getTrendingCategories(limit);
+      return c.json(result);
+    } catch (pyError) {
+      console.warn('[API] Python Worker trending-categories unavailable, falling back to D1:', pyError);
+    }
+
+    // D1 fallback
     const services = initializeServices(c.env);
-    const limit = parseInt(c.req.query('limit') || '5');
-
     const trending = await services.categoryManager.getTrendingCategories(limit);
-
     return c.json({
       success: true,
       trending,
+      source: 'd1_fallback',
       timestamp: new Date().toISOString()
     });
   } catch (error: any) {
     console.error('[API] Error getting trending categories:', error);
-    return c.json({ error: error.message }, 500);
+    return c.json({ error: "Failed to fetch trending categories" }, 500);
   }
 });
 
@@ -4621,14 +4535,30 @@ app.get("/api/admin/observability/alerts", async (c) => {
 
 // ===== SOURCE HEALTH MONITORING ENDPOINTS =====
 
-// Get full source health summary with alerts
+// Get full source health summary — tries Python Worker (MongoDB), falls back to D1
 app.get("/api/admin/sources/health", async (c) => {
   try {
+    // Try Python Worker first for richer MongoDB-backed health data
+    try {
+      const processingClient = new ProcessingClient(c.env.DATA_PROCESSOR);
+      const healthData = await processingClient.getSourceHealth();
+      return c.json({
+        success: true,
+        source: 'mongodb',
+        ...healthData,
+        timestamp: new Date().toISOString()
+      });
+    } catch (pyError) {
+      console.warn('[API] Python Worker health unavailable, falling back to D1:', pyError);
+    }
+
+    // Fallback to D1-based health
     const services = initializeServices(c.env);
     const summary = await services.sourceHealthService.getHealthSummary();
 
     return c.json({
       success: true,
+      source: 'd1_fallback',
       ...summary,
       timestamp: new Date().toISOString()
     });
@@ -6069,8 +5999,8 @@ app.get("/api/user/:username/bookmarks", async (c) => {
     }
 
     const bookmarksResult = await c.env.DB.prepare(`
-      SELECT a.id, a.headline, a.slug, a.description, a.author_name, a.publisher_name,
-             a.publisher_id, a.article_section_id, a.date_published, a.image,
+      SELECT a.id, a.title, a.slug, a.description, a.author, a.source,
+             a.source_id, a.category_id, a.published_at, a.image_url,
              b.created_at as bookmarked_at, b.tags, b.notes
       FROM user_bookmarks b
       INNER JOIN articles a ON b.article_id = a.id
@@ -6124,8 +6054,8 @@ app.get("/api/user/:username/likes", async (c) => {
     }
 
     const likesResult = await c.env.DB.prepare(`
-      SELECT a.id, a.headline, a.slug, a.description, a.author_name, a.publisher_name,
-             a.publisher_id, a.article_section_id, a.date_published, a.image,
+      SELECT a.id, a.title, a.slug, a.description, a.author, a.source,
+             a.source_id, a.category_id, a.published_at, a.image_url,
              l.created_at as liked_at
       FROM user_likes l
       INNER JOIN articles a ON l.article_id = a.id
@@ -6179,8 +6109,8 @@ app.get("/api/user/:username/history", async (c) => {
     }
 
     const historyResult = await c.env.DB.prepare(`
-      SELECT a.id, a.headline, a.slug, a.description, a.author_name, a.publisher_name,
-             a.publisher_id, a.article_section_id, a.date_published, a.image,
+      SELECT a.id, a.title, a.slug, a.description, a.author, a.source,
+             a.source_id, a.category_id, a.published_at, a.image_url,
              h.started_at, h.last_position_at, h.reading_time,
              h.scroll_depth, h.completion_percentage
       FROM user_reading_history h
@@ -6248,88 +6178,8 @@ app.get("/api/user/:username/stats", async (c) => {
   }
 });
 
-// ===== COMPREHENSIVE SEARCH =====
-
-// Unified search across articles, keywords, categories, authors
-app.get("/api/search", async (c) => {
-  try {
-    const query = c.req.query("q") || "";
-    const type = c.req.query("type") || "all"; // all, articles, keywords, categories, authors
-    const limit = parseInt(c.req.query("limit") || "20");
-    const offset = parseInt(c.req.query("offset") || "0");
-
-    if (!query || query.length < 2) {
-      return c.json({ error: "Search query must be at least 2 characters" }, 400);
-    }
-
-    const searchPattern = `%${query}%`;
-    const results: any = {};
-
-    // Search articles
-    if (type === 'all' || type === 'articles') {
-      const articlesResult = await c.env.DB.prepare(`
-        SELECT a.id, a.headline, a.slug, a.description, a.author_name, a.publisher_name,
-               a.publisher_id, a.article_section_id, a.date_published, a.image
-        FROM articles a
-        WHERE a.status = 'published'
-          AND (a.headline LIKE ? OR a.description LIKE ? OR a.author_name LIKE ?)
-        ORDER BY a.date_published DESC
-        LIMIT ? OFFSET ?
-      `).bind(searchPattern, searchPattern, searchPattern, limit, offset).all();
-
-      results.articles = articlesResult.results || [];
-    }
-
-    // Search keywords
-    if (type === 'all' || type === 'keywords') {
-      const keywordsResult = await c.env.DB.prepare(`
-        SELECT k.id, k.name, k.slug, COUNT(akl.article_id) as article_count
-        FROM defined_terms k
-        LEFT JOIN article_keywords akl ON k.id = akl.keyword_id
-        WHERE k.name LIKE ?
-        GROUP BY k.id
-        ORDER BY article_count DESC
-        LIMIT ?
-      `).bind(searchPattern, limit).all();
-
-      results.keywords = keywordsResult.results || [];
-    }
-
-    // Search categories
-    if (type === 'all' || type === 'categories') {
-      const categoriesResult = await c.env.DB.prepare(`
-        SELECT id, name, emoji, color, description
-        FROM article_sections
-        WHERE enabled = TRUE AND (name LIKE ? OR description LIKE ?)
-        ORDER BY name ASC
-      `).bind(searchPattern, searchPattern).all();
-
-      results.categories = categoriesResult.results || [];
-    }
-
-    // Search authors
-    if (type === 'all' || type === 'authors') {
-      const authorsResult = await c.env.DB.prepare(`
-        SELECT DISTINCT author_name FROM articles
-        WHERE author_name IS NOT NULL AND author_name != '' AND author_name LIKE ?
-        ORDER BY author ASC
-        LIMIT ?
-      `).bind(searchPattern, limit).all();
-
-      results.authors = authorsResult.results || [];
-    }
-
-    return c.json({
-      query,
-      type,
-      results,
-      timestamp: new Date().toISOString()
-    });
-  } catch (error: any) {
-    console.error("[SEARCH] Search error:", error);
-    return c.json({ error: "Search failed" }, 500);
-  }
-});
+// NOTE: /api/search is defined above (line ~2599) with Python Worker semantic search + D1 fallback.
+// The old unified search was removed as it was unreachable (duplicate route).
 
 // Search articles by keyword
 app.get("/api/search/by-keyword/:keyword", async (c) => {
@@ -6339,21 +6189,21 @@ app.get("/api/search/by-keyword/:keyword", async (c) => {
     const offset = parseInt(c.req.query("offset") || "0");
 
     const articlesResult = await c.env.DB.prepare(`
-      SELECT a.id, a.headline, a.slug, a.description, a.author_name, a.publisher_name,
-             a.publisher_id, a.article_section_id, a.date_published, a.image
+      SELECT a.id, a.title, a.slug, a.description, a.author, a.source,
+             a.source_id, a.category_id, a.published_at, a.image_url
       FROM articles a
-      INNER JOIN article_keywords akl ON a.id = akl.article_id
-      INNER JOIN defined_terms k ON akl.keyword_id = k.id
+      INNER JOIN article_keyword_links akl ON a.id = akl.article_id
+      INNER JOIN keywords k ON akl.keyword_id = k.id
       WHERE a.status = 'published' AND k.slug = ?
-      ORDER BY a.date_published DESC
+      ORDER BY a.published_at DESC
       LIMIT ? OFFSET ?
     `).bind(keyword, limit, offset).all();
 
     const totalResult = await c.env.DB.prepare(`
       SELECT COUNT(*) as total
       FROM articles a
-      INNER JOIN article_keywords akl ON a.id = akl.article_id
-      INNER JOIN defined_terms k ON akl.keyword_id = k.id
+      INNER JOIN article_keyword_links akl ON a.id = akl.article_id
+      INNER JOIN keywords k ON akl.keyword_id = k.id
       WHERE a.status = 'published' AND k.slug = ?
     `).bind(keyword).first();
 
@@ -6382,17 +6232,17 @@ app.get("/api/search/by-author", async (c) => {
     }
 
     const articlesResult = await c.env.DB.prepare(`
-      SELECT id, headline, slug, description, author_name, publisher_name, publisher_id,
-             article_section_id, date_published, image
+      SELECT id, title, slug, description, author, source, source_id,
+             category_id, published_at, image_url
       FROM articles
-      WHERE status = 'published' AND author_name = ?
-      ORDER BY date_published DESC
+      WHERE status = 'published' AND author = ?
+      ORDER BY published_at DESC
       LIMIT ? OFFSET ?
     `).bind(author, limit, offset).all();
 
     const totalResult = await c.env.DB.prepare(`
       SELECT COUNT(*) as total FROM articles
-      WHERE status = 'published' AND author_name = ?
+      WHERE status = 'published' AND author = ?
     `).bind(author).first();
 
     return c.json({
@@ -6494,8 +6344,8 @@ app.get("/api/seo/article/:slug", async (c) => {
   try {
     const slug = c.req.param("slug");
     const article = await c.env.DB.prepare(`
-      SELECT id, slug, headline, description, article_body, author_name, article_section_id, tags,
-             image, optimized_image_url, date_published, date_modified, word_count, publisher_name
+      SELECT id, slug, title, description, content, author, category, tags,
+             image_url, optimized_image_url, published_at, updated_at, word_count, source
       FROM articles
       WHERE slug = ? AND status = 'published'
     `).bind(slug).first();
@@ -6543,7 +6393,7 @@ app.get("/api/seo/category/:category", async (c) => {
     // Get article count for category
     const countResult = await c.env.DB.prepare(`
       SELECT COUNT(*) as count FROM articles
-      WHERE article_section_id = ? AND status = 'published'
+      WHERE category = ? AND status = 'published'
     `).bind(category).first();
 
     const seoService = new SEOService(c.env.DB);
@@ -6638,360 +6488,6 @@ Crawl-delay: 1
   });
 });
 
-// ============================================================
-// PLATFORM API ROUTES (v1) - Phases 1-4: Leapfrog competitors
-// ============================================================
-
-// --- Feed Output (RSS, Atom, JSON Feed) - PUBLIC ---
-app.get("/feeds/:format", async (c) => {
-  try {
-    const format = c.req.param("format") as 'rss' | 'atom' | 'json';
-    if (!['rss', 'atom', 'json'].includes(format)) {
-      return c.json({ error: "Invalid format. Use: rss, atom, json" }, 400);
-    }
-    const { feedOutputService } = initializeServices(c.env);
-    const options = {
-      format,
-      country: c.req.query("country"),
-      category: c.req.query("category"),
-      source: c.req.query("source"),
-      limit: c.req.query("limit") ? parseInt(c.req.query("limit")!) : undefined,
-      language: c.req.query("language"),
-    };
-    const ifNoneMatch = c.req.header("if-none-match");
-    const result = await feedOutputService.generateFeed(options);
-    if (ifNoneMatch && ifNoneMatch === result.etag) {
-      return new Response(null, { status: 304 });
-    }
-    return new Response(result.content, {
-      headers: {
-        "Content-Type": result.contentType,
-        "ETag": result.etag,
-        "Last-Modified": new Date(result.lastModified).toUTCString(),
-        "Cache-Control": "public, max-age=900, s-maxage=300",
-        "X-Mukoko-Platform": "1.0",
-      },
-    });
-  } catch (error: any) {
-    return c.json({ error: "Feed generation failed", message: error.message }, 500);
-  }
-});
-
-// --- API Key Management ---
-app.post("/api/v1/keys", async (c) => {
-  try {
-    const { apiKeyService } = initializeServices(c.env);
-    const body = await c.req.json() as { name: string; tier?: string; email: string };
-    const userId = getCurrentUserId(c) || crypto.randomUUID();
-    const result = await apiKeyService.createKey({
-      name: body.name, owner_id: userId, owner_email: body.email,
-      tier: (body.tier as any) || 'free',
-    });
-    return c.json({
-      api_key: result.rawKey, key_id: result.apiKey.id, tier: result.apiKey.tier,
-      permissions: result.apiKey.permissions, rate_limit: result.apiKey.rate_limit,
-      message: "Save your API key now. It will not be shown again.",
-    }, 201);
-  } catch (error: any) {
-    return c.json({ error: "Failed to create API key", message: error.message }, 500);
-  }
-});
-
-app.get("/api/v1/keys/tiers", (c) => c.json(TIER_CONFIGS));
-
-// --- Dynamic Data ---
-app.get("/api/v1/dynamic/categories", async (c) => {
-  const { dynamicDataService } = initializeServices(c.env);
-  const categories = await dynamicDataService.getCategories({ withArticleCount: true });
-  return c.json({ categories, total: categories.length });
-});
-
-app.post("/api/v1/admin/categories", async (c) => {
-  const { dynamicDataService } = initializeServices(c.env);
-  const category = await dynamicDataService.createCategory(await c.req.json());
-  return c.json(category, 201);
-});
-
-app.get("/api/v1/dynamic/keywords", async (c) => {
-  const { dynamicDataService } = initializeServices(c.env);
-  const result = await dynamicDataService.getKeywords({
-    limit: c.req.query("limit") ? parseInt(c.req.query("limit")!) : 50,
-    trending: c.req.query("trending") === "true",
-    search: c.req.query("search"),
-  });
-  return c.json(result);
-});
-
-app.get("/api/v1/dynamic/tags", async (c) => {
-  const { dynamicDataService } = initializeServices(c.env);
-  const tags = await dynamicDataService.getTags({
-    type: c.req.query("type") as any,
-    trending: c.req.query("trending") === "true",
-    limit: c.req.query("limit") ? parseInt(c.req.query("limit")!) : 50,
-  });
-  return c.json({ tags, total: tags.length });
-});
-
-app.get("/api/v1/dynamic/sources", async (c) => {
-  const { dynamicDataService } = initializeServices(c.env);
-  const result = await dynamicDataService.getSources({
-    country: c.req.query("country"), search: c.req.query("search"),
-    status: c.req.query("status"),
-  });
-  return c.json(result);
-});
-
-app.get("/api/v1/dynamic/countries", async (c) => {
-  const { dynamicDataService } = initializeServices(c.env);
-  const countries = await dynamicDataService.getCountries({ activeOnly: true });
-  return c.json({ countries, total: countries.length });
-});
-
-// --- Content Moderation (Admin) ---
-app.post("/api/v1/admin/moderate", async (c) => {
-  const { moderationService } = initializeServices(c.env);
-  return c.json(await moderationService.moderateArticle(await c.req.json()));
-});
-
-app.post("/api/v1/admin/moderate/batch", async (c) => {
-  const { moderationService } = initializeServices(c.env);
-  const body = await c.req.json() as { articles: any[] };
-  const results = await moderationService.moderateBatch(body.articles);
-  return c.json({ results, total: results.length });
-});
-
-app.get("/api/v1/admin/moderation/stats", async (c) => {
-  const { moderationService } = initializeServices(c.env);
-  return c.json(await moderationService.getStats(parseInt(c.req.query("days") || '30')));
-});
-
-// --- Publisher Platform ---
-app.post("/api/v1/publishers/register", async (c) => {
-  try {
-    const { publisherService } = initializeServices(c.env);
-    const publisher = await publisherService.register(await c.req.json());
-    return c.json({
-      publisher,
-      verification_instructions: {
-        method: "DNS TXT record",
-        record: `mukoko-verify=${publisher.verification_token}`,
-        domain: publisher.domain,
-      },
-    }, 201);
-  } catch (error: any) {
-    return c.json({ error: error.message, code: error.code }, error.code === 'DUPLICATE_DOMAIN' ? 409 : 500);
-  }
-});
-
-app.post("/api/v1/publishers/:id/verify", async (c) => {
-  const { publisherService } = initializeServices(c.env);
-  return c.json(await publisherService.verifyDomain(c.req.param("id")));
-});
-
-app.post("/api/v1/publishers/:id/articles", async (c) => {
-  try {
-    const { publisherService, webhookService } = initializeServices(c.env);
-    const body = await c.req.json();
-    const result = await publisherService.submitArticle(c.req.param("id"), body);
-    if (result.status === 'accepted') {
-      webhookService.dispatch('publisher.article_submitted', {
-        publisher_id: c.req.param("id"), article_id: result.articleId, ...body,
-      }).catch(e => console.error('[WEBHOOK]', e));
-    }
-    return c.json(result, result.status === 'accepted' ? 201 : 200);
-  } catch (error: any) {
-    const statusMap: Record<string, number> = { NOT_FOUND: 404, SUSPENDED: 403, UNVERIFIED: 403 };
-    return c.json({ error: error.message }, statusMap[error.code] || 500);
-  }
-});
-
-app.get("/api/v1/publishers/:id/analytics", async (c) => {
-  const { publisherService } = initializeServices(c.env);
-  return c.json(await publisherService.getAnalytics(c.req.param("id"), parseInt(c.req.query("days") || '30')));
-});
-
-app.get("/api/v1/publishers", async (c) => {
-  const { publisherService } = initializeServices(c.env);
-  return c.json(await publisherService.listPublishers({
-    country: c.req.query("country"), search: c.req.query("search"),
-    limit: c.req.query("limit") ? parseInt(c.req.query("limit")!) : 50,
-  }));
-});
-
-// --- Webhooks ---
-app.post("/api/v1/webhooks", async (c) => {
-  try {
-    const { webhookService } = initializeServices(c.env);
-    const body = await c.req.json();
-    return c.json(await webhookService.createSubscription({
-      api_key_id: body.api_key_id || 'default', url: body.url,
-      events: body.events, description: body.description, filters: body.filters,
-    }), 201);
-  } catch (error: any) {
-    return c.json({ error: error.message }, error.code === 'INVALID_URL' ? 400 : 500);
-  }
-});
-
-app.get("/api/v1/webhooks", async (c) => {
-  const { webhookService } = initializeServices(c.env);
-  const subs = await webhookService.listSubscriptions(c.req.query("api_key_id") || 'default');
-  return c.json({ subscriptions: subs, total: subs.length });
-});
-
-app.put("/api/v1/webhooks/:id", async (c) => {
-  const { webhookService } = initializeServices(c.env);
-  const sub = await webhookService.updateSubscription(c.req.param("id"), await c.req.json());
-  return sub ? c.json(sub) : c.json({ error: "Not found" }, 404);
-});
-
-app.delete("/api/v1/webhooks/:id", async (c) => {
-  const { webhookService } = initializeServices(c.env);
-  await webhookService.deleteSubscription(c.req.param("id"));
-  return c.json({ ok: true });
-});
-
-app.post("/api/v1/webhooks/:id/test", async (c) => {
-  const { webhookService } = initializeServices(c.env);
-  return c.json(await webhookService.test(c.req.param("id")));
-});
-
-app.get("/api/v1/webhooks/:id/deliveries", async (c) => {
-  const { webhookService } = initializeServices(c.env);
-  const deliveries = await webhookService.getDeliveryHistory(c.req.param("id"), parseInt(c.req.query("limit") || '50'));
-  return c.json({ deliveries, total: deliveries.length });
-});
-
-// --- SSE Streaming ---
-app.get("/api/v1/stream", async (c) => {
-  const { sseStreamService } = initializeServices(c.env);
-  const { stream } = sseStreamService.createStream({
-    events: c.req.query("events")?.split(",") as any[],
-    countries: c.req.query("countries")?.split(","),
-    categories: c.req.query("categories")?.split(","),
-  });
-  return new Response(stream, {
-    headers: {
-      "Content-Type": "text/event-stream", "Cache-Control": "no-cache",
-      "Connection": "keep-alive", "X-Accel-Buffering": "no",
-    },
-  });
-});
-
-app.get("/api/v1/stream/status", async (c) => {
-  const { sseStreamService } = initializeServices(c.env);
-  return c.json(sseStreamService.getStreamInfo());
-});
-
-// --- Smart Home Briefings - PUBLIC ---
-app.get("/api/v1/briefing/:format", async (c) => {
-  const format = c.req.param("format") as 'alexa' | 'google' | 'apple' | 'generic';
-  if (!['alexa', 'google', 'apple', 'generic'].includes(format)) {
-    return c.json({ error: "Invalid format" }, 400);
-  }
-  const { briefingService } = initializeServices(c.env);
-  const briefing = await briefingService.generateBriefing({
-    format, country: c.req.query("country"), category: c.req.query("category"),
-    limit: c.req.query("limit") ? parseInt(c.req.query("limit")!) : 5,
-    timezone: c.req.query("timezone"), language: c.req.query("language"),
-  });
-  return c.json(briefing, 200, { "Cache-Control": "public, max-age=1800" });
-});
-
-// --- Open Data API - PUBLIC ---
-app.get("/api/v1/open-data/manifesto", (c) => {
-  const { openDataService } = initializeServices(c.env);
-  return c.json(openDataService.getManifesto());
-});
-
-app.get("/api/v1/open-data/articles", async (c) => {
-  const { openDataService } = initializeServices(c.env);
-  const format = (c.req.query("format") || 'json') as 'json' | 'csv' | 'jsonl';
-  const result = await openDataService.getArticles({
-    country: c.req.query("country"), category: c.req.query("category"),
-    since: c.req.query("since"), until: c.req.query("until"),
-    limit: c.req.query("limit") ? parseInt(c.req.query("limit")!) : 100,
-    cursor: c.req.query("cursor"), format,
-  });
-  if (format === 'csv') {
-    return new Response(openDataService.formatAsCSV(result.data), {
-      headers: { "Content-Type": "text/csv", "Content-Disposition": "attachment; filename=mukoko-articles.csv" },
-    });
-  }
-  if (format === 'jsonl') {
-    return new Response(openDataService.formatAsJSONL(result.data), {
-      headers: { "Content-Type": "application/x-ndjson" },
-    });
-  }
-  return c.json(result, 200, { "Cache-Control": "public, max-age=3600", "X-License": "CC BY 4.0" });
-});
-
-app.get("/api/v1/open-data/sources", async (c) => {
-  const { openDataService } = initializeServices(c.env);
-  return c.json(await openDataService.getSources(), 200, { "Cache-Control": "public, max-age=86400" });
-});
-
-app.get("/api/v1/open-data/categories", async (c) => {
-  const { openDataService } = initializeServices(c.env);
-  return c.json(await openDataService.getCategories(), 200, { "Cache-Control": "public, max-age=3600" });
-});
-
-app.get("/api/v1/open-data/keywords", async (c) => {
-  const { openDataService } = initializeServices(c.env);
-  return c.json(await openDataService.getKeywords({
-    limit: c.req.query("limit") ? parseInt(c.req.query("limit")!) : 100,
-    trending: c.req.query("trending") === "true",
-  }), 200, { "Cache-Control": "public, max-age=3600" });
-});
-
-app.get("/api/v1/open-data/analytics", async (c) => {
-  const { openDataService } = initializeServices(c.env);
-  return c.json(await openDataService.getAnalytics(parseInt(c.req.query("days") || '30')), 200, {
-    "Cache-Control": "public, max-age=86400",
-  });
-});
-
-// --- PII Admin ---
-app.post("/api/v1/admin/pii/scan", async (c) => {
-  const { piiService } = initializeServices(c.env);
-  return c.json(piiService.scanForPII(await c.req.json()));
-});
-
-app.post("/api/v1/admin/pii/remove", async (c) => {
-  const { piiService } = initializeServices(c.env);
-  const result = piiService.removePII(await c.req.json());
-  return c.json({ clean: result.clean, removed_count: result.removed.length, audit: result.auditLog });
-});
-
-// --- Infrastructure Health (Admin) ---
-app.get("/api/v1/admin/infrastructure/health", async (c) => {
-  const { infra } = initializeServices(c.env);
-  return c.json({ status: infra.status, health: await infra.healthCheck(), timestamp: new Date().toISOString() });
-});
-
-// --- Batch Operations ---
-app.post("/api/v1/batch/articles", async (c) => {
-  const body = await c.req.json() as { ids: string[] };
-  if (!body.ids?.length) return c.json({ error: "ids required" }, 400);
-  if (body.ids.length > 100) return c.json({ error: "Max 100 articles" }, 400);
-  const placeholders = body.ids.map(() => '?').join(',');
-  const result = await c.env.DB.prepare(`SELECT * FROM articles WHERE id IN (${placeholders})`).bind(...body.ids).all();
-  return c.json({ articles: result.results ?? [], total: result.results?.length ?? 0 });
-});
-
-app.post("/api/v1/batch/search", async (c) => {
-  const body = await c.req.json() as { queries: Array<{ q: string; limit?: number }> };
-  if (!body.queries?.length) return c.json({ error: "queries required" }, 400);
-  if (body.queries.length > 10) return c.json({ error: "Max 10 queries" }, 400);
-  const results = await Promise.all(body.queries.map(async (q) => {
-    const r = await c.env.DB.prepare(
-      `SELECT * FROM articles WHERE title LIKE ? OR description LIKE ? ORDER BY published_at DESC LIMIT ?`
-    ).bind(`%${q.q}%`, `%${q.q}%`, Math.min(q.limit ?? 10, 50)).all();
-    return { query: q.q, results: r.results ?? [], total: r.results?.length ?? 0 };
-  }));
-  return c.json({ results });
-});
-
-// ============================================================
 // Scheduled handler for cron jobs with rotating batch processing
 // Cron runs every 6 hours (0, 6, 12, 18 UTC), rotating through batches
 const scheduledHandler = async (
@@ -7008,27 +6504,22 @@ const scheduledHandler = async (
     const hour = new Date(controller.scheduledTime).getUTCHours();
     const batchIndex = Math.floor(hour / 6); // 0, 1, 2, or 3
 
-    // 1. Refresh RSS feeds to collect new articles (with batching)
-    console.log(`[CRON] Starting RSS feed refresh (batch ${batchIndex})...`);
-    const rssService = new SimpleRSSService(env.DB);
-    const sourceHealthService = new SourceHealthService(env.DB);
+    // 1. Delegate RSS feed collection to Python Worker
+    console.log(`[CRON] Starting RSS feed refresh via Python Worker (batch ${batchIndex})...`);
+    const processingClient = new ProcessingClient(env.DATA_PROCESSOR);
     const rssStartTime = Date.now();
 
-    // Process 40 sources per batch to stay under 50 subrequest limit
-    const rssResult = await rssService.refreshAllFeeds({ batch: batchIndex, batchSize: 40 });
+    const rssResult = await processingClient.collectFeeds({ batch: batchIndex, batchSize: 40 });
     const rssDuration = Date.now() - rssStartTime;
 
-    // Record per-source health results in a single batch for efficiency
-    await sourceHealthService.recordHealthBatch(rssResult.sourceResults);
-
-    console.log(`[CRON] RSS batch ${rssResult.batch + 1}/${rssResult.totalBatches} complete: ${rssResult.newArticles} new articles, ${rssResult.errors} errors in ${rssDuration}ms`);
+    console.log(`[CRON] RSS batch complete: ${rssResult.newArticles} new articles, ${rssResult.errors} errors in ${rssDuration}ms`);
 
     // Log RSS refresh to database
     await env.DB.prepare(`
       INSERT INTO cron_logs (cron_type, status, articles_processed, errors, execution_time_ms, created_at)
       VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     `).bind(
-      `rss_refresh_batch_${rssResult.batch}`,
+      `rss_refresh_batch_${batchIndex}`,
       rssResult.errors === 0 ? 'success' : 'partial',
       rssResult.newArticles,
       rssResult.errors,
@@ -7055,14 +6546,6 @@ const scheduledHandler = async (
       seoResult.errors,
       seoDuration
     ).run();
-
-    // 3. Clean up expired D1 key-value entries (sessions, rate limits, CSRF tokens)
-    console.log('[CRON] Cleaning up expired kv_store entries...');
-    const authCleanup = createD1Cache(env.DB, 'auth');
-    const cacheCleanup = createD1Cache(env.DB, 'cache');
-    const authCleaned = await authCleanup.cleanup();
-    const cacheCleaned = await cacheCleanup.cleanup();
-    console.log(`[CRON] Cleaned up ${authCleaned} expired auth entries, ${cacheCleaned} expired cache entries`);
 
   } catch (error: any) {
     console.error('[CRON] Scheduled task failed:', error);

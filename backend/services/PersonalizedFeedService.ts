@@ -5,6 +5,8 @@
  * reading history, follows, and engagement patterns.
  */
 
+import { PythonRankedArticle } from './ProcessingClient.js';
+
 interface UserPreferences {
   followedSources: string[];
   followedAuthors: string[];
@@ -42,6 +44,7 @@ interface ScoredArticle {
     recency: number;
     engagement: number;
     diversity: number;
+    sourceQuality: number;  // Python Worker signal; 0 when TS scorer is used
   };
 }
 
@@ -52,6 +55,23 @@ interface PersonalizedFeedOptions {
   diversityFactor?: number; // 0-1, higher = more diverse categories
   recencyWeight?: number; // How much to weight recent articles
   countries?: string[] | null; // Pan-African support: override user's country preferences
+}
+
+// Minimal interface for the Python Worker ranking call (subset of ProcessingClient).
+// Uses PythonRankedArticle (defined in ProcessingClient.ts) so the return type is
+// structurally verified — no as-unknown-as cast needed in the mapping below.
+interface RankFeedClient {
+  rankFeed(
+    articles: Array<Record<string, unknown>>,
+    preferences: {
+      followedSources?: string[];
+      followedAuthors?: string[];
+      followedCategories?: string[];
+      preferredCountries?: string[];
+      primaryCountry?: string | null;
+      categoryInterests?: Record<string, number>;
+    }
+  ): Promise<{ articles: PythonRankedArticle[] }>;
 }
 
 // Scoring weights
@@ -77,11 +97,15 @@ export class PersonalizedFeedService {
   }
 
   /**
-   * Get personalized feed for a user
+   * Get personalized feed for a user.
+   * When processingClient is provided, ranking is delegated to the Python Worker
+   * (numpy-vectorised scoring with source-quality signal). Falls back to the
+   * built-in TS scorer if the Python call fails.
    */
   async getPersonalizedFeed(
     userId: string | null,
-    options: PersonalizedFeedOptions = {}
+    options: PersonalizedFeedOptions = {},
+    processingClient?: RankFeedClient
   ): Promise<{
     articles: ScoredArticle[];
     total: number;
@@ -129,18 +153,72 @@ export class PersonalizedFeedService {
       effectiveCountries.length > 0 ? effectiveCountries : null  // Pan-African: pass countries
     );
 
-    // Score and rank articles
-    const scoredArticles = this.scoreArticles(
-      candidates,
-      preferences,
-      recencyWeight,
-      diversityFactor
-    );
+    // Score and rank articles — try Python Worker first, fall back to TS scorer
+    let scoredArticles: ScoredArticle[];
+    if (processingClient) {
+      try {
+        const rankResult = await processingClient.rankFeed(
+          candidates as unknown as Array<Record<string, unknown>>,
+          {
+            followedSources: preferences.followedSources,
+            followedAuthors: preferences.followedAuthors,
+            followedCategories: preferences.followedCategories,
+            preferredCountries: preferences.preferredCountries,
+            primaryCountry: preferences.primaryCountry,
+            categoryInterests: Object.fromEntries(preferences.categoryInterests),
+          }
+        );
+        // Map PythonRankedArticle (snake_case) → ScoredArticle (camelCase).
+        // RankFeedClient now returns PythonRankedArticle[] so no cast is needed here.
+        // sourceQuality is populated from the Python Worker; the TS scorer sets it to 0.
+        // This ensures scoreBreakdown values always sum to score regardless of which
+        // path produced the ranking.
+        scoredArticles = rankResult.articles.map((a): ScoredArticle => ({
+          id: a.id,
+          title: a.title,
+          slug: a.slug,
+          description: a.description,
+          content_snippet: a.content_snippet,
+          author: a.author,
+          source: a.source,
+          source_id: a.source_id,
+          published_at: a.published_at,
+          image_url: a.image_url,
+          original_url: a.original_url,
+          category_id: a.category_id,
+          country_id: a.country_id,
+          view_count: a.view_count,
+          like_count: a.like_count,
+          bookmark_count: a.bookmark_count,
+          score: a.score,
+          scoreBreakdown: {
+            followedSource: a.score_breakdown.followed_source,
+            followedAuthor: a.score_breakdown.followed_author,
+            followedCategory: a.score_breakdown.followed_category,
+            categoryInterest: a.score_breakdown.category_interest,
+            primaryCountry: a.score_breakdown.primary_country,
+            recency: a.score_breakdown.recency,
+            engagement: a.score_breakdown.engagement,
+            diversity: a.score_breakdown.diversity,
+            sourceQuality: a.score_breakdown.source_quality,
+          },
+        }));
+      } catch (err) {
+        console.error('[PersonalizedFeedService] Python ranking failed, using TS fallback:', err);
+        scoredArticles = this.scoreArticles(candidates, preferences, recencyWeight, diversityFactor);
+      }
+    } else {
+      scoredArticles = this.scoreArticles(candidates, preferences, recencyWeight, diversityFactor);
+    }
 
     // Apply pagination
     const paginatedArticles = scoredArticles.slice(offset, offset + limit);
 
-    // Get total count (filtered by countries if applicable)
+    // Get total count from D1 (filtered by countries if applicable).
+    // NOTE: total reflects published articles in D1, not the number of Python-ranked
+    // candidates. When Python ranking is active it scores a candidateLimit-sized sample
+    // (up to 200), so total may exceed the actual rankable set. This is a known limitation
+    // of the in-memory scoring pattern shared by both the TS and Python paths.
     let countQuery = 'SELECT COUNT(*) as total FROM articles WHERE status = \'published\'';
     const countParams: string[] = [];
     if (effectiveCountries.length > 0) {
@@ -304,6 +382,7 @@ export class PersonalizedFeedService {
         recency: 0,
         engagement: 0,
         diversity: 0,
+        sourceQuality: 0,   // Python Worker only; TS scorer does not compute this
       };
 
       // Followed source boost

@@ -17,6 +17,10 @@
     "build:backend": "cd backend && npm run build",
     "deploy:backend": "cd backend && npm run deploy",
     "test:backend": "cd backend && npm run test",
+    "dev:api": "cd processing && uv run pywrangler dev",
+    "deploy:api": "cd processing && uv run pywrangler deploy",
+    "test:api": "cd processing && uv run pytest",
+    "typecheck:api": "cd processing && uv run pyright",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf .next out backend/.wrangler backend/node_modules/.cache"
   },
