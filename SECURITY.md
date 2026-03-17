@@ -46,9 +46,9 @@ All API endpoints (`https://mukoko-news-api.fly.dev`) are protected with bearer 
 
 #### 1. API_SECRET (Frontend-to-Backend)
 
-- **Purpose**: Authenticates Vercel frontend to Cloudflare Workers backend
+- **Purpose**: Authenticates Vercel frontend to Fly.io FastAPI backend
 - **Type**: Static bearer token
-- **Storage**: Cloudflare Workers secrets, Vercel environment variables
+- **Storage**: Fly.io secrets, Vercel environment variables
 - **Rotation**: Should be rotated every 90 days
 
 **Security Best Practices**:
@@ -56,7 +56,7 @@ All API endpoints (`https://mukoko-news-api.fly.dev`) are protected with bearer 
 - Never commit API_SECRET to version control
 - Use different secrets for development and production
 - Store in `.env.local` for local development (gitignored)
-- Set via `npx wrangler secret put API_SECRET` for production
+- Set via `fly secrets set API_SECRET=your-secret` for production
 - Rotate immediately if compromised
 
 #### 2. OIDC JWT Tokens (User Authentication)
@@ -89,17 +89,20 @@ All API endpoints (`https://mukoko-news-api.fly.dev`) are protected with bearer 
 
 ### Database Security
 
-- **Platform**: Cloudflare D1 (SQLite at edge)
-- **Access**: Restricted to Cloudflare Workers only
-- **Migrations**: Version-controlled in `database/migrations/`
+- **Platform**: Postgres (Supabase) with pgvector extension
+- **Access**: Restricted to Fly.io backend via direct connection (asyncpg)
+- **Migrations**: Version-controlled in `fly-worker/migrations/` and `database/migrations/`
 - **Sensitive Data**: User emails, auth tokens (OIDC)
+- **Document Store**: CouchDB for article body storage (internal Fly.io network)
+- **Analytics**: Apache Doris for search indexing (internal Fly.io network)
 
 **Security Best Practices**:
 
-- Never expose D1 database directly
+- Never expose database connection strings
 - All queries use parameterized statements (SQL injection protection)
-- Sensitive data encrypted at rest by Cloudflare
-- Regular backups via Cloudflare dashboard
+- Sensitive data encrypted at rest by Supabase
+- Regular backups via Supabase dashboard
+- Embedding vectors (pgvector) contain no PII
 
 ### Content Security
 
@@ -140,12 +143,13 @@ All API endpoints (`https://mukoko-news-api.fly.dev`) are protected with bearer 
 
 ### Deployment Security
 
-#### Backend (Cloudflare Workers)
+#### Backend (Fly.io FastAPI)
 
-- **Secrets Management**: `wrangler secret put` (never in wrangler.jsonc)
+- **Secrets Management**: `fly secrets set` (never in fly.toml or source code)
 - **Environment Isolation**: Separate dev/production environments
-- **HTTPS Only**: All traffic encrypted (Cloudflare enforces)
-- **DDoS Protection**: Cloudflare's automatic DDoS mitigation
+- **HTTPS Only**: All traffic encrypted (Fly.io enforces via `force_https = true`)
+- **Region**: JNB (Johannesburg, South Africa) — data stays in Africa
+- **AI Services**: Cloudflare Workers AI for embeddings (API token auth, no data stored)
 
 #### Mobile Web (Vercel)
 
@@ -179,7 +183,7 @@ All API endpoints (`https://mukoko-news-api.fly.dev`) are protected with bearer 
 
 ## Compliance
 
-- **Data Protection**: User data stored in EU/US regions (Cloudflare D1)
+- **Data Protection**: User data stored in Supabase Postgres (configurable region)
 - **Privacy**: See PRIVACY.md for data handling policies
 - **Terms**: See TERMS.md for service terms
 

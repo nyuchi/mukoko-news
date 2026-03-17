@@ -216,8 +216,8 @@ paths:
     get:
       summary: Search articles
       description: |
-        Full-text and semantic search. When AI search is enabled, uses Vectorize
-        for semantic matching; falls back to keyword search otherwise.
+        Three-tier search funnel: (1) Semantic search via BGE-M3 embeddings and pgvector
+        cosine similarity, (2) Doris inverted index full-text matching, (3) Postgres ILIKE fallback.
       operationId: searchArticles
       tags: [Search]
       parameters:

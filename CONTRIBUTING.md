@@ -67,7 +67,8 @@ We love code contributions! Here's how to get started:
 
 - Node.js 20+
 - npm
-- Cloudflare account (for backend development)
+- Python 3.12+ (for fly-worker backend)
+- Fly.io CLI (for backend deployment)
 
 ### Frontend Setup
 
@@ -97,19 +98,25 @@ npm run test
 
 ```bash
 # Navigate to backend directory
-cd backend
+cd fly-worker
+
+# Create virtual environment
+python -m venv .venv && source .venv/bin/activate
 
 # Install dependencies
-npm install
-
-# Apply database schema locally
-npm run db:local
+pip install -e ".[dev]"
 
 # Start development server
-npm run dev
+uvicorn src.main:app --reload --port 8080
 
 # Run tests
-npm run test
+pytest
+
+# Type checking
+pyright
+
+# Lint
+ruff check .
 ```
 
 ### Environment Variables
@@ -223,20 +230,23 @@ Add screenshots here
 
 ```
 mukoko-news/
-├── src/               # Next.js frontend
-│   ├── app/           # App Router pages
-│   ├── components/    # React components
+├── src/               # Next.js 15 frontend (Vercel)
+│   ├── app/           # App Router pages (platform dashboard + consumer)
+│   ├── components/    # React components (Radix UI + Tailwind)
 │   │   ├── ui/        # Reusable UI components
 │   │   └── layout/    # Layout components (header, footer, bottom-nav)
 │   ├── contexts/      # React contexts
 │   └── lib/           # Utilities, API client, constants
-├── backend/           # Cloudflare Workers API
-│   ├── services/      # Business logic services
-│   ├── middleware/    # Route middleware
-│   └── index.ts       # API entry point
-└── database/          # D1 schema and migrations
-    ├── schema.sql     # Complete schema
-    └── migrations/    # Migration files
+├── fly-worker/        # FastAPI backend (Fly.io)
+│   ├── src/api/       # 12 API routers (42+ endpoints)
+│   ├── src/jobs/      # 7 background jobs (RSS, AI, embeddings, engagement)
+│   ├── src/services/  # Business logic (AI, embeddings, RSS, CouchDB, Doris)
+│   └── migrations/    # Postgres schema migrations
+├── mcp-server/        # MCP server for AI clients (9 tools, 5 resources)
+├── backend/           # Platform services (TypeScript, migration target)
+│   └── services/platform/  # Publisher, webhooks, API keys, moderation
+└── database/          # Platform schema and migrations
+    └── migrations/    # Migration files (Postgres + platform tables)
 ```
 
 ## Commit Message Guidelines
@@ -303,16 +313,13 @@ npm run test:coverage
 ### Backend Tests
 
 ```bash
-cd backend
+cd fly-worker
 
 # Run all tests
-npm run test
-
-# Watch mode
-npm run test:watch
+pytest
 
 # With coverage
-npm run test:coverage
+pytest --cov
 ```
 
 **Requirements**:
