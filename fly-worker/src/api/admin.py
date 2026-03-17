@@ -73,7 +73,7 @@ async def admin_sources(
                       org.id::text AS id, org.name, org.url,
                       fs.feed_url, fs.area_served, fs.article_section_id,
                       fs.is_active, fs.priority, fs.health_status,
-                      fs.consecutive_failures, fs.last_fetch_error, fs.last_fetch_error_at,
+                      fs.consecutive_failures, fs.last_fetch_error, fs.last_error_at,
                       fs.last_fetched_at, fs.total_fetch_count, fs.total_error_count,
                       COUNT(a.id) AS article_count,
                       MAX(a.datepublished) AS latest_article_at
@@ -83,7 +83,7 @@ async def admin_sources(
                GROUP BY fs.id, org.id, org.name, org.url,
                         fs.feed_url, fs.area_served, fs.article_section_id,
                         fs.is_active, fs.priority, fs.health_status,
-                        fs.consecutive_failures, fs.last_fetch_error, fs.last_fetch_error_at,
+                        fs.consecutive_failures, fs.last_fetch_error, fs.last_error_at,
                         fs.last_fetched_at, fs.total_fetch_count, fs.total_error_count
                ORDER BY fs.priority DESC, org.name"""
         )
@@ -105,7 +105,7 @@ async def admin_source_detail(
                       org.id::text AS id, org.name, org.url,
                       fs.feed_url, fs.area_served, fs.article_section_id,
                       fs.is_active, fs.priority, fs.health_status,
-                      fs.consecutive_failures, fs.last_fetch_error, fs.last_fetch_error_at,
+                      fs.consecutive_failures, fs.last_fetch_error, fs.last_error_at,
                       fs.last_fetched_at, fs.total_fetch_count, fs.total_error_count
                FROM news.feed_source fs
                JOIN news.news_media_organization org ON fs.organization_id = org.id
@@ -194,7 +194,7 @@ async def admin_sources_health(_admin: str = Depends(require_admin)):
         rows = await conn.fetch(
             """SELECT health_status, COUNT(*) AS count
                FROM news.feed_source
-               WHERE enabled = TRUE
+               WHERE is_active = TRUE
                GROUP BY health_status"""
         )
 
@@ -202,7 +202,7 @@ async def admin_sources_health(_admin: str = Depends(require_admin)):
             """SELECT fs.id::text AS feed_source_id,
                       org.id::text AS id, org.name,
                       fs.health_status, fs.consecutive_failures,
-                      fs.last_fetch_error, fs.last_fetch_error_at
+                      fs.last_fetch_error, fs.last_error_at
                FROM news.feed_source fs
                JOIN news.news_media_organization org ON fs.organization_id = org.id
                WHERE fs.is_active = TRUE AND fs.consecutive_failures > 3
