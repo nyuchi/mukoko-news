@@ -12,19 +12,19 @@ router = APIRouter(prefix="/api", tags=["categories"])
 async def get_categories(
     _token: str | None = Depends(require_api_key),
 ):
-    """Get all enabled categories (article sections) with article counts."""
+    """Get all enabled categories (interest categories) with article counts."""
     pool = await get_pool()
 
     async with pool.acquire() as conn:
         rows = await conn.fetch(
-            """SELECT s.id, s.name, s.description, s.emoji, s.color,
-                      s.sort_order,
+            """SELECT ic.id, ic.name, ic.description, ic.emoji, ic.color_hex AS color,
+                      ic.sort_order,
                       COUNT(a.id) AS article_count
-               FROM article_sections s
-               LEFT JOIN articles a ON a.article_section_id = s.id AND a.status = 'published'
-               WHERE s.enabled = TRUE
-               GROUP BY s.id, s.name, s.description, s.emoji, s.color, s.sort_order
-               ORDER BY s.sort_order, s.name"""
+               FROM engagement.interest_category ic
+               LEFT JOIN news.news_article a ON a.primary_interest_category_id = ic.id AND a.status = 'published'
+               WHERE ic.is_active = TRUE
+               GROUP BY ic.id, ic.name, ic.description, ic.emoji, ic.color_hex, ic.sort_order
+               ORDER BY ic.sort_order, ic.name"""
         )
 
     categories = [

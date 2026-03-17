@@ -12,22 +12,27 @@ router = APIRouter(prefix="/api", tags=["sources"])
 async def get_sources(
     _token: str | None = Depends(require_api_key),
 ):
-    """Get all enabled news organizations with article counts."""
+    """Get all enabled news sources with article counts."""
     pool = await get_pool()
 
     async with pool.acquire() as conn:
         rows = await conn.fetch(
-            """SELECT o.id, o.name, o.url, o.rss_feed_url, o.area_served,
-                      o.article_section_id, o.health_status, o.priority,
-                      o.last_fetched_at, o.total_fetch_count, o.total_error_count,
-                      o.last_error,
+            """SELECT org.id::text, org.name, org.url,
+                      fs.feed_url AS rss_feed_url, fs.area_served,
+                      fs.article_section_id, fs.health_status, fs.priority,
+                      fs.last_fetched_at, fs.total_fetch_count, fs.total_error_count,
+                      fs.last_error,
                       COUNT(a.id) AS article_count,
-                      MAX(a.date_published) AS latest_article_at
-               FROM organizations o
-               LEFT JOIN articles a ON a.publisher_id = o.id AND a.status = 'published'
-               WHERE o.enabled = TRUE
-               GROUP BY o.id
-               ORDER BY o.priority DESC, o.name"""
+                      MAX(a.datepublished) AS latest_article_at
+               FROM news.feed_source fs
+               JOIN news.news_media_organization org ON fs.organization_id = org.id
+               LEFT JOIN news.news_article a ON a.publisher_organization_id = org.id AND a.status = 'published'
+               WHERE fs.enabled = TRUE
+               GROUP BY org.id, org.name, org.url,
+                        fs.feed_url, fs.area_served, fs.article_section_id,
+                        fs.health_status, fs.priority, fs.last_fetched_at,
+                        fs.total_fetch_count, fs.total_error_count, fs.last_error
+               ORDER BY fs.priority DESC, org.name"""
         )
 
     sources = []
@@ -62,7 +67,7 @@ async def get_countries(
     async with pool.acquire() as conn:
         rows = await conn.fetch(
             """SELECT id, name, flag_emoji, color, region, in_language, timezone, priority
-               FROM countries
+               FROM news.country
                WHERE enabled = TRUE
                ORDER BY priority DESC, name"""
         )
@@ -94,7 +99,7 @@ async def get_country(
 
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
-            "SELECT * FROM countries WHERE id = $1", country_id
+            "SELECT * FROM news.country WHERE id = $1", country_id
         )
 
     if not row:
@@ -119,10 +124,10 @@ async def get_country_article_stats(
 
     async with pool.acquire() as conn:
         rows = await conn.fetch(
-            """SELECT about_country_id AS country_id, COUNT(*) AS article_count
-               FROM articles
+            """SELECT primary_location_country AS country_id, COUNT(*) AS article_count
+               FROM news.news_article
                WHERE status = 'published'
-               GROUP BY about_country_id
+               GROUP BY primary_location_country
                ORDER BY article_count DESC"""
         )
 

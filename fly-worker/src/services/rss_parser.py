@@ -4,6 +4,7 @@ Parses RSS/Atom XML into normalized article dicts aligned to schema.org NewsArti
 """
 
 import hashlib
+import json
 import re
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
@@ -17,7 +18,9 @@ def parse_feed(xml_content: str, source: dict) -> dict:
 
     Args:
         xml_content: Raw XML string from the feed.
-        source: Organization record from the database.
+        source: Joined feed_source + organization record from the database.
+            Expected keys: id (feed_source UUID), organization_id, org_name,
+            feed_url, country, article_section_slug, language.
 
     Returns:
         Dict with 'articles' list and 'feed_title'.
@@ -69,38 +72,44 @@ def _parse_entry(entry, source: dict, feed) -> dict | None:
     elif hasattr(entry, "summary_detail"):
         article_body = entry.summary_detail.get("value", "")
 
-    # schema:author
-    author_name = _extract_author(entry)
+    # schema:author — JSONB string for asyncpg
+    author_raw = _extract_author(entry)
+    author = json.dumps({"@type": "Person", "name": author_raw}) if author_raw else None
 
-    # schema:image
-    image = _extract_image(entry)
+    # schema:image — JSONB string for asyncpg
+    image_url = _extract_image(entry)
+    image = json.dumps({"url": image_url}) if image_url else None
 
     # schema:articleSection from source default
-    article_section_id = source.get("article_section_id", "general")
+    articlesection = source.get("article_section_slug", "general")
 
     # Generate slug from headline
     slug = _slugify(headline)
 
-    # Content hash for deduplication
+    # Content fingerprint for deduplication
     content_for_hash = f"{headline}{main_entity_of_page}"
-    content_hash = hashlib.sha256(content_for_hash.encode()).hexdigest()[:16]
+    source_fingerprint = hashlib.sha256(content_for_hash.encode()).hexdigest()[:16]
+
+    # Publisher as JSONB string for asyncpg
+    org_name = source.get("org_name", "")
+    publisher = json.dumps({"@type": "Organization", "name": org_name}) if org_name else None
 
     return {
         "headline": headline[:500],
         "description": description,
         "article_body": article_body,
         "slug": slug,
-        "main_entity_of_page": main_entity_of_page,
-        "rss_guid": rss_guid,
+        "mainentityofpage": main_entity_of_page,
+        "source_feed_id": rss_guid,
         "image": image,
-        "author_name": author_name,
-        "publisher_id": source["id"],
-        "publisher_name": source["name"],
-        "article_section_id": article_section_id,
-        "about_country_id": source.get("area_served", "ZW"),
-        "date_published": date_published,
-        "content_hash": content_hash,
-        "in_language": source.get("in_language", "en"),
+        "author": author,
+        "publisher_organization_id": source.get("organization_id"),
+        "publisher": publisher,
+        "articlesection": articlesection,
+        "primary_location_country": source.get("country", "ZW"),
+        "datepublished": date_published,
+        "source_fingerprint": source_fingerprint,
+        "inlanguage": source.get("language", "en"),
     }
 
 

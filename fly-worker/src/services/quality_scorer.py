@@ -11,7 +11,12 @@ def score_article(article: dict) -> dict:
 
     Returns dict with quality_score (0-100) and component scores.
     """
-    text = article.get("article_body", "") or article.get("description", "") or ""
+    text = (
+        article.get("articlebody")
+        or article.get("article_body")
+        or article.get("description")
+        or ""
+    )
     headline = article.get("headline", "")
 
     scores = {
@@ -19,7 +24,7 @@ def score_article(article: dict) -> dict:
         "readability": _score_readability(text),
         "headline_quality": _score_headline(headline),
         "has_image": 10.0 if article.get("image") else 0.0,
-        "has_author": 5.0 if article.get("author_name") else 0.0,
+        "has_author": 5.0 if (article.get("author") or article.get("author_name")) else 0.0,
     }
 
     # Weighted sum (out of 100)

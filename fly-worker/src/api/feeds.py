@@ -14,6 +14,43 @@ from src.api.auth import require_api_key
 
 router = APIRouter(prefix="/api", tags=["feeds"])
 
+# Common SELECT columns for article queries with aliases for backward compatibility
+ARTICLE_SELECT = """
+    a.id::text,
+    a.headline,
+    a.description,
+    a.slug,
+    a.mainentityofpage AS main_entity_of_page,
+    a.image->>'url' AS image,
+    a.author->>'name' AS author_name,
+    a.publisher_organization_id::text AS publisher_id,
+    a.publisher->>'name' AS publisher_name,
+    a.articlesection AS article_section_id,
+    a.primary_location_country AS about_country_id,
+    a.datepublished AS date_published,
+    a.datemodified AS date_modified,
+    a.wordcount AS word_count,
+    a.reading_time_minutes,
+    a.inlanguage AS in_language,
+    a.keywords,
+    a.view_count, a.like_count, a.bookmark_count,
+    a.comment_count, a.share_count,
+    a.quality_score, a.engagement_score,
+    a.content_type,
+    CASE WHEN a.is_breaking THEN 'breaking'
+         WHEN a.is_featured THEN 'urgent'
+         ELSE 'standard' END AS urgency,
+    a.status,
+    ic.name AS section_name,
+    ic.emoji AS section_emoji,
+    ic.color_hex AS section_color
+"""
+
+ARTICLE_FROM = """
+    FROM news.news_article a
+    LEFT JOIN engagement.interest_category ic ON a.primary_interest_category_id = ic.id
+"""
+
 
 @router.get("/feeds")
 async def get_feeds(
@@ -35,7 +72,7 @@ async def get_feeds(
         idx = 1
 
         if category and category != "all":
-            conditions.append(f"a.article_section_id = ${idx}")
+            conditions.append(f"a.articlesection = ${idx}")
             params.append(category)
             idx += 1
 
@@ -43,7 +80,7 @@ async def get_feeds(
             country_list = [c.strip() for c in countries.split(",") if c.strip()]
             if country_list:
                 placeholders = ", ".join(f"${idx + i}" for i in range(len(country_list)))
-                conditions.append(f"a.about_country_id IN ({placeholders})")
+                conditions.append(f"a.primary_location_country IN ({placeholders})")
                 params.extend(country_list)
                 idx += len(country_list)
 
@@ -51,33 +88,20 @@ async def get_feeds(
 
         # Sort order
         order_by = {
-            "latest": "a.date_published DESC",
-            "trending": "a.trending_score DESC, a.date_published DESC",
-            "popular": "a.engagement_score DESC, a.date_published DESC",
-        }.get(sort, "a.date_published DESC")
+            "latest": "a.datepublished DESC",
+            "trending": "a.trending_score DESC, a.datepublished DESC",
+            "popular": "a.engagement_score DESC, a.datepublished DESC",
+        }.get(sort, "a.datepublished DESC")
 
         # Count total
         total = await conn.fetchval(
-            f"SELECT COUNT(*) FROM articles a WHERE {where}", *params
+            f"SELECT COUNT(*) FROM news.news_article a WHERE {where}", *params
         )
 
         # Fetch articles
         rows = await conn.fetch(
-            f"""SELECT a.id, a.headline, a.description, a.slug,
-                       a.main_entity_of_page, a.image, a.author_name,
-                       a.publisher_id, a.publisher_name,
-                       a.article_section_id, a.about_country_id,
-                       a.date_published, a.date_modified,
-                       a.word_count, a.reading_time_minutes,
-                       a.in_language, a.keywords,
-                       a.view_count, a.like_count, a.bookmark_count,
-                       a.comment_count, a.share_count,
-                       a.quality_score, a.engagement_score,
-                       a.content_type, a.urgency, a.status,
-                       s.name AS section_name, s.emoji AS section_emoji,
-                       s.color AS section_color
-                FROM articles a
-                LEFT JOIN article_sections s ON a.article_section_id = s.id
+            f"""SELECT {ARTICLE_SELECT}
+                {ARTICLE_FROM}
                 WHERE {where}
                 ORDER BY {order_by}
                 LIMIT ${idx} OFFSET ${idx + 1}""",
@@ -118,24 +142,22 @@ async def get_sectioned_feed(
         # Top stories: highest engagement in last 48h
         if country_list:
             top_rows = await conn.fetch(
-                """SELECT a.*, s.name AS section_name, s.emoji AS section_emoji, s.color AS section_color
-                   FROM articles a
-                   LEFT JOIN article_sections s ON a.article_section_id = s.id
+                f"""SELECT {ARTICLE_SELECT}
+                   {ARTICLE_FROM}
                    WHERE a.status = 'published'
-                     AND a.date_published >= NOW() - INTERVAL '48 hours'
-                     AND a.about_country_id = ANY($1::text[])
-                   ORDER BY a.engagement_score DESC, a.date_published DESC
+                     AND a.datepublished >= NOW() - INTERVAL '48 hours'
+                     AND a.primary_location_country = ANY($1::text[])
+                   ORDER BY a.engagement_score DESC, a.datepublished DESC
                    LIMIT 20""",
                 country_list,
             )
         else:
             top_rows = await conn.fetch(
-                """SELECT a.*, s.name AS section_name, s.emoji AS section_emoji, s.color AS section_color
-                   FROM articles a
-                   LEFT JOIN article_sections s ON a.article_section_id = s.id
+                f"""SELECT {ARTICLE_SELECT}
+                   {ARTICLE_FROM}
                    WHERE a.status = 'published'
-                     AND a.date_published >= NOW() - INTERVAL '48 hours'
-                   ORDER BY a.engagement_score DESC, a.date_published DESC
+                     AND a.datepublished >= NOW() - INTERVAL '48 hours'
+                   ORDER BY a.engagement_score DESC, a.datepublished DESC
                    LIMIT 20"""
             )
 
@@ -144,22 +166,20 @@ async def get_sectioned_feed(
         # Latest articles
         if country_list:
             latest_rows = await conn.fetch(
-                """SELECT a.*, s.name AS section_name, s.emoji AS section_emoji, s.color AS section_color
-                   FROM articles a
-                   LEFT JOIN article_sections s ON a.article_section_id = s.id
+                f"""SELECT {ARTICLE_SELECT}
+                   {ARTICLE_FROM}
                    WHERE a.status = 'published'
-                     AND a.about_country_id = ANY($1::text[])
-                   ORDER BY a.date_published DESC
+                     AND a.primary_location_country = ANY($1::text[])
+                   ORDER BY a.datepublished DESC
                    LIMIT 24""",
                 country_list,
             )
         else:
             latest_rows = await conn.fetch(
-                """SELECT a.*, s.name AS section_name, s.emoji AS section_emoji, s.color AS section_color
-                   FROM articles a
-                   LEFT JOIN article_sections s ON a.article_section_id = s.id
+                f"""SELECT {ARTICLE_SELECT}
+                   {ARTICLE_FROM}
                    WHERE a.status = 'published'
-                   ORDER BY a.date_published DESC
+                   ORDER BY a.datepublished DESC
                    LIMIT 24"""
             )
         latest = [_row_to_article(r) for r in latest_rows]
@@ -167,7 +187,7 @@ async def get_sectioned_feed(
         # By category
         by_category = []
         sections = await conn.fetch(
-            "SELECT id, name FROM article_sections WHERE enabled = TRUE ORDER BY sort_order"
+            "SELECT id, name FROM engagement.interest_category WHERE is_active = TRUE ORDER BY sort_order"
         )
         for section in sections:
             section_id = section["id"]
@@ -176,25 +196,23 @@ async def get_sectioned_feed(
 
             if country_list:
                 cat_rows = await conn.fetch(
-                    """SELECT a.*, s.name AS section_name, s.emoji AS section_emoji, s.color AS section_color
-                       FROM articles a
-                       LEFT JOIN article_sections s ON a.article_section_id = s.id
+                    f"""SELECT {ARTICLE_SELECT}
+                       {ARTICLE_FROM}
                        WHERE a.status = 'published'
-                         AND a.article_section_id = $1
-                         AND a.about_country_id = ANY($2::text[])
-                       ORDER BY a.date_published DESC
+                         AND a.primary_interest_category_id = $1
+                         AND a.primary_location_country = ANY($2::text[])
+                       ORDER BY a.datepublished DESC
                        LIMIT 6""",
                     section_id,
                     country_list,
                 )
             else:
                 cat_rows = await conn.fetch(
-                    """SELECT a.*, s.name AS section_name, s.emoji AS section_emoji, s.color AS section_color
-                       FROM articles a
-                       LEFT JOIN article_sections s ON a.article_section_id = s.id
+                    f"""SELECT {ARTICLE_SELECT}
+                       {ARTICLE_FROM}
                        WHERE a.status = 'published'
-                         AND a.article_section_id = $1
-                       ORDER BY a.date_published DESC
+                         AND a.primary_interest_category_id = $1
+                       ORDER BY a.datepublished DESC
                        LIMIT 6""",
                     section_id,
                 )
@@ -226,12 +244,11 @@ async def get_news_bytes(
 
     async with pool.acquire() as conn:
         rows = await conn.fetch(
-            """SELECT a.*, s.name AS section_name, s.emoji AS section_emoji, s.color AS section_color
-               FROM articles a
-               LEFT JOIN article_sections s ON a.article_section_id = s.id
+            f"""SELECT {ARTICLE_SELECT}
+               {ARTICLE_FROM}
                WHERE a.status = 'published'
                  AND a.content_type = 'news-byte'
-               ORDER BY a.date_published DESC
+               ORDER BY a.datepublished DESC
                LIMIT $1""",
             limit,
         )
@@ -239,13 +256,12 @@ async def get_news_bytes(
         # Fallback: short articles if no explicit news-bytes
         if not rows:
             rows = await conn.fetch(
-                """SELECT a.*, s.name AS section_name, s.emoji AS section_emoji, s.color AS section_color
-                   FROM articles a
-                   LEFT JOIN article_sections s ON a.article_section_id = s.id
+                f"""SELECT {ARTICLE_SELECT}
+                   {ARTICLE_FROM}
                    WHERE a.status = 'published'
-                     AND a.word_count <= 200
+                     AND a.wordcount <= 200
                      AND a.image IS NOT NULL
-                   ORDER BY a.date_published DESC
+                   ORDER BY a.datepublished DESC
                    LIMIT $1""",
                 limit,
             )
@@ -262,7 +278,7 @@ def _row_to_article(row) -> dict:
     """Convert a database row to the Article response dict."""
     d = dict(row)
 
-    # Parse keywords JSON
+    # keywords is now TEXT[] from asyncpg — comes as a Python list directly
     keywords = d.get("keywords")
     if isinstance(keywords, str):
         try:
