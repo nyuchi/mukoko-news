@@ -1,8 +1,11 @@
 """Search endpoints — /api/search, /api/keywords.
 
-Search is a funnel: Doris narrows millions of articles to ~10 candidates,
-Postgres hydrates the metadata. No over-ranking — Doris's approximate
-ranking is good enough. Falls back to Postgres ILIKE when Doris is unavailable.
+Search is a three-tier funnel:
+1. Semantic search via BGE-M3 embeddings (pgvector cosine similarity)
+2. Doris inverted index (full-text narrowing)
+3. Postgres ILIKE (fallback when both are unavailable)
+
+Each tier falls through to the next if unavailable or returns no results.
 """
 
 from datetime import datetime, timezone
@@ -14,6 +17,7 @@ from src.api.auth import require_api_key
 from src.api.feeds import _row_to_article, ARTICLE_SELECT, ARTICLE_FROM
 from src.services.doris import get_doris
 from src.services.analytics import get_analytics
+from src.services.embeddings import embed_text
 
 router = APIRouter(prefix="/api", tags=["search"])
 
@@ -25,20 +29,26 @@ async def search_articles(
     category: str | None = Query(None),
     _token: str | None = Depends(require_api_key),
 ):
-    """Search articles by keyword. Funnel: Doris narrows → Postgres hydrates."""
+    """Search articles. Funnel: Semantic (BGE-M3) → Doris → Postgres ILIKE."""
     pool = await get_pool()
     articles = []
     search_method = "keyword"
     total = 0
 
-    # Try Doris funnel first
-    doris_ids = await _doris_search(q, limit, category)
-    if doris_ids is not None:
-        search_method = "doris_funnel"
-        articles, total = await _hydrate_from_postgres(pool, doris_ids, len(doris_ids))
+    # Tier 1: Semantic search via BGE-M3 embeddings
+    semantic_results = await _semantic_search(pool, q, limit, category)
+    if semantic_results is not None:
+        search_method = "semantic"
+        articles, total = semantic_results
     else:
-        # Fallback: Postgres ILIKE
-        articles, total = await _postgres_search(pool, q, limit, category)
+        # Tier 2: Doris inverted index
+        doris_ids = await _doris_search(q, limit, category)
+        if doris_ids is not None:
+            search_method = "doris_funnel"
+            articles, total = await _hydrate_from_postgres(pool, doris_ids, len(doris_ids))
+        else:
+            # Tier 3: Postgres ILIKE fallback
+            articles, total = await _postgres_search(pool, q, limit, category)
 
     # Track search in analytics
     get_analytics().track_search(q, total, category=category or "")
@@ -56,6 +66,55 @@ async def search_articles(
             "total": total,
         },
     }
+
+
+async def _semantic_search(
+    pool, query: str, limit: int, category: str | None
+) -> tuple[list[dict], int] | None:
+    """Tier 1: Semantic search using BGE-M3 embeddings and pgvector cosine similarity.
+
+    Returns (articles, total) or None if embeddings are unavailable.
+    """
+    # Generate query embedding
+    query_embedding = await embed_text(query)
+    if query_embedding is None:
+        return None
+
+    embedding_str = "[" + ",".join(str(v) for v in query_embedding) + "]"
+
+    try:
+        async with pool.acquire() as conn:
+            # Build optional category filter
+            category_clause = ""
+            params: list = [embedding_str, limit]
+            if category and category != "all":
+                category_clause = "AND a.articlesection = $3"
+                params.append(category)
+
+            rows = await conn.fetch(
+                f"""SELECT {ARTICLE_SELECT},
+                           1 - (a.embedding_vector <=> $1::vector) AS similarity
+                    {ARTICLE_FROM}
+                    WHERE a.status = 'published'
+                      AND a.embedding_vector IS NOT NULL
+                      {category_clause}
+                    ORDER BY a.embedding_vector <=> $1::vector
+                    LIMIT $2""",
+                *params,
+            )
+
+            if not rows:
+                return None  # Fall through to Doris
+
+            # Count total matches (approximate — articles with embeddings)
+            total = len(rows)
+
+        return [_row_to_article(r) for r in rows], total
+
+    except Exception as e:
+        # pgvector not available or query failed — fall through
+        print(f"[SEARCH] Semantic search error: {e}")
+        return None
 
 
 async def _doris_search(query: str, limit: int, category: str | None) -> list[str] | None:

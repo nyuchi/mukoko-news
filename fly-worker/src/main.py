@@ -16,6 +16,7 @@ from src.scheduler import create_scheduler
 from src.services.couchdb import init_couchdb, close_couchdb
 from src.services.doris import init_doris, close_doris
 from src.services.analytics import flush_analytics
+from src.services.embeddings import close_client as close_embeddings
 
 _start_time = time.time()
 _scheduler = None
@@ -53,6 +54,7 @@ async def lifespan(app: FastAPI):
     if _scheduler:
         _scheduler.shutdown(wait=False)
     await flush_analytics()
+    await close_embeddings()
     await close_doris()
     await close_couchdb()
     await close_pool()

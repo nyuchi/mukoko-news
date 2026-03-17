@@ -9,6 +9,7 @@ from src.services.content_cleaner import extract_text, count_words
 from src.services.keyword_extractor import extract_keywords
 from src.services.quality_scorer import score_article
 from src.services.couchdb import get_couchdb
+from src.services.embeddings import embed_text, build_article_text
 
 
 async def process_articles_batch(article_ids: list[str]) -> None:
@@ -116,26 +117,53 @@ async def _process_single(pool, article_id: str) -> None:
 
     keywords = await extract_keywords(article_dict, known_terms, section_keywords)
 
-    # 4. Write results
+    # 4. Generate BGE-M3 embedding via Cloudflare Workers AI
+    embed_text_str = build_article_text(article_dict)
+    embedding = await embed_text(embed_text_str)
+
+    # 5. Write results
     async with pool.acquire() as conn:
         async with conn.transaction():
             # Update article — keywords is TEXT[], pass as Python list directly
             keyword_names = [k["name"] for k in keywords]
-            await conn.execute(
-                """UPDATE news.news_article SET
-                   ai_processed = TRUE,
-                   ai_processed_at = NOW(),
-                   quality_score = $2,
-                   wordcount = $3,
-                   keywords = $4,
-                   updated_at = NOW(),
-                   sync_status = 'pending_sync'
-                   WHERE id = $1::uuid""",
-                article_id,
-                quality_score,
-                word_count,
-                keyword_names,
-            )
+
+            if embedding:
+                # Store embedding as pgvector
+                embedding_str = "[" + ",".join(str(v) for v in embedding) + "]"
+                await conn.execute(
+                    """UPDATE news.news_article SET
+                       ai_processed = TRUE,
+                       ai_processed_at = NOW(),
+                       quality_score = $2,
+                       wordcount = $3,
+                       keywords = $4,
+                       embedding_vector = $5::vector,
+                       embedding_model = 'bge-m3',
+                       updated_at = NOW(),
+                       sync_status = 'pending_sync'
+                       WHERE id = $1::uuid""",
+                    article_id,
+                    quality_score,
+                    word_count,
+                    keyword_names,
+                    embedding_str,
+                )
+            else:
+                await conn.execute(
+                    """UPDATE news.news_article SET
+                       ai_processed = TRUE,
+                       ai_processed_at = NOW(),
+                       quality_score = $2,
+                       wordcount = $3,
+                       keywords = $4,
+                       updated_at = NOW(),
+                       sync_status = 'pending_sync'
+                       WHERE id = $1::uuid""",
+                    article_id,
+                    quality_score,
+                    word_count,
+                    keyword_names,
+                )
 
             # Upsert keywords and create links
             for kw in keywords:

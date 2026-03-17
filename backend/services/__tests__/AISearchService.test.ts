@@ -104,7 +104,7 @@ describe('AISearchService', () => {
       const results = await service.semanticSearch('Zimbabwe elections');
 
       expect(mockAI.run).toHaveBeenCalledWith(
-        '@cf/baai/bge-base-en-v1.5',
+        '@cf/baai/bge-m3',
         expect.objectContaining({ text: ['Zimbabwe elections'] })
       );
       expect(mockVectorize.query).toHaveBeenCalled();

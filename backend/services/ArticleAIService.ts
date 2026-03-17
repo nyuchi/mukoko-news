@@ -436,7 +436,7 @@ Return only a number between 0.0 and 1.0 (e.g., 0.75):`,
       const text = `${title}\n${content.substring(0, 500)}`
       
       // Generate embedding using Workers AI
-      const embedding = await this.ai.run('@cf/baai/bge-base-en-v1.5', {
+      const embedding = await this.ai.run('@cf/baai/bge-m3', {
         text: text
       })
 

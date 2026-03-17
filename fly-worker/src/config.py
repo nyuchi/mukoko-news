@@ -11,7 +11,10 @@ class Settings(BaseSettings):
 
     # AI services
     anthropic_api_key: str = ""
-    # voyage_api_key removed — embeddings were never consumed
+
+    # Cloudflare Workers AI — BGE-M3 embeddings
+    cf_account_id: str = ""
+    cf_ai_api_token: str = ""
 
     # CouchDB — article body document store
     couchdb_url: str = ""

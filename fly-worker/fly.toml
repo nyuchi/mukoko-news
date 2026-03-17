@@ -31,6 +31,6 @@ primary_region = "jnb"
     grace_period = "10s"
 
 [[vm]]
-  memory = "1024mb"
+  memory = "2048mb"
   cpu_kind = "shared"
   cpus = 1

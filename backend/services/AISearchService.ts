@@ -312,7 +312,7 @@ export class AISearchService {
    * Generate embedding for text using Workers AI
    */
   private async generateEmbedding(text: string): Promise<number[]> {
-    const response = await this.ai.run('@cf/baai/bge-base-en-v1.5', {
+    const response = await this.ai.run('@cf/baai/bge-m3', {
       text: [text],
     });
     return (response as any).data[0];

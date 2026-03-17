@@ -26,7 +26,7 @@ Mukoko News is a **two-sided news platform**: publishers push content in, and co
 
 - **56+ RSS Sources** across 16 Pan-African countries (Zimbabwe primary market)
 - **AI-Powered**: Anthropic Claude for keyword extraction, quality scoring
-- **Hybrid Search**: Apache Doris funnel → Postgres hydration → ILIKE fallback
+- **Semantic Search**: BGE-M3 embeddings (pgvector) → Doris inverted index → ILIKE fallback
 - **Story Clustering**: Jaccard similarity groups related coverage
 - **Schema.org Compliant**: All responses follow NewsArticle conventions
 - **8 JSON-LD Types**: NewsArticle, Organization, BreadcrumbList, WebSite, WebPage, ItemList, CollectionPage, SoftwareApplication
@@ -130,10 +130,11 @@ Full API documentation: [api-schema.yml](api-schema.yml)
 ## Architecture
 
 ```
-Frontend (Vercel) ──Bearer Token──→ News API (Fly.io) ──→ Postgres (Supabase)
+Frontend (Vercel) ──Bearer Token──→ News API (Fly.io) ──→ Postgres + pgvector (Supabase)
                                                       ──→ CouchDB (doc store)
                                                       ──→ Doris (analytics/search)
-                                                      ──→ Anthropic Claude (AI)
+                                                      ──→ Anthropic Claude (AI text)
+                                                      ──→ Cloudflare Workers AI (BGE-M3 embeddings)
 
 MCP Server (local) ──Bearer Token──→ News API (Fly.io)
 ```

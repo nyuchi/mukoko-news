@@ -84,11 +84,14 @@ node src/index.js        # Run MCP server (stdio transport)
                        │ Bearer Token Auth (API_SECRET)
 ┌──────────────────────┼───────────────────────────────────────────┐
 │  NEWS API — FastAPI on Fly.io — mukoko-news-api.fly.dev          │
-│  12 API Routers (42+ endpoints) + 6 Background Jobs              │
+│  12 API Routers (42+ endpoints) + 7 Background Jobs              │
 │  ┌──────────┬──────────┬──────────┬──────────────────┐           │
 │  │ Postgres │ CouchDB  │ Doris    │ Anthropic Claude │           │
-│  │ Supabase │ Doc Store│ Analytics│ AI Processing    │           │
-│  └──────────┴──────────┴──────────┴──────────────────┘           │
+│  │ pgvector │ Doc Store│ Analytics│ AI Processing    │           │
+│  └──────────┴──────────┴──────────┼──────────────────┘           │
+│                                   │ Cloudflare Workers AI        │
+│                                   │ BGE-M3 Embeddings (1024-dim) │
+│                                   └──────────────────────────────┘
 └──────────────────────────────────────────────────────────────────┘
 
 ┌──────────────────────────────────────────────────────────────────┐
@@ -109,13 +112,14 @@ node src/index.js        # Run MCP server (stdio transport)
 
 ### Backend Stack (fly-worker)
 
-- **Runtime**: Fly.io (JNB region, shared CPU, 1GB RAM)
+- **Runtime**: Fly.io (JNB region, shared CPU, 2GB RAM)
 - **Framework**: FastAPI (Python)
-- **Database**: Postgres (Supabase, direct connection via asyncpg)
+- **Database**: Postgres (Supabase, direct connection via asyncpg, pgvector extension)
 - **Document Store**: CouchDB (article body storage, non-blocking writes)
 - **Analytics**: Apache Doris (search indexing, engagement metrics)
-- **AI**: Anthropic Claude (keyword extraction, quality scoring)
-- **Search**: Hybrid Doris funnel + Postgres hydration (ILIKE fallback)
+- **AI — Text**: Anthropic Claude (keyword extraction, quality scoring)
+- **AI — Embeddings**: BAAI/bge-m3 via Cloudflare Workers AI (1024-dim dense vectors)
+- **Search**: 3-tier funnel — Semantic (pgvector) → Doris (inverted index) → Postgres (ILIKE)
 - **Auth**: Bearer token (API_SECRET), OIDC JWT from id.mukoko.com (planned)
 
 ### MCP Server Stack
@@ -135,19 +139,40 @@ Services are in `fly-worker/src/services/`:
 - `keyword_extractor.py` - 3-stage keyword extraction (DB → section → AI)
 - `quality_scorer.py` - Deterministic quality scoring (textstat, 0-100)
 - `ai_client.py` - Anthropic Claude client (singleton)
+- `embeddings.py` - BGE-M3 embeddings via Cloudflare Workers AI (1024-dim)
 - `analytics.py` - In-memory event buffer, flushes to Doris every 30s
 - `couchdb.py` - CouchDB async HTTP client
 - `doris.py` - Apache Doris HTTP API client
+
+### Embedding Pipeline (BGE-M3)
+
+Articles are embedded using **BAAI/bge-m3** via Cloudflare Workers AI (`@cf/baai/bge-m3`):
+
+- **Model**: BGE-M3 (1024 dimensions, multilingual, 100+ languages)
+- **Provider**: Cloudflare Workers AI REST API (no local GPU needed)
+- **Storage**: pgvector on Supabase Postgres (`embedding_vector vector(1024)`)
+- **Index**: HNSW (m=16, ef_construction=128) with cosine similarity
+- **When**: Inline during AI processing + backfill job every 10 min
+- **Search**: `1 - (embedding_vector <=> query_vector)` cosine similarity
+
+**Pipeline flow**:
+1. RSS ingestion → AI processor → `embed_text(headline + description + body[:2000])`
+2. Cloudflare Workers AI returns 1024-dim dense vector
+3. Stored in `news.news_article.embedding_vector` via pgvector
+4. Search queries embed the query text → pgvector HNSW nearest neighbor lookup
+
+**Config**: `CF_ACCOUNT_ID` and `CF_AI_API_TOKEN` (Fly.io secrets). Embedding is gracefully skipped if CF credentials are not configured.
 
 ### Background Jobs (`fly-worker/src/jobs/`)
 
 | Job | Trigger | What It Does |
 |-----|---------|-------------|
-| `rss_collector` | Every 15 min | Fetch RSS, parse, insert, AI processing |
+| `rss_collector` | Every 15 min | Fetch RSS, parse, insert, AI processing + embeddings |
 | `engagement` | Every 5 min | Recalculate engagement scores |
 | `trending` | Every 30 min | Refresh trending keyword cache |
 | `health_checker` | Every 6 hours | Evaluate source health status |
 | `analytics_flush` | Every 30 sec | Flush analytics buffer to Doris |
+| `embedding_backfill` | Every 10 min | Generate BGE-M3 embeddings for unembedded articles |
 | `cleanup` | Daily @ 3 UTC | Delete old articles, orphaned data |
 
 ### Access Control
@@ -305,7 +330,7 @@ fly-worker/                  # ── PRODUCTION NEWS API ──
 │   │   ├── articles.py      # /api/article/:id, /api/article/:id/related
 │   │   ├── categories.py    # /api/categories, /api/trending-categories
 │   │   ├── sources.py       # /api/sources, /api/countries
-│   │   ├── search.py        # /api/search, /api/keywords
+│   │   ├── search.py        # /api/search, /api/keywords (3-tier: semantic → Doris → ILIKE)
 │   │   ├── engagement.py    # /api/articles/:id/like|save|view|engagement
 │   │   ├── stories.py       # /api/stories/trending, /api/stories/cluster/:id
 │   │   ├── authors.py       # /api/authors, /api/trending-authors, /api/featured-authors
@@ -313,15 +338,17 @@ fly-worker/                  # ── PRODUCTION NEWS API ──
 │   │   ├── admin.py         # /api/admin/* (6 endpoints)
 │   │   ├── analytics.py     # /api/analytics/* (8 public open data endpoints)
 │   │   └── user.py          # /api/user/bookmarks (stub)
-│   ├── jobs/                # Background jobs (6 scheduled)
+│   ├── jobs/                # Background jobs (7 scheduled)
 │   │   ├── rss_collector.py # RSS fetch + AI processing pipeline
-│   │   ├── ai_processor.py  # Keyword extraction + quality scoring
+│   │   ├── ai_processor.py  # Keyword extraction + quality scoring + embeddings
+│   │   ├── embedding_backfill.py # BGE-M3 backfill for unembedded articles
 │   │   ├── engagement.py    # Engagement score recalculation
 │   │   ├── trending.py      # Trending cache refresh
 │   │   ├── health_checker.py # Source health evaluation
 │   │   └── cleanup.py       # Daily data cleanup
 │   └── services/            # Business logic
 │       ├── ai_client.py     # Anthropic Claude singleton
+│       ├── embeddings.py    # BGE-M3 via Cloudflare Workers AI (1024-dim)
 │       ├── rss_parser.py    # RSS/Atom parsing (feedparser)
 │       ├── content_cleaner.py # HTML cleaning, text extraction
 │       ├── keyword_extractor.py # 3-stage keyword extraction
@@ -640,7 +667,7 @@ The following consumer-facing pages are migrating to the **Mukoko super app** (`
 - `GET /api/keywords` - Trending keywords for tag cloud
 - `GET /api/sources` - RSS sources with health and article counts
 - `GET /api/countries` - All 16 Pan-African countries
-- `GET /api/search` - Hybrid search (Doris funnel → Postgres hydration → ILIKE fallback)
+- `GET /api/search` - 3-tier search (Semantic BGE-M3 → Doris funnel → ILIKE fallback)
 - `GET /api/stories/trending` - Trending story clusters
 
 **Authors**:
@@ -692,6 +719,8 @@ fly secrets set API_SECRET=your-secret
 fly secrets set ADMIN_SESSION_SECRET=your-admin-secret
 fly secrets set DATABASE_URL=postgresql://...
 fly secrets set ANTHROPIC_API_KEY=sk-ant-...
+fly secrets set CF_ACCOUNT_ID=your-cf-account-id      # Cloudflare Workers AI (BGE-M3 embeddings)
+fly secrets set CF_AI_API_TOKEN=your-cf-ai-token       # Cloudflare API token with Workers AI access
 fly secrets set COUCHDB_URL=http://...
 fly secrets set DORIS_HTTP_URL=http://...
 ```
@@ -1065,7 +1094,7 @@ Country data is centralized in `src/lib/constants.ts` (frontend) and `dynamic_co
 12. **AI Keyword Extraction**: 3-stage (DB match → section → Claude AI)
 13. **Quality Scoring**: Deterministic textstat-based scoring (0-100)
 14. **Story Clustering**: Jaccard similarity on headlines, groups related coverage
-15. **Hybrid Search**: Doris funnel → Postgres hydration → ILIKE fallback
+15. **Semantic Search**: 3-tier funnel — BGE-M3 embeddings (pgvector) → Doris inverted index → ILIKE fallback
 16. **Engagement Scoring**: Composite score from views, likes, bookmarks, shares
 17. **Trending Topics**: Logarithmic-scaled tag cloud, cached every 30min
 

@@ -24,6 +24,7 @@ def create_scheduler() -> AsyncIOScheduler:
     from src.jobs.health_checker import check_source_health
     from src.jobs.cleanup import cleanup_stale_data
     from src.services.analytics import flush_analytics
+    from src.jobs.embedding_backfill import backfill_embeddings
 
     # RSS collection + inline AI processing: every 15 minutes
     scheduler.add_job(
@@ -76,6 +77,15 @@ def create_scheduler() -> AsyncIOScheduler:
         CronTrigger(hour=3, minute=0),
         id="cleanup",
         name="Stale Data Cleanup",
+        max_instances=1,
+    )
+
+    # Embedding backfill: every 10 minutes (catches articles without embeddings)
+    scheduler.add_job(
+        backfill_embeddings,
+        IntervalTrigger(minutes=10),
+        id="embedding_backfill",
+        name="Embedding Backfill (BGE-M3)",
         max_instances=1,
     )
 
