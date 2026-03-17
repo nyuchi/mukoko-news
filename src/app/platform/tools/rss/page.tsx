@@ -4,7 +4,7 @@ import { COUNTRIES } from "@/lib/constants";
 import { Rss, Globe, Tag, Newspaper, Copy, CheckCircle2 } from "lucide-react";
 import { useState } from "react";
 
-const API_BASE = "https://mukoko-news-backend.nyuchi.workers.dev";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://mukoko-news-api.fly.dev";
 
 const categoryFeeds = [
   "politics",

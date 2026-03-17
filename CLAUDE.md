@@ -6,11 +6,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Mukoko News is a Pan-African digital news aggregation platform. "Mukoko" means "Beehive" in Shona - where community gathers and stores knowledge. Primary market is Zimbabwe with expansion across 16 African countries.
 
-**Architecture**: Next.js 15 frontend with Cloudflare Workers backend
+**Architecture**: Next.js 15 frontend with Fly.io backend
 
 - `src/` - Next.js 15 frontend (App Router)
-- `backend/` - Cloudflare Workers API (Hono framework)
-- `database/` - D1 schema and migrations
+- `fly-worker/` - Fly.io FastAPI backend (Python, production)
+- `backend/` - Cloudflare Workers API (archived, replaced by fly-worker)
 
 ## Common Commands
 
@@ -25,28 +25,25 @@ npm run lint:fix         # ESLint auto-fix
 npm run typecheck        # TypeScript check
 npm run clean            # Clean build artifacts
 
-# Backend orchestration from root
-npm run dev:backend      # Start backend dev server
-npm run build:backend    # Build backend
-npm run deploy:backend   # Deploy to Cloudflare Workers
-npm run test:backend     # Run backend tests
+# Backend (fly-worker)
+cd fly-worker && uvicorn src.main:app --reload --port 8080  # Local dev
+cd fly-worker && pytest                                      # Run tests
 ```
 
-### Backend (`cd backend`)
+### Backend (`cd fly-worker`)
 
 ```bash
-npm run dev              # wrangler dev (local worker on port 8787)
-npm run deploy           # Clean, build, and deploy to Cloudflare
-npm run build            # wrangler deploy --dry-run
-npm run test             # vitest run (single run)
-npm run test:watch       # vitest (watch mode)
-npm run test:coverage    # vitest with v8 coverage report
-npm run typecheck        # tsc --noEmit
-npm run validate         # typecheck && build
+# Development
+uvicorn src.main:app --reload --port 8080  # Local dev server
+pytest                                      # Run tests
+pytest --cov                                # Tests with coverage
+pyright                                     # Type checking
+ruff check .                                # Lint
 
-# Database operations
-npm run db:migrate       # Apply schema to remote D1
-npm run db:local         # Apply schema to local D1
+# Deployment (Fly.io)
+fly deploy                                  # Deploy to production
+fly secrets set KEY=VALUE                   # Set environment secrets
+fly logs                                    # View production logs
 ```
 
 ## Architecture
@@ -61,53 +58,40 @@ npm run db:local         # Apply schema to local D1
 - **TypeScript**: Full type safety with strict mode
 - **State**: React Context (ThemeContext, PreferencesContext)
 
-### Backend Stack
+### Backend Stack (fly-worker)
 
-- **Runtime**: Cloudflare Workers (edge computing)
-- **Framework**: Hono (lightweight, fast)
-- **Database**: D1 (SQLite at edge)
-- **Cache**: KV Namespaces (AUTH_STORAGE, CACHE_STORAGE)
-- **Real-time**: Durable Objects (4 classes)
-- **AI**: Workers AI for content processing
-- **Search**: Vectorize for semantic search
-- **Auth**: OIDC via id.mukoko.com, Mobile SMS, Web3 wallets
+- **Runtime**: Fly.io (JNB region, shared CPU, 1GB RAM)
+- **Framework**: FastAPI (Python)
+- **Database**: Postgres (Supabase, direct connection via asyncpg)
+- **Document Store**: CouchDB (article body storage, non-blocking writes)
+- **Analytics**: Apache Doris (search indexing, engagement metrics)
+- **AI**: Anthropic Claude (keyword extraction, quality scoring)
+- **Search**: Hybrid Doris funnel + Postgres hydration (ILIKE fallback)
+- **Auth**: Bearer token (API_SECRET), OIDC JWT from id.mukoko.com (planned)
 
 ### Backend Services Pattern
 
-Services are in `backend/services/`. Key services include:
+Services are in `fly-worker/src/services/`:
 
-**Core Services**:
-- `ArticleService` - Article CRUD and queries
-- `ArticleAIService` - AI-powered content processing
-- `SimpleRSSService` - RSS feed aggregation
-- `NewsSourceManager` - News source management
-- `CategoryManager` - Category operations (single source of truth)
-- `CountryService` - Pan-African country management
-- `StoryClusteringService` - Groups similar articles using Jaccard similarity
-- `SourceHealthService` - RSS source health monitoring (healthy/degraded/failing/critical)
+- `rss_parser.py` - RSS/Atom feed parsing (feedparser)
+- `content_cleaner.py` - HTML cleaning, text extraction, word counting
+- `keyword_extractor.py` - 3-stage keyword extraction (DB → section → AI)
+- `quality_scorer.py` - Deterministic quality scoring (textstat, 0-100)
+- `ai_client.py` - Anthropic Claude client (singleton)
+- `analytics.py` - In-memory event buffer, flushes to Doris every 30s
+- `couchdb.py` - CouchDB async HTTP client
+- `doris.py` - Apache Doris HTTP API client
 
-**Auth Services**:
-- `AuthProviderService` - Unified auth service with RBAC
-- `OIDCAuthService` - OIDC token validation
+### Background Jobs (`fly-worker/src/jobs/`)
 
-**Data Services**:
-- `D1Service` / `D1CacheService` - Database operations and caching
-- `D1UserService` - User database operations
-- `PersonalizedFeedService` - User-specific feeds
-
-**Infrastructure Services**:
-- `AnalyticsEngineService` - Metrics and analytics
-- `CloudflareImagesService` - Image optimization
-- `AISearchService` - Semantic search (Vectorize)
-- `RateLimitService` - Rate limiting
-- `CSRFService` - CSRF protection
-- `ObservabilityService` - Logging and monitoring
-
-**Durable Objects**:
-- `ArticleInteractionsDO` - Article engagement tracking
-- `UserBehaviorDO` - User behavior tracking
-- `RealtimeCountersDO` - Live counter updates
-- `RealtimeAnalyticsDO` - Real-time analytics aggregation
+| Job | Trigger | What It Does |
+|-----|---------|-------------|
+| `rss_collector` | Every 15 min | Fetch RSS, parse, insert, AI processing |
+| `engagement` | Every 5 min | Recalculate engagement scores |
+| `trending` | Every 30 min | Refresh trending keyword cache |
+| `health_checker` | Every 6 hours | Evaluate source health status |
+| `analytics_flush` | Every 30 sec | Flush analytics buffer to Doris |
+| `cleanup` | Daily @ 3 UTC | Delete old articles, orphaned data |
 
 ### Access Control
 
@@ -229,76 +213,109 @@ src/
 ## Backend Structure
 
 ```text
-backend/
-├── index.ts                 # API entry point and route definitions
-├── admin/
-│   ├── index.ts             # Admin UI HTML and login logic
-│   └── login.html           # Admin login form
-├── durable-objects/         # Real-time state management
-├── middleware/
-│   ├── apiAuth.ts           # Bearer token authentication
-│   ├── oidcAuth.ts          # OIDC authentication
-│   └── __tests__/           # Middleware tests
-├── services/                # Core business logic (27+ services)
-│   ├── __tests__/           # Service tests (Vitest)
-│   └── *.ts                 # Individual service files
-├── wrangler.jsonc           # Cloudflare Workers config
-├── vitest.config.ts         # Test configuration
-├── package.json             # Backend dependencies
-└── tsconfig.json            # TypeScript config
+fly-worker/
+├── src/
+│   ├── main.py              # FastAPI app, CORS, router registration, lifespan
+│   ├── config.py            # pydantic-settings configuration
+│   ├── db.py                # asyncpg connection pool, migrations
+│   ├── scheduler.py         # APScheduler background job configuration
+│   ├── api/                 # API routers (12 modules)
+│   │   ├── auth.py          # Bearer token authentication
+│   │   ├── feeds.py         # /api/feeds, /api/feeds/sectioned, /api/news-bytes
+│   │   ├── articles.py      # /api/article/:id, /api/article/:id/related
+│   │   ├── categories.py    # /api/categories, /api/trending-categories
+│   │   ├── sources.py       # /api/sources, /api/countries
+│   │   ├── search.py        # /api/search, /api/keywords
+│   │   ├── engagement.py    # /api/articles/:id/like|save|view|engagement
+│   │   ├── stories.py       # /api/stories/trending, /api/stories/cluster/:id
+│   │   ├── authors.py       # /api/authors, /api/trending-authors, /api/featured-authors
+│   │   ├── stats.py         # /api/health, /api/stats
+│   │   ├── admin.py         # /api/admin/* (6 endpoints)
+│   │   ├── analytics.py     # /api/analytics/* (8 public endpoints)
+│   │   └── user.py          # /api/user/bookmarks (stub)
+│   ├── jobs/                # Background jobs (6 scheduled)
+│   │   ├── rss_collector.py # RSS fetch + AI processing pipeline
+│   │   ├── ai_processor.py  # Keyword extraction + quality scoring
+│   │   ├── engagement.py    # Engagement score recalculation
+│   │   ├── trending.py      # Trending cache refresh
+│   │   ├── health_checker.py # Source health evaluation
+│   │   └── cleanup.py       # Daily data cleanup
+│   └── services/            # Business logic
+│       ├── ai_client.py     # Anthropic Claude singleton
+│       ├── rss_parser.py    # RSS/Atom parsing (feedparser)
+│       ├── content_cleaner.py # HTML cleaning, text extraction
+│       ├── keyword_extractor.py # 3-stage keyword extraction
+│       ├── quality_scorer.py # Textstat-based quality scoring
+│       ├── analytics.py     # Event buffer → Doris
+│       ├── couchdb.py       # CouchDB async client
+│       └── doris.py         # Apache Doris HTTP client
+├── tests/                   # pytest test suite
+├── fly.toml                 # Fly.io deployment config
+├── pyproject.toml           # Python project config
+└── requirements.txt         # Python dependencies
 ```
+
+**Note**: `backend/` contains the archived Cloudflare Workers backend (Hono/TypeScript). It is no longer deployed. All production traffic goes through `fly-worker/`.
 
 ## Database
 
-Schema in `database/schema.sql`. 23 migrations in `database/migrations/`.
+**Postgres** (Supabase) with schemas: `public`, `news`, `engagement`, `identity`, `system`, `sync`.
 
-**Key Tables**: users, articles, categories, keywords, news_sources, rss_sources (with health columns: consecutive_failures, last_error_at), user_interactions, countries, author_profiles
+Migrations in `fly-worker/src/db.py` (applied via `_migrations` tracking table).
 
-**Roles (RBAC)**: admin (active), moderator, support, author, user (disabled)
+**Key Tables** (news schema): `news_article`, `feed_source`, `news_media_organization`, `defined_term`, `article_keyword`, `article_authorship`, `trending_cache`, `country`, `collection_log`
 
-**OIDC Support**: Standard claims (sub, email, email_verified, picture, etc.) with multi-provider auth linking
+**Key Tables** (other schemas): `engagement.interest_category`, `identity.person`, `system.collection_log`
 
 ## API
 
-**Base URL**: `https://mukoko-news-backend.nyuchi.workers.dev`
+**Base URL**: `https://mukoko-news-api.fly.dev`
 
 ### Endpoint Protection
 
 - `/api/*` - **Protected** (requires bearer token: API_SECRET or OIDC JWT)
-- `/api/health` - Public (no auth required)
-- `/api/admin/*` - Admin only (separate admin auth + RBAC)
+- `/health`, `/api/health` - Public (no auth required)
+- `/api/analytics/*` - Public (open data, no auth required)
+- `/api/admin/*` - Admin only (requires ADMIN_SESSION_SECRET)
 
 ### Authentication Methods
 
 1. **API_SECRET** - Bearer token for frontend (Vercel) to backend auth
-   - Set via: `npx wrangler secret put API_SECRET`
+   - Set via: `fly secrets set API_SECRET=your-secret`
    - Environment variable: `NEXT_PUBLIC_API_SECRET`
    - Configured in: `.env.local` (development), Vercel (production)
 
-2. **OIDC JWT** - User authentication tokens from id.mukoko.com
-   - Validated by oidcAuth middleware
-   - Takes priority over API_SECRET
-   - Sets context: `user`, `userId`, `isAuthenticated`
-
-3. **Mobile Auth** - SMS-based authentication for mobile apps
-
-4. **Web3 Auth** - Ethereum/EVM wallet authentication
+2. **OIDC JWT** - User authentication tokens from id.mukoko.com (planned)
+   - JWTs with 2 dots are accepted but not yet validated
+   - Full OIDC validation is a future milestone
 
 ### Key Endpoints
 
-- `GET /api/feeds` - Get articles feed with filtering
-- `GET /api/article/:id` - Get single article
-- `GET /api/categories` - Get categories
-- `GET /api/keywords` - Get trending topics/keywords
-- `GET /api/sources` - Get all enabled RSS sources with article counts (JOIN query)
-- `GET /api/newsbytes` - Get NewsBytes articles
-- `POST /api/feed/collect` - Trigger RSS collection
-- `GET /api/admin/*` - Admin endpoints
-- `GET /api/admin/sources/health` - Source health summary with alerts
-- `GET /api/admin/sources/health/:sourceId` - Single source health
-- `POST /api/admin/sources/health/:sourceId/reset` - Reset source error tracking
+- `GET /api/feeds` - Articles feed with filtering, pagination, sorting
+- `GET /api/feeds/sectioned` - Sectioned feed (top stories, by category, latest)
+- `GET /api/article/:id` - Single article (UUID or slug)
+- `GET /api/article/:id/related` - Related articles
+- `GET /api/categories` - All enabled categories with counts
+- `GET /api/trending-categories` - Trending categories with growth rate
+- `GET /api/keywords` - Trending keywords for tag cloud
+- `GET /api/sources` - RSS sources with health and article counts
+- `GET /api/countries` - All 16 Pan-African countries
+- `GET /api/news-bytes` - NewsBytes (short-form articles)
+- `GET /api/search` - Hybrid search (Doris funnel → Postgres hydration → ILIKE fallback)
+- `GET /api/stories/trending` - Trending story clusters
+- `GET /api/authors` - Authors by article count
+- `GET /api/trending-authors` - Trending authors (last 7d)
+- `GET /api/featured-authors` - Top authors by total output
+- `GET /api/stats` - Database statistics
+- `POST /api/articles/:id/like` - Like article
+- `POST /api/articles/:id/save` - Bookmark article
+- `POST /api/articles/:id/view` - Track view
+- `GET /api/articles/:id/engagement` - Engagement counts
+- `GET /api/user/bookmarks` - User bookmarks (stub, needs OIDC)
+- `GET /api/analytics/*` - Public analytics (8 endpoints)
+- `GET /api/admin/*` - Admin endpoints (6 endpoints)
 
-**API Auth Middleware**: `backend/middleware/apiAuth.ts`
+**API Auth Middleware**: `fly-worker/src/api/auth.py`
 **OpenAPI Schema**: `api-schema.yml`
 
 ## Environment Variables
@@ -306,34 +323,37 @@ Schema in `database/schema.sql`. 23 migrations in `database/migrations/`.
 ### Frontend (.env.local)
 
 ```bash
-NEXT_PUBLIC_API_URL=https://mukoko-news-backend.nyuchi.workers.dev
+NEXT_PUBLIC_API_URL=https://mukoko-news-api.fly.dev
 NEXT_PUBLIC_BASE_URL=https://news.mukoko.com  # Base URL for SEO/schema.org (optional, has default)
 NEXT_PUBLIC_API_SECRET=your-api-secret  # Optional: for direct browser auth
 API_SECRET=your-api-secret               # Server-side API authentication
 ```
 
-### Backend (Cloudflare Secrets)
+### Backend (Fly.io Secrets)
 
 ```bash
-npx wrangler secret put API_SECRET
-npx wrangler secret put ADMIN_SESSION_SECRET
-npx wrangler secret put OIDC_CLIENT_SECRET
+fly secrets set API_SECRET=your-secret
+fly secrets set ADMIN_SESSION_SECRET=your-admin-secret
+fly secrets set DATABASE_URL=postgresql://...
+fly secrets set ANTHROPIC_API_KEY=sk-ant-...
+fly secrets set COUCHDB_URL=http://...
+fly secrets set DORIS_HTTP_URL=http://...
 ```
 
 ## Deployment
 
 **Frontend**: Auto-deploys to Vercel on push to main
 
-**Backend**: Deployed via CI/CD on main branch (after tests pass)
+**Backend**: Deployed to Fly.io
 ```bash
-cd backend && npm run deploy
+cd fly-worker && fly deploy
 ```
 
 **CI/CD Pipeline** (`.github/workflows/deploy.yml`):
 1. Test frontend (typecheck, lint, build)
-2. Test backend (vitest, typecheck, build)
-3. Deploy backend (migrations + wrangler deploy)
-4. Health check verification
+2. Deploy frontend to Vercel
+3. Deploy backend to Fly.io
+4. Health check verification (`https://mukoko-news-api.fly.dev/health`)
 
 ## Testing
 
@@ -380,65 +400,21 @@ npm run test:coverage     # With v8 coverage report
 
 **Test Pattern**: Vitest with jsdom environment, React Testing Library
 
-### Backend Testing (Vitest)
+### Backend Testing (pytest)
 
 ```bash
-cd backend
-npm run test              # Single run
-npm run test:watch        # Watch mode
-npm run test:coverage     # With v8 coverage report
+cd fly-worker
+pytest                    # Single run
+pytest --cov              # With coverage report
 ```
 
-**Test Files** (548 tests in `backend/services/__tests__/`):
-- `ArticleAIService.test.ts` - AI content processing, keyword extraction, quality scoring, embeddings, JSON edge cases (67 tests)
-- `StoryClusteringService.test.ts` - Title normalization, Jaccard similarity, clustering (41 tests)
-- `CategoryManager.test.ts` - Category operations, batch updates, cleanup (36 tests)
-- `AISearchService.test.ts` - Semantic search, keyword fallback, AI insights, SQL injection prevention (35 tests)
-- `PersonalizedFeedService.test.ts` - Personalized feed generation, scoring algorithms, diversity factors, large preference lists (21 tests)
-- `ArticleService.test.ts` - Slug generation, content extraction
-- `ArticleInteractionsDO.test.ts` - Durable Object engagement tracking
-- `D1CacheService.test.ts` - Caching logic
-- `D1UserService.test.ts` - User database operations
-- `SimpleRSSService.test.ts` - RSS feed parsing and collection
-- `RateLimitService.test.ts` - Rate limiting
-- `CSRFService.test.ts` - CSRF protection
-- `OIDCAuthService.test.ts` - OIDC authentication
-- `SourceHealthService.test.ts` - Source health monitoring, classification, alerts, batch recording, reset (38 tests)
+**Test Files** (`fly-worker/tests/`):
+- `test_content_cleaner.py` - HTML cleaning, text extraction
+- `test_engagement.py` - Engagement scoring
+- `test_quality_scorer.py` - Quality scoring algorithm
+- `test_rss_parser.py` - RSS/Atom parsing
 
-`backend/middleware/__tests__/`:
-- `apiAuth.test.ts` - API authentication middleware
-- `oidcAuth.test.ts` - OIDC authentication middleware
-
-**Mock Pattern**: Mock D1Database with `prepare().bind().first/all/run()` chain
-
-**Pre-commit Hook**: Runs typecheck + build validation via Husky
-
-### Total Test Count: 985 tests (437 frontend + 548 backend)
-
-## Cloudflare Bindings
-
-Defined in `wrangler.jsonc`:
-
-**Storage**:
-- `DB` - D1 database
-- `AUTH_STORAGE`, `CACHE_STORAGE` - KV namespaces
-
-**Durable Objects**:
-- `ARTICLE_INTERACTIONS` - ArticleInteractionsDO
-- `USER_BEHAVIOR` - UserBehaviorDO
-- `REALTIME_COUNTERS` - RealtimeCountersDO
-- `REALTIME_ANALYTICS` - RealtimeAnalyticsDO
-
-**AI & Search**:
-- `AI` - Workers AI
-- `VECTORIZE_INDEX` - Semantic search
-
-**Media**:
-- `IMAGES` - Cloudflare Images
-
-**Analytics Datasets**:
-- NEWS_ANALYTICS, SEARCH_ANALYTICS, CATEGORY_ANALYTICS
-- USER_ANALYTICS, PERFORMANCE_ANALYTICS, AI_INSIGHTS_ANALYTICS
+**Test Pattern**: pytest with async mode via `pytest-asyncio`
 
 ## Theme System
 
@@ -687,10 +663,9 @@ The embed module provides embeddable news card iframes for sister apps (e.g., we
 
 ### Backend Error Handling
 
-- Hono responses: `c.json({ error, message }, statusCode)`
-- Standard HTTP status codes: 400, 401, 403, 404, 500
-- Timestamp inclusion in error responses
-- Console logging with `[SERVICE]` prefix
+- FastAPI HTTPException with status codes: 400, 401, 403, 404, 500
+- Timestamp inclusion in responses
+- Console logging with `[SERVICE]` prefix (e.g., `[RSS]`, `[SEARCH]`, `[ADMIN]`)
 
 ## Pan-African Country Support
 
@@ -760,17 +735,18 @@ Country data is centralized in `src/lib/constants.ts` (single source of truth).
 - `src/app/sources/page.tsx` - Sources directory with search, filters, sort, and health status indicators
 - `src/app/sources/layout.tsx` - Sources page SEO metadata
 
-### Backend
-- `backend/index.ts` - API entry point and route definitions
-- `backend/wrangler.jsonc` - Cloudflare Workers config
-- `backend/services/NewsSourceManager.ts` - News source management
-- `backend/services/ArticleAIService.ts` - AI content processing (keywords, quality, embeddings)
-- `backend/services/AISearchService.ts` - Semantic search with Vectorize
-- `backend/services/PersonalizedFeedService.ts` - User-specific feed generation
-- `backend/services/StoryClusteringService.ts` - Article clustering with Jaccard similarity
-- `backend/services/SourceHealthService.ts` - RSS source health monitoring (healthy/degraded/failing/critical)
-- `backend/services/CategoryManager.ts` - Category operations (single source of truth)
-- `backend/vitest.config.ts` - Backend test configuration
+### Backend (fly-worker)
+- `fly-worker/src/main.py` - FastAPI app entry point, CORS, router registration
+- `fly-worker/src/config.py` - pydantic-settings configuration
+- `fly-worker/src/db.py` - asyncpg pool, migrations
+- `fly-worker/src/api/auth.py` - Bearer token authentication middleware
+- `fly-worker/src/api/feeds.py` - Feed endpoints (most critical, powers homepage)
+- `fly-worker/src/api/search.py` - Hybrid search (Doris → Postgres → ILIKE fallback)
+- `fly-worker/src/jobs/rss_collector.py` - RSS collection + AI processing pipeline
+- `fly-worker/src/jobs/ai_processor.py` - Keyword extraction + quality scoring
+- `fly-worker/src/services/keyword_extractor.py` - 3-stage keyword extraction
+- `fly-worker/src/services/quality_scorer.py` - Textstat-based quality scoring
+- `fly-worker/fly.toml` - Fly.io deployment config
 
 ### Config
 - `next.config.ts` - Next.js configuration

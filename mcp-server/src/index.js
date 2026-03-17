@@ -18,7 +18,7 @@ import { z } from "@modelcontextprotocol/sdk/zod.js";
 
 const API_BASE =
   process.env.MUKOKO_API_URL ||
-  "https://mukoko-news-backend.nyuchi.workers.dev";
+  "https://mukoko-news-api.fly.dev";
 const API_SECRET = process.env.MUKOKO_API_SECRET || "";
 
 /**
@@ -153,7 +153,7 @@ server.resource(
           text: [
             "Mukoko News API — OpenAPI 3.0 Schema Reference",
             "",
-            "Base URL: https://mukoko-news-backend.nyuchi.workers.dev/api",
+            "Base URL: https://mukoko-news-api.fly.dev/api",
             "",
             "Core Models (Schema.org NewsArticle):",
             "- Article: id, headline, slug, description, content_snippet, author_name, publisher_name, publisher_id, date_published, image, main_entity_of_page, article_section_id, about_country_id, view_count, like_count, bookmark_count, keywords[]",

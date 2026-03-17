@@ -1,6 +1,8 @@
-"""Category endpoints — /api/categories."""
+"""Category endpoints — /api/categories, /api/trending-categories."""
 
-from fastapi import APIRouter, Depends
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, Depends, Query
 
 from src.db import get_pool
 from src.api.auth import require_api_key
@@ -41,3 +43,48 @@ async def get_categories(
     ]
 
     return {"categories": categories}
+
+
+@router.get("/trending-categories")
+async def get_trending_categories(
+    limit: int = Query(8, ge=1, le=50),
+    _token: str | None = Depends(require_api_key),
+):
+    """Get trending categories ranked by recent article volume and growth."""
+    pool = await get_pool()
+
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT ic.id, ic.name, ic.id AS slug,
+                      COUNT(a.id) FILTER (WHERE a.datepublished >= NOW() - INTERVAL '7 days') AS article_count,
+                      COUNT(a.id) FILTER (WHERE a.datepublished >= NOW() - INTERVAL '7 days') AS recent_count,
+                      COUNT(a.id) FILTER (WHERE a.datepublished >= NOW() - INTERVAL '14 days'
+                                            AND a.datepublished < NOW() - INTERVAL '7 days') AS prev_count
+               FROM engagement.interest_category ic
+               LEFT JOIN news.news_article a ON a.primary_interest_category_id = ic.id AND a.status = 'published'
+               WHERE ic.is_active = TRUE
+               GROUP BY ic.id, ic.name
+               HAVING COUNT(a.id) FILTER (WHERE a.datepublished >= NOW() - INTERVAL '7 days') > 0
+               ORDER BY COUNT(a.id) FILTER (WHERE a.datepublished >= NOW() - INTERVAL '7 days') DESC
+               LIMIT $1""",
+            limit,
+        )
+
+    trending = []
+    for r in rows:
+        recent = r["recent_count"] or 0
+        prev = r["prev_count"] or 0
+        growth_rate = ((recent - prev) / max(prev, 1)) * 100 if prev > 0 else (100.0 if recent > 0 else 0.0)
+        trending.append({
+            "id": r["id"],
+            "name": r["name"],
+            "slug": r["slug"],
+            "article_count": r["article_count"],
+            "growth_rate": round(growth_rate, 1),
+        })
+
+    return {
+        "success": True,
+        "trending": trending,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }

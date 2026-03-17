@@ -15,7 +15,6 @@ from src.db import get_pool
 from src.services.rss_parser import parse_feed
 from src.services.content_cleaner import clean_html, extract_text, count_words, estimate_reading_time
 from src.jobs.ai_processor import process_articles_batch
-from src.jobs.embedding_gen import generate_embeddings_batch
 from src.services.couchdb import get_couchdb
 from src.services.doris import get_doris
 
@@ -56,7 +55,6 @@ async def collect_feeds() -> None:
         if new_article_ids:
             print(f"[RSS] Processing {len(new_article_ids)} new articles with AI...")
             await process_articles_batch(new_article_ids)
-            await generate_embeddings_batch(new_article_ids)
 
         duration = int((time.time() - start) * 1000)
         print(

@@ -29,7 +29,7 @@ async function reportErrorToBackend(
 
   const apiUrl =
     process.env.NEXT_PUBLIC_API_URL ||
-    "https://mukoko-news-backend.nyuchi.workers.dev";
+    "https://mukoko-news-api.fly.dev";
 
   try {
     const response = await fetch(`${apiUrl}/api/errors`, {

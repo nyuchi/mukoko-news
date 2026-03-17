@@ -84,7 +84,7 @@ npm run deploy
 Create `.env.local` in the root directory:
 
 ```env
-NEXT_PUBLIC_API_URL=https://mukoko-news-backend.nyuchi.workers.dev
+NEXT_PUBLIC_API_URL=https://mukoko-news-api.fly.dev
 NEXT_PUBLIC_BASE_URL=https://news.mukoko.com  # Optional: Base URL for SEO/JSON-LD
 NEXT_PUBLIC_API_SECRET=your_api_secret_here
 ```
@@ -128,7 +128,7 @@ NEXT_PUBLIC_API_SECRET=your_api_secret_here
 
 ## API
 
-**Base URL**: `https://mukoko-news-backend.nyuchi.workers.dev`
+**Base URL**: `https://mukoko-news-api.fly.dev`
 
 ### Public Endpoints (Require API Key)
 

@@ -89,6 +89,7 @@ from src.api.stories import router as stories_router
 from src.api.authors import router as authors_router
 from src.api.admin import router as admin_router
 from src.api.analytics import router as analytics_router
+from src.api.user import router as user_router
 
 app.include_router(feeds_router)
 app.include_router(articles_router)
@@ -101,6 +102,7 @@ app.include_router(stories_router)
 app.include_router(authors_router)
 app.include_router(admin_router)
 app.include_router(analytics_router)  # Public — no auth required
+app.include_router(user_router)
 
 
 # ── Root health endpoint (for Fly.io health checks) ─────────

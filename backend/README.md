@@ -46,7 +46,7 @@ Test Locally (npm run dev)
     ↓
 Manual Deploy (npm run deploy)
     ↓
-Production (mukoko-news-backend.nyuchi.workers.dev)
+Production (mukoko-news-api.fly.dev)
 ```
 
 ## Development
@@ -73,7 +73,7 @@ npm run deploy
 Worker configuration: `backend/wrangler.jsonc`
 
 - **Name**: mukoko-news-backend
-- **Route**: mukoko-news-backend.nyuchi.workers.dev/*
+- **Route**: mukoko-news-api.fly.dev/*
 - **Main**: index.ts
 
 ## Architecture

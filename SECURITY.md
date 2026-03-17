@@ -42,7 +42,7 @@ Include in your report:
 
 ### API Authentication
 
-All API endpoints (`https://mukoko-news-backend.nyuchi.workers.dev`) are protected with bearer token authentication:
+All API endpoints (`https://mukoko-news-api.fly.dev`) are protected with bearer token authentication:
 
 #### 1. API_SECRET (Frontend-to-Backend)
 

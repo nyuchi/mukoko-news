@@ -132,7 +132,7 @@ jobs:
           response=$(curl -s -o /dev/null -w "%{http_code}" \
             -H "User-Agent: GitHub-Actions-Health-Check" \
             -H "Accept: application/json" \
-            https://mukoko-news-backend.nyuchi.workers.dev/api/health)
+            https://mukoko-news-api.fly.dev/api/health)
 
           if [ $response -eq 200 ]; then
             echo "Backend is healthy!"

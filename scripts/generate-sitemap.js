@@ -10,7 +10,7 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
 const SITE_URL = 'https://news.mukoko.com'
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://mukoko-news-backend.nyuchi.workers.dev'
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://mukoko-news-api.fly.dev'
 
 // Static pages
 const STATIC_PAGES = [

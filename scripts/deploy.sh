@@ -36,13 +36,13 @@ npm run deploy
 if [ $? -eq 0 ]; then
     echo ""
     echo "✅ Backend deployment successful!"
-    echo "🌐 API: https://mukoko-news-backend.nyuchi.workers.dev"
+    echo "🌐 API: https://mukoko-news-api.fly.dev"
     echo ""
     echo "🔍 Verifying deployment..."
     sleep 3
 
     # Test health endpoint
-    if curl -s https://mukoko-news-backend.nyuchi.workers.dev/api/health | grep -q "ok"; then
+    if curl -s https://mukoko-news-api.fly.dev/api/health | grep -q "ok"; then
         echo "✅ Health check passed"
     else
         echo "⚠️  Health check pending (may still be propagating)"

@@ -118,7 +118,7 @@ Create `.env.local` in the root directory:
 
 ```env
 # API URL
-NEXT_PUBLIC_API_URL=https://mukoko-news-backend.nyuchi.workers.dev
+NEXT_PUBLIC_API_URL=https://mukoko-news-api.fly.dev
 
 # API Secret (for server-side requests)
 API_SECRET="your_api_secret_here"

@@ -32,9 +32,9 @@ info:
     url: https://opensource.org/licenses/MIT
 
 servers:
-  - url: https://mukoko-news-backend.nyuchi.workers.dev/api
-    description: Production (Cloudflare Workers)
-  - url: http://localhost:8787/api
+  - url: https://mukoko-news-api.fly.dev/api
+    description: Production (Fly.io)
+  - url: http://localhost:8080/api
     description: Local development
 
 tags:

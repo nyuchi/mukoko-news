@@ -1,4 +1,4 @@
-"""Author endpoints — /api/authors, /api/author/:slug."""
+"""Author endpoints — /api/authors, /api/author/:slug, /api/trending-authors, /api/featured-authors."""
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
 
@@ -84,6 +84,56 @@ async def search_authors(
                ORDER BY article_count DESC
                LIMIT $2""",
             f"%{q}%",
+            limit,
+        )
+
+    return {"authors": [dict(r) for r in rows]}
+
+
+@router.get("/trending-authors")
+async def get_trending_authors(
+    limit: int = Query(5, ge=1, le=50),
+    _token: str | None = Depends(require_api_key),
+):
+    """Get trending authors by recent article output (last 7 days)."""
+    pool = await get_pool()
+
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT p.id::text, p.name,
+                      COUNT(a.id) AS article_count
+               FROM identity.person p
+               JOIN news.article_authorship aa ON aa.person_id = p.id
+               JOIN news.news_article a ON a.id = aa.article_id
+               WHERE a.status = 'published'
+                 AND a.datepublished >= NOW() - INTERVAL '7 days'
+               GROUP BY p.id, p.name
+               ORDER BY COUNT(a.id) DESC
+               LIMIT $1""",
+            limit,
+        )
+
+    return {
+        "trending_authors": [dict(r) for r in rows],
+        "timeframe": "7d",
+    }
+
+
+@router.get("/featured-authors")
+async def get_featured_authors(
+    limit: int = Query(5, ge=1, le=50),
+    _token: str | None = Depends(require_api_key),
+):
+    """Get featured/top authors by total article count."""
+    pool = await get_pool()
+
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT id::text, name, description AS bio, article_count
+               FROM identity.person
+               WHERE article_count > 0
+               ORDER BY article_count DESC
+               LIMIT $1""",
             limit,
         )
 
