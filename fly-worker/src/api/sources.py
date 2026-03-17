@@ -21,17 +21,17 @@ async def get_sources(
                       fs.feed_url AS rss_feed_url, fs.area_served,
                       fs.article_section_id, fs.health_status, fs.priority,
                       fs.last_fetched_at, fs.total_fetch_count, fs.total_error_count,
-                      fs.last_error,
+                      fs.last_fetch_error,
                       COUNT(a.id) AS article_count,
                       MAX(a.datepublished) AS latest_article_at
                FROM news.feed_source fs
                JOIN news.news_media_organization org ON fs.organization_id = org.id
                LEFT JOIN news.news_article a ON a.publisher_organization_id = org.id AND a.status = 'published'
-               WHERE fs.enabled = TRUE
+               WHERE fs.is_active = TRUE
                GROUP BY org.id, org.name, org.url,
                         fs.feed_url, fs.area_served, fs.article_section_id,
                         fs.health_status, fs.priority, fs.last_fetched_at,
-                        fs.total_fetch_count, fs.total_error_count, fs.last_error
+                        fs.total_fetch_count, fs.total_error_count, fs.last_fetch_error
                ORDER BY fs.priority DESC, org.name"""
         )
 
@@ -49,7 +49,7 @@ async def get_sources(
             "last_fetched_at": r["last_fetched_at"].isoformat() if r.get("last_fetched_at") else None,
             "total_fetch_count": r.get("total_fetch_count", 0),
             "total_error_count": r.get("total_error_count", 0),
-            "last_error": r.get("last_error"),
+            "last_error": r.get("last_fetch_error"),
             "article_count": r["article_count"],
             "latest_article_at": r["latest_article_at"].isoformat() if r.get("latest_article_at") else None,
         })

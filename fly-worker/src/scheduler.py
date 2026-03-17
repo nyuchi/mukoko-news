@@ -23,6 +23,7 @@ def create_scheduler() -> AsyncIOScheduler:
     from src.jobs.trending import refresh_trending
     from src.jobs.health_checker import check_source_health
     from src.jobs.cleanup import cleanup_stale_data
+    from src.services.analytics import flush_analytics
 
     # RSS collection + inline AI processing: every 15 minutes
     scheduler.add_job(
@@ -57,6 +58,15 @@ def create_scheduler() -> AsyncIOScheduler:
         CronTrigger(hour="*/6"),
         id="health_checker",
         name="Source Health Check",
+        max_instances=1,
+    )
+
+    # Analytics buffer flush: every 30 seconds
+    scheduler.add_job(
+        flush_analytics,
+        IntervalTrigger(seconds=30),
+        id="analytics_flush",
+        name="Analytics Buffer Flush",
         max_instances=1,
     )
 

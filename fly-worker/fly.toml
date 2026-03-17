@@ -8,6 +8,11 @@ primary_region = "jnb"
   CORS_ORIGINS = "https://news.mukoko.com,https://mukoko-news.vercel.app,http://localhost:3000"
   LOG_LEVEL = "info"
   ENVIRONMENT = "production"
+  # CouchDB and Doris URLs — internal Fly.io addresses (secrets set via fly secrets)
+  COUCHDB_URL = "http://couchdb.internal:5984"
+  COUCHDB_DATABASE = "mukoko_articles"
+  DORIS_HTTP_URL = "http://doris-fe.internal:8030"
+  DORIS_DATABASE = "mukoko_analytics"
 
 [http_service]
   internal_port = 8080

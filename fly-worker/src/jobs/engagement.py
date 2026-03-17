@@ -8,6 +8,7 @@ import math
 from datetime import datetime, timedelta, timezone
 
 from src.db import get_pool
+from src.services.doris import get_doris
 
 
 async def recalc_engagement_scores() -> None:
@@ -17,13 +18,12 @@ async def recalc_engagement_scores() -> None:
 
     async with pool.acquire() as conn:
         articles = await conn.fetch(
-            """SELECT a.id, e.view_count, e.like_count, e.bookmark_count,
-                      e.share_count, a.datepublished, a.engagement_score
+            """SELECT a.id, a.view_count, a.like_count, a.bookmark_count,
+                      a.share_count, a.datepublished, a.engagement_score
                FROM news.news_article a
-               JOIN engagement.article_counters e ON e.article_id = a.id
                WHERE a.updated_at >= $1
                  AND a.status = 'published'
-                 AND (e.view_count > 0 OR e.like_count > 0 OR e.bookmark_count > 0)""",
+                 AND (a.view_count > 0 OR a.like_count > 0 OR a.bookmark_count > 0)""",
             cutoff,
         )
 
@@ -50,6 +50,19 @@ async def recalc_engagement_scores() -> None:
 
     if updated:
         print(f"[ENGAGEMENT] Updated {updated}/{len(articles)} scores")
+
+        # Sync updated scores to Doris search index
+        try:
+            doris = get_doris()
+            if await doris.ping():
+                for article in articles:
+                    new_score = _compute_score(dict(article))
+                    safe_id = str(article["id"]).replace("'", "\\'")
+                    await doris.query(
+                        f"UPDATE mukoko_analytics.article_search SET engagement_score = {new_score} WHERE article_id = '{safe_id}'"
+                    )
+        except Exception as e:
+            print(f"[ENGAGEMENT] Doris sync error: {e}")
 
 
 def _compute_score(article: dict) -> float:

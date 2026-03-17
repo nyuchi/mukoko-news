@@ -23,9 +23,27 @@ async def health_check():
     except Exception:
         pass
 
+    # CouchDB status
+    from src.services.couchdb import get_couchdb
+    couch_ok = False
+    try:
+        couch_ok = await get_couchdb().ping()
+    except Exception:
+        pass
+
+    # Doris status
+    from src.services.doris import get_doris
+    doris_ok = False
+    try:
+        doris_ok = await get_doris().ping()
+    except Exception:
+        pass
+
     return {
         "status": "healthy" if db_ok else "degraded",
         "database": "connected" if db_ok else "disconnected",
+        "couchdb": "connected" if couch_ok else "disconnected",
+        "doris": "connected" if doris_ok else "disconnected",
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -42,7 +60,7 @@ async def get_stats(
             "SELECT COUNT(*) FROM news.news_article WHERE status = 'published'"
         )
         active_sources = await conn.fetchval(
-            "SELECT COUNT(*) FROM news.feed_source WHERE enabled = TRUE"
+            "SELECT COUNT(*) FROM news.feed_source WHERE is_active = TRUE"
         )
         categories = await conn.fetchval(
             "SELECT COUNT(*) FROM engagement.interest_category WHERE is_active = TRUE"

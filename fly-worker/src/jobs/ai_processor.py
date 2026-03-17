@@ -8,6 +8,7 @@ from src.db import get_pool
 from src.services.content_cleaner import extract_text, count_words
 from src.services.keyword_extractor import extract_keywords
 from src.services.quality_scorer import score_article
+from src.services.couchdb import get_couchdb
 
 
 async def process_articles_batch(article_ids: list[str]) -> None:
@@ -61,7 +62,7 @@ async def _process_single(pool, article_id: str) -> None:
         article = await conn.fetchrow(
             """SELECT id::text, headline, description, articlebody,
                       article_body_processed, articlesection,
-                      author, image, publisher_organization_id
+                      author, image, publisher_organization_id, couchdb_doc_id
                FROM news.news_article WHERE id = $1::uuid""",
             article_id,
         )
@@ -70,6 +71,16 @@ async def _process_single(pool, article_id: str) -> None:
         return
 
     article_dict = dict(article)
+
+    # Try reading body from CouchDB first
+    couchdb_id = article_dict.get("couchdb_doc_id")
+    if couchdb_id:
+        try:
+            doc = await get_couchdb().get_doc(couchdb_id)
+            if doc:
+                article_dict["articlebody"] = doc.get("articlebody") or article_dict.get("articlebody", "")
+        except Exception:
+            pass  # Fall through to Postgres body
 
     # 1. Extract plain text if not already done
     plain_text = extract_text(article_dict.get("articlebody", "") or "")

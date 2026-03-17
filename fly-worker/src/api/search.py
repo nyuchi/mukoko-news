@@ -1,6 +1,10 @@
-"""Search endpoints — /api/search, /api/keywords."""
+"""Search endpoints — /api/search, /api/keywords.
 
-import json
+Search is a funnel: Doris narrows millions of articles to ~10 candidates,
+Postgres hydrates the metadata. No over-ranking — Doris's approximate
+ranking is good enough. Falls back to Postgres ILIKE when Doris is unavailable.
+"""
+
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Query
@@ -8,6 +12,8 @@ from fastapi import APIRouter, Depends, Query
 from src.db import get_pool
 from src.api.auth import require_api_key
 from src.api.feeds import _row_to_article, ARTICLE_SELECT, ARTICLE_FROM
+from src.services.doris import get_doris
+from src.services.analytics import get_analytics
 
 router = APIRouter(prefix="/api", tags=["search"])
 
@@ -15,13 +21,105 @@ router = APIRouter(prefix="/api", tags=["search"])
 @router.get("/search")
 async def search_articles(
     q: str = Query(..., min_length=1),
-    limit: int = Query(24, ge=1, le=100),
+    limit: int = Query(10, ge=1, le=50),
     category: str | None = Query(None),
     _token: str | None = Depends(require_api_key),
 ):
-    """Search articles by keyword."""
+    """Search articles by keyword. Funnel: Doris narrows → Postgres hydrates."""
     pool = await get_pool()
-    search_term = f"%{q}%"
+    articles = []
+    search_method = "keyword"
+    total = 0
+
+    # Try Doris funnel first
+    doris_ids = await _doris_search(q, limit, category)
+    if doris_ids is not None:
+        search_method = "doris_funnel"
+        articles, total = await _hydrate_from_postgres(pool, doris_ids, len(doris_ids))
+    else:
+        # Fallback: Postgres ILIKE
+        articles, total = await _postgres_search(pool, q, limit, category)
+
+    # Track search in analytics
+    get_analytics().track_search(q, total, category=category or "")
+
+    return {
+        "results": articles,
+        "articles": articles,
+        "query": q,
+        "count": total,
+        "category": category or "all",
+        "searchMethod": search_method,
+        "pagination": {
+            "page": 1,
+            "limit": limit,
+            "total": total,
+        },
+    }
+
+
+async def _doris_search(query: str, limit: int, category: str | None) -> list[str] | None:
+    """Query Doris inverted index. Returns article IDs or None if unavailable."""
+    doris = get_doris()
+    try:
+        if not await doris.ping():
+            return None
+
+        # Escape single quotes for SQL safety
+        safe_q = query.replace("'", "\\'")
+
+        # Build WHERE clause
+        conditions = [f"MATCH_ANY(headline, '{safe_q}') OR MATCH_ANY(description, '{safe_q}') OR MATCH_ANY(keywords, '{safe_q}')"]
+        if category and category != "all":
+            safe_cat = category.replace("'", "\\'")
+            conditions.append(f"category = '{safe_cat}'")
+
+        where = " AND ".join(f"({c})" for c in conditions)
+
+        sql = f"""
+            SELECT article_id
+            FROM mukoko_analytics.article_search
+            WHERE {where}
+            ORDER BY engagement_score DESC, datepublished DESC
+            LIMIT {int(limit)}
+        """
+
+        rows = await doris.query(sql)
+        if rows:
+            return [r["article_id"] for r in rows]
+        return []
+
+    except Exception as e:
+        print(f"[SEARCH] Doris search error: {e}")
+        return None
+
+
+async def _hydrate_from_postgres(pool, article_ids: list[str], limit: int) -> tuple[list[dict], int]:
+    """Fetch full article metadata from Postgres for the given IDs, preserving order."""
+    if not article_ids:
+        return [], 0
+
+    async with pool.acquire() as conn:
+        # Build placeholders: $1, $2, $3...
+        placeholders = ", ".join(f"${i+1}::uuid" for i in range(len(article_ids)))
+        rows = await conn.fetch(
+            f"""SELECT {ARTICLE_SELECT}
+                {ARTICLE_FROM}
+                WHERE a.id IN ({placeholders})
+                AND a.status = 'published'""",
+            *article_ids,
+        )
+
+    # Preserve Doris ranking order
+    row_map = {str(r["id"]): r for r in rows}
+    ordered = [row_map[aid] for aid in article_ids if aid in row_map]
+
+    return [_row_to_article(r) for r in ordered], len(ordered)
+
+
+async def _postgres_search(pool, query: str, limit: int, category: str | None) -> tuple[list[dict], int]:
+    """Fallback: Postgres ILIKE search."""
+    search_term = f"%{query}%"
 
     async with pool.acquire() as conn:
         conditions = [
@@ -53,21 +151,7 @@ async def search_articles(
             *params,
         )
 
-    articles = [_row_to_article(r) for r in rows]
-
-    return {
-        "results": articles,
-        "articles": articles,
-        "query": q,
-        "count": total or 0,
-        "category": category or "all",
-        "searchMethod": "keyword",
-        "pagination": {
-            "page": 1,
-            "limit": limit,
-            "total": total or 0,
-        },
-    }
+    return [_row_to_article(r) for r in rows], total or 0
 
 
 @router.get("/search/by-keyword/{keyword}")

@@ -8,6 +8,8 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from src.db import get_pool
 from src.api.auth import require_api_key
 from src.api.feeds import _row_to_article, ARTICLE_SELECT, ARTICLE_FROM
+from src.services.couchdb import get_couchdb
+from src.services.analytics import get_analytics
 
 router = APIRouter(prefix="/api", tags=["articles"])
 
@@ -28,7 +30,8 @@ async def get_article(
             row = await conn.fetchrow(
                 f"""SELECT {ARTICLE_SELECT},
                            a.articlebody AS article_body,
-                           a.article_body_processed
+                           a.article_body_processed,
+                           a.couchdb_doc_id
                    {ARTICLE_FROM}
                    WHERE a.id = $1::uuid""",
                 article_id,
@@ -37,7 +40,8 @@ async def get_article(
             row = await conn.fetchrow(
                 f"""SELECT {ARTICLE_SELECT},
                            a.articlebody AS article_body,
-                           a.article_body_processed
+                           a.article_body_processed,
+                           a.couchdb_doc_id
                    {ARTICLE_FROM}
                    WHERE a.slug = $1""",
                 article_id,
@@ -48,9 +52,20 @@ async def get_article(
 
         article = _row_to_article(row)
 
-        # Include full body in single-article view
+        # Include full body — prefer CouchDB, fallback to Postgres
         d = dict(row)
-        article["article_body"] = d.get("article_body_processed") or d.get("article_body", "")
+        body = None
+        couchdb_id = d.get("couchdb_doc_id")
+        if couchdb_id:
+            try:
+                couch_doc = await get_couchdb().get_doc(couchdb_id)
+                if couch_doc:
+                    body = couch_doc.get("article_body_processed") or couch_doc.get("articlebody")
+            except Exception:
+                pass  # Fall through to Postgres
+        if not body:
+            body = d.get("article_body_processed") or d.get("article_body", "")
+        article["article_body"] = body
 
         # Get keywords with full info
         article_db_id = row["id"]
@@ -66,11 +81,12 @@ async def get_article(
         if kw_rows:
             article["keywords"] = [dict(r) for r in kw_rows]
 
-        # Increment view count
+        # Increment view count (Postgres + Doris)
         await conn.execute(
             "UPDATE news.news_article SET view_count = view_count + 1, updated_at = NOW() WHERE id = $1::uuid",
             article_db_id,
         )
+        get_analytics().track_view(str(article_db_id))
 
     return {"article": article}
 

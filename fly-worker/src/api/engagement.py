@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Body
 
 from src.db import get_pool
 from src.api.auth import require_api_key
+from src.services.analytics import get_analytics
 
 router = APIRouter(prefix="/api", tags=["engagement"])
 
@@ -35,6 +36,7 @@ async def like_article(
             "SELECT like_count FROM news.news_article WHERE id = $1::uuid", article_id
         )
 
+    get_analytics().track_like(article_id)
     return {"success": True, "liked": True, "message": "Article liked", "likes": new_count}
 
 
@@ -61,6 +63,7 @@ async def save_article(
             "SELECT bookmark_count FROM news.news_article WHERE id = $1::uuid", article_id
         )
 
+    get_analytics().track_save(article_id)
     return {"success": True, "saved": True, "message": "Article saved", "saves": new_count}
 
 
@@ -82,6 +85,7 @@ async def track_view(
             "SELECT view_count FROM news.news_article WHERE id = $1::uuid", article_id
         )
 
+    get_analytics().track_view(article_id)
     return {"success": True, "views": views or 0}
 
 

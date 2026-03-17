@@ -41,7 +41,7 @@ async def admin_stats(_admin: str = Depends(require_admin)):
         total_articles = await conn.fetchval("SELECT COUNT(*) FROM news.news_article")
         published = await conn.fetchval("SELECT COUNT(*) FROM news.news_article WHERE status = 'published'")
         sources = await conn.fetchval("SELECT COUNT(*) FROM news.feed_source")
-        enabled_sources = await conn.fetchval("SELECT COUNT(*) FROM news.feed_source WHERE enabled = TRUE")
+        enabled_sources = await conn.fetchval("SELECT COUNT(*) FROM news.feed_source WHERE is_active = TRUE")
         categories = await conn.fetchval("SELECT COUNT(*) FROM engagement.interest_category WHERE is_active = TRUE")
         today = await conn.fetchval(
             "SELECT COUNT(*) FROM news.news_article WHERE ingested_at >= CURRENT_DATE"
@@ -72,8 +72,8 @@ async def admin_sources(
             """SELECT fs.id::text AS feed_source_id,
                       org.id::text AS id, org.name, org.url,
                       fs.feed_url, fs.area_served, fs.article_section_id,
-                      fs.enabled, fs.priority, fs.health_status,
-                      fs.consecutive_failures, fs.last_error, fs.last_error_at,
+                      fs.is_active, fs.priority, fs.health_status,
+                      fs.consecutive_failures, fs.last_fetch_error, fs.last_fetch_error_at,
                       fs.last_fetched_at, fs.total_fetch_count, fs.total_error_count,
                       COUNT(a.id) AS article_count,
                       MAX(a.datepublished) AS latest_article_at
@@ -82,8 +82,8 @@ async def admin_sources(
                LEFT JOIN news.news_article a ON a.publisher_organization_id = org.id
                GROUP BY fs.id, org.id, org.name, org.url,
                         fs.feed_url, fs.area_served, fs.article_section_id,
-                        fs.enabled, fs.priority, fs.health_status,
-                        fs.consecutive_failures, fs.last_error, fs.last_error_at,
+                        fs.is_active, fs.priority, fs.health_status,
+                        fs.consecutive_failures, fs.last_fetch_error, fs.last_fetch_error_at,
                         fs.last_fetched_at, fs.total_fetch_count, fs.total_error_count
                ORDER BY fs.priority DESC, org.name"""
         )
@@ -104,8 +104,8 @@ async def admin_source_detail(
             """SELECT fs.id::text AS feed_source_id,
                       org.id::text AS id, org.name, org.url,
                       fs.feed_url, fs.area_served, fs.article_section_id,
-                      fs.enabled, fs.priority, fs.health_status,
-                      fs.consecutive_failures, fs.last_error, fs.last_error_at,
+                      fs.is_active, fs.priority, fs.health_status,
+                      fs.consecutive_failures, fs.last_fetch_error, fs.last_fetch_error_at,
                       fs.last_fetched_at, fs.total_fetch_count, fs.total_error_count
                FROM news.feed_source fs
                JOIN news.news_media_organization org ON fs.organization_id = org.id
@@ -148,7 +148,7 @@ async def update_rss_source(
         idx = 1
 
         for field in ["feed_url", "area_served", "article_section_id",
-                       "enabled", "priority"]:
+                       "is_active", "priority"]:
             if field in body:
                 fs_updates.append(f"{field} = ${idx}")
                 fs_params.append(body[field])
@@ -202,10 +202,10 @@ async def admin_sources_health(_admin: str = Depends(require_admin)):
             """SELECT fs.id::text AS feed_source_id,
                       org.id::text AS id, org.name,
                       fs.health_status, fs.consecutive_failures,
-                      fs.last_error, fs.last_error_at
+                      fs.last_fetch_error, fs.last_fetch_error_at
                FROM news.feed_source fs
                JOIN news.news_media_organization org ON fs.organization_id = org.id
-               WHERE fs.enabled = TRUE AND fs.consecutive_failures > 3
+               WHERE fs.is_active = TRUE AND fs.consecutive_failures > 3
                ORDER BY fs.consecutive_failures DESC"""
         )
 

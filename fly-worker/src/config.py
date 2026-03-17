@@ -11,7 +11,19 @@ class Settings(BaseSettings):
 
     # AI services
     anthropic_api_key: str = ""
-    voyage_api_key: str = ""
+    # voyage_api_key removed — embeddings were never consumed
+
+    # CouchDB — article body document store
+    couchdb_url: str = ""
+    couchdb_username: str = ""
+    couchdb_password: str = ""
+    couchdb_database: str = "mukoko_articles"
+
+    # Apache Doris — analytics and search
+    doris_http_url: str = ""
+    doris_username: str = ""
+    doris_password: str = ""
+    doris_database: str = "mukoko_analytics"
 
     # API authentication
     api_secret: str = ""  # Bearer token for frontend-to-backend auth

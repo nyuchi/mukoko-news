@@ -16,6 +16,8 @@ from src.services.rss_parser import parse_feed
 from src.services.content_cleaner import clean_html, extract_text, count_words, estimate_reading_time
 from src.jobs.ai_processor import process_articles_batch
 from src.jobs.embedding_gen import generate_embeddings_batch
+from src.services.couchdb import get_couchdb
+from src.services.doris import get_doris
 
 
 async def collect_feeds() -> None:
@@ -223,6 +225,46 @@ async def _insert_articles(pool, articles: list[dict], stats: dict) -> list[str]
             if article_id:
                 new_ids.append(article_id)
                 stats["inserted"] += 1
+
+                # Store body in CouchDB (non-blocking — failure doesn't break ingestion)
+                try:
+                    couchdb = get_couchdb()
+                    if couchdb:
+                        doc = {
+                            "_id": article_id,
+                            "type": "article",
+                            "headline": article["headline"],
+                            "articlebody": raw_body,
+                            "article_body_processed": cleaned_body,
+                            "ingested_at": datetime.now(timezone.utc).isoformat(),
+                            "source_id": str(article.get("publisher_organization_id", "")),
+                        }
+                        rev = await couchdb.put_doc(article_id, doc)
+                        if rev:
+                            await conn.execute(
+                                "UPDATE news.news_article SET couchdb_doc_id = $2 WHERE id = $1::uuid",
+                                article_id,
+                                article_id,
+                            )
+                except Exception as e:
+                    print(f"[RSS] CouchDB write failed for {article_id}: {e}")
+
+                # Index in Doris for search (non-blocking)
+                try:
+                    doris = get_doris()
+                    await doris.stream_load("article_search", [{
+                        "article_id": article_id,
+                        "headline": article["headline"] or "",
+                        "description": article.get("description", "") or "",
+                        "keywords": "",  # filled after AI processing
+                        "category": category_slug,
+                        "country": article.get("primary_location_country", "ZW"),
+                        "source_id": str(article.get("publisher_organization_id", "")),
+                        "datepublished": article["datepublished"].isoformat() if article.get("datepublished") else "",
+                        "engagement_score": 0.0,
+                    }])
+                except Exception as e:
+                    print(f"[RSS] Doris index failed for {article_id}: {e}")
 
     return new_ids
 
