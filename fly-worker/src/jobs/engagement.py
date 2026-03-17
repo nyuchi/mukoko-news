@@ -19,7 +19,7 @@ async def recalc_engagement_scores() -> None:
         articles = await conn.fetch(
             """SELECT a.id, e.view_count, e.like_count, e.bookmark_count,
                       e.share_count, a.datepublished, a.engagement_score
-               FROM news.articles a
+               FROM news.news_article a
                JOIN engagement.article_counters e ON e.article_id = a.id
                WHERE a.updated_at >= $1
                  AND a.status = 'published'
@@ -39,9 +39,9 @@ async def recalc_engagement_scores() -> None:
             # Only update if score changed meaningfully
             if abs(new_score - old_score) > 0.01:
                 await conn.execute(
-                    """UPDATE news.articles SET
+                    """UPDATE news.news_article SET
                        engagement_score = $2,
-                       sync_status = 'pending'
+                       sync_status = 'pending_sync'
                        WHERE id = $1""",
                     article["id"],
                     new_score,
@@ -67,7 +67,7 @@ def _compute_score(article: dict) -> float:
     raw = views * 1 + likes * 3 + bookmarks * 5 + shares * 2
 
     # Time decay
-    published = article.get("datepublished") or article.get("date_published")
+    published = article.get("datepublished")
     if published:
         if isinstance(published, str):
             published = datetime.fromisoformat(published)

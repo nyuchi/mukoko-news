@@ -38,13 +38,13 @@ async def admin_stats(_admin: str = Depends(require_admin)):
     pool = await get_pool()
 
     async with pool.acquire() as conn:
-        total_articles = await conn.fetchval("SELECT COUNT(*) FROM articles")
-        published = await conn.fetchval("SELECT COUNT(*) FROM articles WHERE status = 'published'")
-        sources = await conn.fetchval("SELECT COUNT(*) FROM organizations")
-        enabled_sources = await conn.fetchval("SELECT COUNT(*) FROM organizations WHERE enabled = TRUE")
-        categories = await conn.fetchval("SELECT COUNT(*) FROM article_sections WHERE enabled = TRUE")
+        total_articles = await conn.fetchval("SELECT COUNT(*) FROM news.news_article")
+        published = await conn.fetchval("SELECT COUNT(*) FROM news.news_article WHERE status = 'published'")
+        sources = await conn.fetchval("SELECT COUNT(*) FROM news.feed_source")
+        enabled_sources = await conn.fetchval("SELECT COUNT(*) FROM news.feed_source WHERE enabled = TRUE")
+        categories = await conn.fetchval("SELECT COUNT(*) FROM engagement.interest_category WHERE is_active = TRUE")
         today = await conn.fetchval(
-            "SELECT COUNT(*) FROM articles WHERE date_created >= CURRENT_DATE"
+            "SELECT COUNT(*) FROM news.news_article WHERE ingested_at >= CURRENT_DATE"
         )
 
     return {
@@ -69,13 +69,23 @@ async def admin_sources(
 
     async with pool.acquire() as conn:
         rows = await conn.fetch(
-            """SELECT o.*,
+            """SELECT fs.id::text AS feed_source_id,
+                      org.id::text AS id, org.name, org.url,
+                      fs.feed_url, fs.area_served, fs.article_section_id,
+                      fs.enabled, fs.priority, fs.health_status,
+                      fs.consecutive_failures, fs.last_error, fs.last_error_at,
+                      fs.last_fetched_at, fs.total_fetch_count, fs.total_error_count,
                       COUNT(a.id) AS article_count,
-                      MAX(a.date_published) AS latest_article_at
-               FROM organizations o
-               LEFT JOIN articles a ON a.publisher_id = o.id
-               GROUP BY o.id
-               ORDER BY o.priority DESC, o.name"""
+                      MAX(a.datepublished) AS latest_article_at
+               FROM news.feed_source fs
+               JOIN news.news_media_organization org ON fs.organization_id = org.id
+               LEFT JOIN news.news_article a ON a.publisher_organization_id = org.id
+               GROUP BY fs.id, org.id, org.name, org.url,
+                        fs.feed_url, fs.area_served, fs.article_section_id,
+                        fs.enabled, fs.priority, fs.health_status,
+                        fs.consecutive_failures, fs.last_error, fs.last_error_at,
+                        fs.last_fetched_at, fs.total_fetch_count, fs.total_error_count
+               ORDER BY fs.priority DESC, org.name"""
         )
 
     return {"sources": [dict(r) for r in rows]}
@@ -91,13 +101,23 @@ async def admin_source_detail(
 
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
-            "SELECT * FROM organizations WHERE id = $1", source_id
+            """SELECT fs.id::text AS feed_source_id,
+                      org.id::text AS id, org.name, org.url,
+                      fs.feed_url, fs.area_served, fs.article_section_id,
+                      fs.enabled, fs.priority, fs.health_status,
+                      fs.consecutive_failures, fs.last_error, fs.last_error_at,
+                      fs.last_fetched_at, fs.total_fetch_count, fs.total_error_count
+               FROM news.feed_source fs
+               JOIN news.news_media_organization org ON fs.organization_id = org.id
+               WHERE org.id::text = $1 OR fs.id::text = $1""",
+            source_id,
         )
         if not row:
             raise HTTPException(status_code=404, detail="Source not found")
 
         article_count = await conn.fetchval(
-            "SELECT COUNT(*) FROM articles WHERE publisher_id = $1", source_id
+            "SELECT COUNT(*) FROM news.news_article WHERE publisher_organization_id::text = $1",
+            source_id,
         )
 
     source = dict(row)
@@ -117,32 +137,50 @@ async def update_rss_source(
 
     async with pool.acquire() as conn:
         existing = await conn.fetchrow(
-            "SELECT id FROM organizations WHERE id = $1", source_id
+            "SELECT fs.id FROM news.feed_source fs WHERE fs.id::text = $1", source_id
         )
         if not existing:
             raise HTTPException(status_code=404, detail="Source not found")
 
-        updates = []
-        params = []
+        # Fields on feed_source
+        fs_updates = []
+        fs_params = []
         idx = 1
 
-        for field in ["name", "url", "rss_feed_url", "area_served", "article_section_id",
-                       "enabled", "priority", "description"]:
+        for field in ["feed_url", "area_served", "article_section_id",
+                       "enabled", "priority"]:
             if field in body:
-                updates.append(f"{field} = ${idx}")
-                params.append(body[field])
+                fs_updates.append(f"{field} = ${idx}")
+                fs_params.append(body[field])
                 idx += 1
 
-        if not updates:
-            return {"success": True, "message": "No changes"}
+        if fs_updates:
+            fs_updates.append("updated_at = NOW()")
+            fs_params.append(source_id)
+            await conn.execute(
+                f"UPDATE news.feed_source SET {', '.join(fs_updates)} WHERE id::text = ${idx}",
+                *fs_params,
+            )
 
-        updates.append("updated_at = NOW()")
-        params.append(source_id)
+        # Fields on organization (via feed_source join)
+        org_updates = []
+        org_params = []
+        org_idx = 1
 
-        await conn.execute(
-            f"UPDATE organizations SET {', '.join(updates)} WHERE id = ${idx}",
-            *params,
-        )
+        for field in ["name", "url", "description"]:
+            if field in body:
+                org_updates.append(f"{field} = ${org_idx}")
+                org_params.append(body[field])
+                org_idx += 1
+
+        if org_updates:
+            org_updates.append("updated_at = NOW()")
+            org_params.append(source_id)
+            await conn.execute(
+                f"""UPDATE news.news_media_organization SET {', '.join(org_updates)}
+                    WHERE id = (SELECT organization_id FROM news.feed_source WHERE id::text = ${org_idx})""",
+                *org_params,
+            )
 
     return {"success": True, "message": "Source updated"}
 
@@ -155,16 +193,20 @@ async def admin_sources_health(_admin: str = Depends(require_admin)):
     async with pool.acquire() as conn:
         rows = await conn.fetch(
             """SELECT health_status, COUNT(*) AS count
-               FROM organizations
+               FROM news.feed_source
                WHERE enabled = TRUE
                GROUP BY health_status"""
         )
 
         failing = await conn.fetch(
-            """SELECT id, name, health_status, consecutive_failures, last_error, last_error_at
-               FROM organizations
-               WHERE enabled = TRUE AND consecutive_failures > 3
-               ORDER BY consecutive_failures DESC"""
+            """SELECT fs.id::text AS feed_source_id,
+                      org.id::text AS id, org.name,
+                      fs.health_status, fs.consecutive_failures,
+                      fs.last_error, fs.last_error_at
+               FROM news.feed_source fs
+               JOIN news.news_media_organization org ON fs.organization_id = org.id
+               WHERE fs.enabled = TRUE AND fs.consecutive_failures > 3
+               ORDER BY fs.consecutive_failures DESC"""
         )
 
     return {
@@ -183,7 +225,7 @@ async def admin_cron_logs(
 
     async with pool.acquire() as conn:
         rows = await conn.fetch(
-            """SELECT * FROM collection_log
+            """SELECT * FROM system.collection_log
                ORDER BY created_at DESC
                LIMIT $1""",
             limit,

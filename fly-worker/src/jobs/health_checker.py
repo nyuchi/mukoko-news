@@ -1,6 +1,6 @@
 """Source health check job.
 
-Evaluates all enabled organizations and classifies their health status.
+Evaluates all enabled feed sources and classifies their health status.
 Runs every 6 hours.
 """
 
@@ -10,16 +10,16 @@ from src.db import get_pool
 
 
 async def check_source_health() -> None:
-    """Evaluate and update health status for all enabled sources."""
+    """Evaluate and update health status for all enabled feed sources."""
     pool = await get_pool()
 
     async with pool.acquire() as conn:
         sources = await conn.fetch(
-            """SELECT id, name, consecutive_failures, total_fetch_count,
+            """SELECT id, organization_id, consecutive_failures, total_fetch_count,
                       total_error_count, last_successful_fetch_at,
-                      last_error_at, health_status
-               FROM organizations
-               WHERE enabled = TRUE"""
+                      last_fetched_at, health_status
+               FROM news.feed_source
+               WHERE is_active = TRUE"""
         )
 
     if not sources:
@@ -51,12 +51,12 @@ async def check_source_health() -> None:
                     new_status = "degraded"
 
             # Calculate quality score from recent articles
-            quality_score = await _calc_source_quality(conn, s["id"], seven_days_ago)
+            quality_score = await _calc_source_quality(conn, s["organization_id"], seven_days_ago)
 
             # Only update if something changed
             if new_status != s.get("health_status") or True:
                 await conn.execute(
-                    """UPDATE organizations SET
+                    """UPDATE news.feed_source SET
                        health_status = $2,
                        quality_score = $3,
                        updated_at = NOW()
@@ -70,18 +70,18 @@ async def check_source_health() -> None:
     print(f"[HEALTH] Updated {updated}/{len(sources)} source health statuses")
 
 
-async def _calc_source_quality(conn, source_id: str, since: datetime) -> float:
+async def _calc_source_quality(conn, organization_id, since: datetime) -> float:
     """Calculate source quality score from recent articles."""
     stats = await conn.fetchrow(
         """SELECT
              COUNT(*) AS article_count,
              AVG(quality_score) AS avg_quality,
              AVG(engagement_score) AS avg_engagement
-           FROM articles
-           WHERE publisher_id = $1
-             AND date_published >= $2
+           FROM news.news_article
+           WHERE publisher_organization_id = $1
+             AND datepublished >= $2
              AND status = 'published'""",
-        source_id,
+        organization_id,
         since,
     )
 
