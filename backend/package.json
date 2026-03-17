@@ -1,43 +1,26 @@
 {
   "name": "mukoko-news-backend",
-  "version": "2.0.0",
-  "description": "Backend API and Admin Interface for Mukoko News - Zimbabwe's Modern News Platform",
+  "version": "3.0.0",
+  "description": "Mukoko News — Cloudflare Worker (minimal shim preserving bindings while production API runs on Fly.io)",
   "main": "index.ts",
   "scripts": {
     "dev": "wrangler dev",
-    "deploy": "npm run clean && npm run build && wrangler deploy",
+    "deploy": "wrangler deploy",
     "build": "wrangler deploy --dry-run",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage",
+    "test": "echo 'No tests — production API is in fly-worker/'",
     "test:build": "npm run build",
     "typecheck": "tsc --noEmit",
-    "lint": "echo 'Backend: TypeScript compilation serves as linting'",
-    "validate": "npm run typecheck && npm run build",
-    "clean": "rm -rf node_modules/.cache .wrangler dist build && npm cache clean --force",
-    "install:clean": "npm run clean && npm install",
-    "db:migrate": "wrangler d1 execute hararemetro_articles --remote --file ../database/schema.sql",
-    "db:local": "wrangler d1 execute hararemetro_articles --local --file ../database/schema.sql",
-    "db:schema": "echo 'Database schema located at: ../database/schema.sql'",
-    "secret:set": "echo 'Run: wrangler secret put ADMIN_SESSION_SECRET'"
+    "lint": "echo 'TypeScript compilation serves as linting'"
   },
   "dependencies": {
-    "@noble/hashes": "^2.0.1",
-    "@openauthjs/openauth": "^0.4.3",
-    "fast-xml-parser": "^5.3.3",
-    "hono": "^4.9.7",
-    "turndown": "^7.2.2",
-    "valibot": "^1.1.0"
+    "hono": "^4.9.7"
   },
   "overrides": {
     "esbuild": "^0.25.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250425.0",
-    "@types/node": "^22.0.0",
-    "@vitest/coverage-v8": "^3.0.0",
     "typescript": "^5.3.3",
-    "vitest": "^3.0.0",
     "wrangler": "^4.55.0"
   }
 }

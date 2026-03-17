@@ -1,9 +1,10 @@
 /**
- * Mukoko News Backend - API & Admin Worker Configuration
- * Zimbabwe's Modern News Platform Backend
+ * Mukoko News — Cloudflare Worker (Minimal Shim)
  *
- * For more details on Wrangler configuration:
- * https://developers.cloudflare.com/workers/wrangler/configuration/
+ * Production API has moved to Fly.io (fly-worker/).
+ * This worker preserves CF bindings (D1, Workers AI, KV, R2, Analytics Engine).
+ *
+ * For more details: https://developers.cloudflare.com/workers/wrangler/configuration/
  */ {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "mukoko-news-backend",
@@ -13,30 +14,17 @@
 
   /**
    * Environment Variables
-   * Secrets should be set via `wrangler secret put SECRET_NAME`:
-   * - ADMIN_SESSION_SECRET: Admin session authentication
-   * - API_SECRET: Bearer token for frontend (Vercel) to backend API authentication
+   * Secrets set via `wrangler secret put`:
+   * - ADMIN_SESSION_SECRET
+   * - API_SECRET
    */
   "vars": {
     "NODE_ENV": "production",
-    "USE_FALLBACK_CONFIG": "false",
-    "LOG_LEVEL": "info",
-    "ROLES_ENABLED": "true",
-    "DEFAULT_ROLE": "user",
-    "ADMIN_ROLES": "admin",
-    "MODERATOR_ROLES": "admin,moderator",
-    "AUTHOR_ROLES": "admin,moderator,author",
-    // TODO: expand CREATOR_ROLES when the creator/publisher tier diverges from AUTHOR_ROLES
-    // (e.g. to add a "creator" role with content-submission but no moderation rights).
-    "CREATOR_ROLES": "admin,moderator,author",
-    "CLOUDFLARE_ACCOUNT_ID": "125a2dfbc21f76a25c980609609e8218",
-    "AI_INSIGHTS_ENABLED": "true",
-    "AI_SEARCH_ENABLED": "true",
-    "AUTH_ISSUER_URL": "https://id.mukoko.com"
+    "CLOUDFLARE_ACCOUNT_ID": "125a2dfbc21f76a25c980609609e8218"
   },
 
   /**
-   * Cloudflare D1 Database - Primary data store
+   * Cloudflare D1 Database — legacy data store (production moved to Supabase Postgres)
    */
   "d1_databases": [
     {
@@ -47,54 +35,24 @@
   ],
 
   /**
-   * Analytics Engine - User interaction tracking & AI insights
+   * Analytics Engine — interaction tracking datasets
    */
   "analytics_engine_datasets": [
     {
       "binding": "NEWS_ANALYTICS",
       "dataset": "news_analytics"
-    },
-    {
-      "binding": "SEARCH_ANALYTICS",
-      "dataset": "search_analytics"
-    },
-    {
-      "binding": "CATEGORY_ANALYTICS",
-      "dataset": "category_analytics"
-    },
-    {
-      "binding": "USER_ANALYTICS",
-      "dataset": "user_analytics"
-    },
-    {
-      "binding": "PERFORMANCE_ANALYTICS",
-      "dataset": "performance_analytics"
-    },
-    {
-      "binding": "AI_INSIGHTS_ANALYTICS",
-      "dataset": "ai_insights"
     }
   ],
 
   /**
-   * AI Services - Workers AI for content processing, insights, and semantic search
+   * Workers AI — BGE-M3 embeddings (fly-worker calls via REST API, binding preserved for future use)
    */
   "ai": {
     "binding": "AI"
   },
 
   /**
-   * Vectorize - Semantic search index for AI-powered article search
-   */
-  "vectorize": [
-    {
-      "binding": "VECTORIZE_INDEX",
-      "index_name": "mukoko-news-articles"
-    }
-  ],
-
-  /**
-   * KV Namespaces - Session storage, caching, and IndexedDB sync
+   * KV Namespaces — session and cache storage
    */
   "kv_namespaces": [
     {
@@ -108,50 +66,7 @@
   ],
 
   /**
-   * Durable Objects - Real-time features and state management
-   */
-  "durable_objects": {
-    "bindings": [
-      {
-        "name": "ARTICLE_INTERACTIONS",
-        "class_name": "ArticleInteractionsDO"
-      },
-      {
-        "name": "USER_BEHAVIOR",
-        "class_name": "UserBehaviorDO"
-      },
-      {
-        "name": "REALTIME_COUNTERS",
-        "class_name": "RealtimeCountersDO"
-      },
-      {
-        "name": "REALTIME_ANALYTICS",
-        "class_name": "RealtimeAnalyticsDO"
-      }
-    ]
-  },
-
-  /**
-   * Durable Object Migrations - Required for DO deployment
-   * Using new_sqlite_classes for free plan compatibility
-   */
-  "migrations": [
-    {
-      "tag": "v1",
-      "new_sqlite_classes": ["ArticleInteractionsDO", "UserBehaviorDO", "RealtimeCountersDO", "RealtimeAnalyticsDO"]
-    }
-  ],
-
-  /**
-   * Cloudflare Images - Image storage and optimization
-   */
-  "images": {
-    "binding": "IMAGES"
-  },
-
-  /**
-   * R2 Object Storage - Large file storage (feeds, backups, uploads)
-   * Create bucket: npx wrangler r2 bucket create mukoko-news-storage
+   * R2 Object Storage — feeds, backups, uploads
    */
   "r2_buckets": [
     {
@@ -161,45 +76,17 @@
   ],
 
   /**
-   * Service Binding - Python Data Processing Worker
-   * Handles: RSS parsing, AI processing, clustering, search, feed ranking
-   * Primary data store: MongoDB Atlas (via mongo-proxy Service Binding)
-   * Called via: env.DATA_PROCESSOR.fetch("http://news-api/...", {...})
-   */
-  "services": [
-    {
-      "binding": "DATA_PROCESSOR",
-      "service": "mukoko-news-api"
-    }
-  ],
-
-  /**
-   * Observability - Real-time logs and monitoring
+   * Observability
    */
   "observability": {
     "enabled": true
   },
 
-  /**
-   * Smart Placement - Optimize for database location
-   */
   "placement": {
     "mode": "smart"
   },
 
-  /**
-   * Scheduled Triggers (Cron Jobs)
-   * - SEO batch update runs every 6 hours
-   */
-  "triggers": {
-    "crons": ["0 */6 * * *"]
-  },
-
-  /**
-   * Deployment settings
-   */
   "logpush": false,
-  "tail_consumers": [],
   "keep_vars": true,
   "upload_source_maps": true
 }

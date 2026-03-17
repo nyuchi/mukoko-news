@@ -12,17 +12,9 @@
     "skipLibCheck": true,
     "strict": false,
     "noImplicitAny": false,
-    "strictNullChecks": false
+    "strictNullChecks": false,
+    "types": ["@cloudflare/workers-types"]
   },
-  "include": ["*.ts", "services/**/*.ts", "admin/**/*.ts", "middleware/**/*.ts"],
-  "exclude": [
-    "node_modules",
-    "build",
-    "durable-objects",
-    "**/*DO.ts",
-    "services/ArticleInteractionsDO.ts",
-    "services/RealtimeAnalyticsDO.ts",
-    "services/RealtimeCountersDO.ts",
-    "services/UserBehaviorDO.ts"
-  ]
+  "include": ["index.ts", "services/platform/**/*.ts"],
+  "exclude": ["node_modules"]
 }
