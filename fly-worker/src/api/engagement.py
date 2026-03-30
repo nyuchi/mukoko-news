@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Path, Body
 
 from src.db import get_pool
-from src.api.auth import require_api_key
+from src.api.auth import require_auth, AuthUser
 from src.services.analytics import get_analytics
 
 router = APIRouter(prefix="/api", tags=["engagement"])
@@ -14,7 +14,7 @@ router = APIRouter(prefix="/api", tags=["engagement"])
 @router.post("/articles/{article_id}/like")
 async def like_article(
     article_id: str = Path(...),
-    _token: str | None = Depends(require_api_key),
+    _user: AuthUser = Depends(require_auth),
 ):
     """Toggle like on an article. Increments/decrements like_count."""
     pool = await get_pool()
@@ -43,7 +43,7 @@ async def like_article(
 @router.post("/articles/{article_id}/save")
 async def save_article(
     article_id: str = Path(...),
-    _token: str | None = Depends(require_api_key),
+    _user: AuthUser = Depends(require_auth),
 ):
     """Toggle save/bookmark on an article."""
     pool = await get_pool()
@@ -71,7 +71,7 @@ async def save_article(
 async def track_view(
     article_id: str = Path(...),
     body: dict = Body(default={}),
-    _token: str | None = Depends(require_api_key),
+    _user: AuthUser = Depends(require_auth),
 ):
     """Track article view with optional reading metrics."""
     pool = await get_pool()
@@ -92,7 +92,7 @@ async def track_view(
 @router.get("/articles/{article_id}/engagement")
 async def get_engagement(
     article_id: str = Path(...),
-    _token: str | None = Depends(require_api_key),
+    _user: AuthUser = Depends(require_auth),
 ):
     """Get engagement counts for an article."""
     pool = await get_pool()

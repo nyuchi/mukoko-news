@@ -6,14 +6,14 @@ Until OIDC validation is implemented, they return empty results gracefully.
 
 from fastapi import APIRouter, Depends
 
-from src.api.auth import require_api_key
+from src.api.auth import require_auth, AuthUser
 
 router = APIRouter(prefix="/api/user", tags=["user"])
 
 
 @router.get("/bookmarks")
 async def get_bookmarks(
-    _token: str | None = Depends(require_api_key),
+    _user: AuthUser = Depends(require_auth),
 ):
     """Get user's saved/bookmarked articles.
 

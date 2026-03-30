@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, Path, Query
 
 from src.db import get_pool
-from src.api.auth import require_api_key
+from src.api.auth import require_auth, AuthUser
 from src.api.feeds import _row_to_article, _cluster_articles, ARTICLE_SELECT, ARTICLE_FROM
 
 router = APIRouter(prefix="/api", tags=["stories"])
@@ -14,7 +14,7 @@ router = APIRouter(prefix="/api", tags=["stories"])
 @router.get("/stories/trending")
 async def get_trending_stories(
     limit: int = Query(10, ge=1, le=50),
-    _token: str | None = Depends(require_api_key),
+    _user: AuthUser = Depends(require_auth),
 ):
     """Get trending story clusters from the last 48h."""
     pool = await get_pool()
@@ -48,7 +48,7 @@ async def get_trending_stories(
 @router.get("/stories/cluster/{article_id}")
 async def get_story_cluster(
     article_id: str = Path(...),
-    _token: str | None = Depends(require_api_key),
+    _user: AuthUser = Depends(require_auth),
 ):
     """Get all articles in the same story cluster as the given article."""
     pool = await get_pool()

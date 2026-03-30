@@ -3,14 +3,14 @@
 from fastapi import APIRouter, Depends, Query
 
 from src.db import get_pool
-from src.api.auth import require_api_key
+from src.api.auth import require_auth, AuthUser
 
 router = APIRouter(prefix="/api", tags=["sources"])
 
 
 @router.get("/sources")
 async def get_sources(
-    _token: str | None = Depends(require_api_key),
+    _user: AuthUser = Depends(require_auth),
 ):
     """Get all enabled news sources with article counts."""
     pool = await get_pool()
@@ -59,7 +59,7 @@ async def get_sources(
 
 @router.get("/countries")
 async def get_countries(
-    _token: str | None = Depends(require_api_key),
+    _user: AuthUser = Depends(require_auth),
 ):
     """Get all enabled countries."""
     pool = await get_pool()
@@ -92,7 +92,7 @@ async def get_countries(
 @router.get("/countries/{country_id}")
 async def get_country(
     country_id: str,
-    _token: str | None = Depends(require_api_key),
+    _user: AuthUser = Depends(require_auth),
 ):
     """Get a single country."""
     pool = await get_pool()
@@ -117,7 +117,7 @@ async def get_country(
 
 @router.get("/countries/stats/articles")
 async def get_country_article_stats(
-    _token: str | None = Depends(require_api_key),
+    _user: AuthUser = Depends(require_auth),
 ):
     """Get article counts per country."""
     pool = await get_pool()

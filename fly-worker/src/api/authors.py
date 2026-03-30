@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
 
 from src.db import get_pool
-from src.api.auth import require_api_key
+from src.api.auth import require_auth, AuthUser
 from src.api.feeds import _row_to_article, ARTICLE_SELECT, ARTICLE_FROM
 
 router = APIRouter(prefix="/api", tags=["authors"])
@@ -12,7 +12,7 @@ router = APIRouter(prefix="/api", tags=["authors"])
 @router.get("/authors")
 async def get_authors(
     limit: int = Query(20, ge=1, le=100),
-    _token: str | None = Depends(require_api_key),
+    _user: AuthUser = Depends(require_auth),
 ):
     """Get authors sorted by article count."""
     pool = await get_pool()
@@ -34,7 +34,7 @@ async def get_authors(
 @router.get("/author/{slug}")
 async def get_author(
     slug: str = Path(...),
-    _token: str | None = Depends(require_api_key),
+    _user: AuthUser = Depends(require_auth),
 ):
     """Get author profile and their articles."""
     pool = await get_pool()
@@ -71,7 +71,7 @@ async def get_author(
 async def search_authors(
     q: str = Query(..., min_length=1),
     limit: int = Query(20, ge=1, le=100),
-    _token: str | None = Depends(require_api_key),
+    _user: AuthUser = Depends(require_auth),
 ):
     """Search authors by name."""
     pool = await get_pool()
@@ -93,7 +93,7 @@ async def search_authors(
 @router.get("/trending-authors")
 async def get_trending_authors(
     limit: int = Query(5, ge=1, le=50),
-    _token: str | None = Depends(require_api_key),
+    _user: AuthUser = Depends(require_auth),
 ):
     """Get trending authors by recent article output (last 7 days)."""
     pool = await get_pool()
@@ -122,7 +122,7 @@ async def get_trending_authors(
 @router.get("/featured-authors")
 async def get_featured_authors(
     limit: int = Query(5, ge=1, le=50),
-    _token: str | None = Depends(require_api_key),
+    _user: AuthUser = Depends(require_auth),
 ):
     """Get featured/top authors by total article count."""
     pool = await get_pool()

@@ -1,6 +1,6 @@
 """Admin API endpoints — /api/admin/*.
 
-Protected by admin auth (session token or admin API key).
+Protected by admin auth (JWT with admin or service_role).
 """
 
 import json
@@ -9,31 +9,13 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Body, Header
 
 from src.db import get_pool
-from src.config import settings
+from src.api.auth import require_admin, AuthUser
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 
-async def require_admin(authorization: str = Header(default="")) -> str:
-    """Validate admin access via session token or admin secret."""
-    admin_secret = settings.admin_session_secret
-    if not admin_secret:
-        raise HTTPException(status_code=500, detail="Admin auth not configured")
-
-    token = ""
-    if authorization:
-        parts = authorization.split(" ", 1)
-        if len(parts) == 2 and parts[0].lower() == "bearer":
-            token = parts[1]
-
-    if not token or token != admin_secret:
-        raise HTTPException(status_code=401, detail="Admin access required")
-
-    return token
-
-
 @router.get("/stats")
-async def admin_stats(_admin: str = Depends(require_admin)):
+async def admin_stats(_admin: AuthUser = Depends(require_admin)):
     """Get admin dashboard statistics."""
     pool = await get_pool()
 
@@ -62,7 +44,7 @@ async def admin_stats(_admin: str = Depends(require_admin)):
 
 @router.get("/sources")
 async def admin_sources(
-    _admin: str = Depends(require_admin),
+    _admin: AuthUser = Depends(require_admin),
 ):
     """Get all sources with health info for admin."""
     pool = await get_pool()
@@ -94,7 +76,7 @@ async def admin_sources(
 @router.get("/sources/{source_id}")
 async def admin_source_detail(
     source_id: str = Path(...),
-    _admin: str = Depends(require_admin),
+    _admin: AuthUser = Depends(require_admin),
 ):
     """Get detailed source info."""
     pool = await get_pool()
@@ -130,7 +112,7 @@ async def admin_source_detail(
 async def update_rss_source(
     source_id: str = Path(...),
     body: dict = Body(...),
-    _admin: str = Depends(require_admin),
+    _admin: AuthUser = Depends(require_admin),
 ):
     """Update an RSS source configuration."""
     pool = await get_pool()
@@ -186,7 +168,7 @@ async def update_rss_source(
 
 
 @router.get("/sources/health")
-async def admin_sources_health(_admin: str = Depends(require_admin)):
+async def admin_sources_health(_admin: AuthUser = Depends(require_admin)):
     """Get source health summary."""
     pool = await get_pool()
 
@@ -218,7 +200,7 @@ async def admin_sources_health(_admin: str = Depends(require_admin)):
 @router.get("/cron-logs")
 async def admin_cron_logs(
     limit: int = Query(20, ge=1, le=100),
-    _admin: str = Depends(require_admin),
+    _admin: AuthUser = Depends(require_admin),
 ):
     """Get recent cron execution logs."""
     pool = await get_pool()
@@ -235,7 +217,7 @@ async def admin_cron_logs(
 
 
 @router.post("/feed/collect")
-async def trigger_collection(_admin: str = Depends(require_admin)):
+async def trigger_collection(_admin: AuthUser = Depends(require_admin)):
     """Manually trigger RSS feed collection."""
     from src.jobs.rss_collector import collect_feeds
 

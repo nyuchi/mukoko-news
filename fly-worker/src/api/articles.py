@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
 
 from src.db import get_pool
-from src.api.auth import require_api_key
+from src.api.auth import require_auth, AuthUser
 from src.api.feeds import _row_to_article, ARTICLE_SELECT, ARTICLE_FROM
 from src.services.couchdb import get_couchdb
 from src.services.analytics import get_analytics
@@ -17,7 +17,7 @@ router = APIRouter(prefix="/api", tags=["articles"])
 @router.get("/article/{article_id}")
 async def get_article(
     article_id: str = Path(...),
-    _token: str | None = Depends(require_api_key),
+    _user: AuthUser = Depends(require_auth),
 ):
     """Get a single article by ID or slug."""
     pool = await get_pool()
@@ -95,7 +95,7 @@ async def get_article(
 async def get_related_articles(
     article_id: str = Path(...),
     limit: int = Query(5, ge=1, le=20),
-    _token: str | None = Depends(require_api_key),
+    _user: AuthUser = Depends(require_auth),
 ):
     """Get articles related to the given article."""
     pool = await get_pool()
@@ -169,7 +169,7 @@ async def get_related_articles(
 async def get_article_by_source_slug(
     source: str = Query(...),
     slug: str = Query(...),
-    _token: str | None = Depends(require_api_key),
+    _user: AuthUser = Depends(require_auth),
 ):
     """Get article by source ID and slug combo."""
     pool = await get_pool()

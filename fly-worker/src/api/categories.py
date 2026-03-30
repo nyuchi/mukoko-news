@@ -5,14 +5,14 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, Query
 
 from src.db import get_pool
-from src.api.auth import require_api_key
+from src.api.auth import require_auth, AuthUser
 
 router = APIRouter(prefix="/api", tags=["categories"])
 
 
 @router.get("/categories")
 async def get_categories(
-    _token: str | None = Depends(require_api_key),
+    _user: AuthUser = Depends(require_auth),
 ):
     """Get all enabled categories (interest categories) with article counts."""
     pool = await get_pool()
@@ -48,7 +48,7 @@ async def get_categories(
 @router.get("/trending-categories")
 async def get_trending_categories(
     limit: int = Query(8, ge=1, le=50),
-    _token: str | None = Depends(require_api_key),
+    _user: AuthUser = Depends(require_auth),
 ):
     """Get trending categories ranked by recent article volume and growth."""
     pool = await get_pool()

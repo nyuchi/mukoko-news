@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends
 
 from src.db import get_pool
-from src.api.auth import require_api_key
+from src.api.auth import require_auth, AuthUser
 
 router = APIRouter(prefix="/api", tags=["stats"])
 
@@ -50,7 +50,7 @@ async def health_check():
 
 @router.get("/stats")
 async def get_stats(
-    _token: str | None = Depends(require_api_key),
+    _user: AuthUser = Depends(require_auth),
 ):
     """Get database statistics for dashboard."""
     pool = await get_pool()

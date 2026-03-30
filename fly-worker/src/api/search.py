@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, Query
 
 from src.db import get_pool
-from src.api.auth import require_api_key
+from src.api.auth import require_auth, AuthUser
 from src.api.feeds import _row_to_article, ARTICLE_SELECT, ARTICLE_FROM
 from src.services.doris import get_doris
 from src.services.analytics import get_analytics
@@ -27,7 +27,7 @@ async def search_articles(
     q: str = Query(..., min_length=1),
     limit: int = Query(10, ge=1, le=50),
     category: str | None = Query(None),
-    _token: str | None = Depends(require_api_key),
+    _user: AuthUser = Depends(require_auth),
 ):
     """Search articles. Funnel: Semantic (BGE-M3) → Doris → Postgres ILIKE."""
     pool = await get_pool()
@@ -217,7 +217,7 @@ async def _postgres_search(pool, query: str, limit: int, category: str | None) -
 async def search_by_keyword(
     keyword: str,
     limit: int = Query(24, ge=1, le=100),
-    _token: str | None = Depends(require_api_key),
+    _user: AuthUser = Depends(require_auth),
 ):
     """Get articles tagged with a specific keyword/term."""
     pool = await get_pool()
@@ -241,7 +241,7 @@ async def search_by_keyword(
 @router.get("/keywords")
 async def get_keywords(
     limit: int = Query(32, ge=1, le=100),
-    _token: str | None = Depends(require_api_key),
+    _user: AuthUser = Depends(require_auth),
 ):
     """Get trending keywords/topics for tag cloud."""
     pool = await get_pool()
