@@ -1,17 +1,19 @@
 /**
- * Mukoko News — Cloudflare Worker (Minimal)
+ * Mukoko News — Cloudflare Worker (Edge Cache Layer)
  *
- * This worker is a lightweight shim that preserves Cloudflare bindings
- * (D1, Workers AI, KV, Analytics Engine, R2) while the production API
- * runs on Fly.io (fly-worker/).
+ * Low-latency edge caching via Cloudflare bindings:
+ * - D1: Cached reads and fast lookups at the edge
+ * - Workers AI: BGE-M3 embedding inference (co-located, low latency)
+ * - KV: Session storage, response caching
+ * - Analytics Engine: Real-time event ingestion
+ * - R2: Media/asset storage
  *
- * Active responsibilities:
- * - Health check endpoint
- * - Workers AI proxy for fly-worker embeddings (future — currently fly-worker calls REST API directly)
- * - D1 database access for legacy reads
+ * Heavy processing (RSS ingestion, AI keyword extraction, quality
+ * scoring, engagement, search) runs on Fly.io (fly-worker/) + Supabase.
+ * This worker reduces latency for reads and embedding inference.
  *
- * The platform service designs live in services/platform/ and are the
- * next migration target to fly-worker.
+ * Platform service designs in services/platform/ are the next
+ * migration target to fly-worker.
  */
 
 import { Hono } from "hono";
@@ -68,10 +70,10 @@ app.get("/api/stats", async (c) => {
   }
 });
 
-// Catch-all — redirect to production API on Fly.io
+// Catch-all — routes not handled by the edge layer redirect to Fly.io
 app.all("/api/*", (c) => {
-  const path = new URL(c.req.url).pathname;
-  return c.redirect(`https://mukoko-news-api.fly.dev${path}`, 301);
+  const url = new URL(c.req.url);
+  return c.redirect(`https://mukoko-news-api.fly.dev${url.pathname}${url.search}`, 307);
 });
 
 export default app;
