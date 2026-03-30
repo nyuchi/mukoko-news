@@ -1,11 +1,9 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { ThemeProvider } from '@/components/theme-provider';
-import { PreferencesProvider } from '@/contexts/preferences-context';
+import { AuthProvider } from '@/lib/auth-context';
 import { Header } from '@/components/layout/header';
 import { Footer } from '@/components/layout/footer';
-import { BottomNav } from '@/components/layout/bottom-nav';
-import { OnboardingModal } from '@/components/onboarding-modal';
 import { OrganizationJsonLd, WebSiteJsonLd } from '@/components/ui/json-ld';
 
 // Fonts are loaded via CSS @import in globals.css for better reliability
@@ -16,10 +14,10 @@ const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://news.mukoko.com';
 export const metadata: Metadata = {
   metadataBase: new URL(BASE_URL),
   title: {
-    default: 'Mukoko News - Pan-African News Hub',
+    default: 'Mukoko News Console',
     template: '%s | Mukoko News',
   },
-  description: 'Pan-African digital news aggregation platform. Your trusted source for breaking news, top stories, and in-depth coverage from Zimbabwe and 16 African countries.',
+  description: 'Pan-African news processing and management console. Publisher onboarding, content moderation, API management, and admin tools for Mukoko News.',
   keywords: [
     'African news',
     'Pan-African news',
@@ -42,8 +40,8 @@ export const metadata: Metadata = {
     telephone: false,
   },
   openGraph: {
-    title: 'Mukoko News - Pan-African News Hub',
-    description: 'Your trusted source for breaking news and top stories from across Africa. Coverage from Zimbabwe, South Africa, Kenya, Nigeria, and 12 more countries.',
+    title: 'Mukoko News Console',
+    description: 'Pan-African news processing and management console. Publisher onboarding, content moderation, API management, and admin tools.',
     url: BASE_URL,
     siteName: 'Mukoko News',
     images: [
@@ -51,7 +49,7 @@ export const metadata: Metadata = {
         url: '/mukoko-icon-dark.png',
         width: 512,
         height: 512,
-        alt: 'Mukoko News - Pan-African News Hub',
+        alt: 'Mukoko News Console',
       },
     ],
     locale: 'en_US',
@@ -59,8 +57,8 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: 'summary',
-    title: 'Mukoko News - Pan-African News Hub',
-    description: 'Your trusted source for breaking news and top stories from across Africa.',
+    title: 'Mukoko News Console',
+    description: 'Pan-African news processing and management console.',
     images: ['/mukoko-icon-dark.png'],
     site: '@mukokoafrica',
     creator: '@mukokoafrica',
@@ -115,18 +113,14 @@ export default function RootLayout({
       </head>
       <body className="font-sans antialiased min-h-screen flex flex-col">
         <ThemeProvider defaultTheme="system" storageKey="mukoko-news-theme">
-          <PreferencesProvider>
+          <AuthProvider>
             {/* Five African Minerals vertical stripe */}
             <div className="minerals-stripe" />
 
             <Header />
-            <main className="flex-1 relative z-10 pb-16 md:pb-0">{children}</main>
+            <main className="flex-1 relative z-10">{children}</main>
             <Footer />
-            <BottomNav />
-
-            {/* Onboarding Modal */}
-            <OnboardingModal />
-          </PreferencesProvider>
+          </AuthProvider>
         </ThemeProvider>
       </body>
     </html>

@@ -3,38 +3,30 @@
 import { useState, useEffect, useSyncExternalStore, useMemo, useRef } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Search, Zap, User, ChevronDown, Compass, Bookmark, BarChart3, HelpCircle, Settings } from "lucide-react";
+import { Zap, User, ChevronDown, Compass, BarChart3, HelpCircle, Settings } from "lucide-react";
 import { AppIcon } from "@/components/ui/app-icon";
 
 const navLinks = [
-  { href: "/", label: "Feed" },
-  { href: "/discover", label: "Discover" },
-  { href: "/newsbytes", label: "NewsBytes" },
+  { href: "/platform", label: "Dashboard" },
+  { href: "/sources", label: "Sources" },
+  { href: "/admin", label: "Admin" },
 ];
 
 // All navigable pages for the dropdown
 const allPages = [
-  { href: "/", label: "Feed", icon: Zap },
-  { href: "/discover", label: "Discover", icon: Compass },
-  { href: "/newsbytes", label: "NewsBytes", icon: Zap },
-  { href: "/categories", label: "Categories", icon: BarChart3 },
-  { href: "/insights", label: "Insights", icon: BarChart3 },
-  { href: "/saved", label: "Saved", icon: Bookmark },
-  { href: "/search", label: "Search", icon: Search },
-  { href: "/profile", label: "Profile", icon: Settings },
+  { href: "/platform", label: "Dashboard", icon: BarChart3 },
+  { href: "/sources", label: "Sources", icon: Compass },
+  { href: "/admin", label: "Admin", icon: Settings },
+  { href: "/platform/publishers", label: "Publishers", icon: User },
+  { href: "/platform/tools", label: "Tools", icon: Zap },
   { href: "/help", label: "Help", icon: HelpCircle },
 ];
 
 // Static page titles mapping
 const pageTitles: Record<string, string> = {
-  "/": "Feed",
-  "/discover": "Discover",
-  "/newsbytes": "NewsBytes",
-  "/categories": "Categories",
-  "/search": "Search",
-  "/saved": "Saved Articles",
-  "/profile": "Profile",
-  "/about": "About",
+  "/platform": "Dashboard",
+  "/sources": "Sources",
+  "/admin": "Admin",
   "/help": "Help Center",
   "/terms": "Terms of Service",
   "/privacy": "Privacy Policy",
@@ -79,7 +71,6 @@ export function Header() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const isNewsBytes = pathname === "/newsbytes";
 
   // Handle title button click - toggle dropdown or refresh if already open
   const handleTitleClick = () => {
@@ -137,31 +128,23 @@ export function Header() {
   return (
     <header
       className={`sticky top-0 z-50 transition-all duration-300 ${
-        isNewsBytes
-          ? "bg-gradient-to-b from-black/60 via-black/30 to-transparent"
-          : isScrolled
-            ? "bg-background/70 backdrop-blur-xl border-b border-elevated/50 shadow-sm"
-            : ""
+        isScrolled
+          ? "bg-background/70 backdrop-blur-xl border-b border-elevated/50 shadow-sm"
+          : ""
       }`}
     >
-      <div className={`mx-auto px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between ${
-        isNewsBytes ? "" : "max-w-[1200px]"
-      }`}>
+      <div className="mx-auto px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between max-w-[1200px]">
         {/* Logo / Page Title with Dropdown - fixed height container */}
         <div className="min-w-0 flex-shrink relative h-8" ref={dropdownRef}>
           {/* Logo - visible when not scrolled */}
           <Link
-            href="/"
+            href="/platform"
             className={`absolute top-1/2 -translate-y-1/2 left-0 flex items-center gap-2 transition-all duration-300 ${
               isScrolled && pageTitle ? "opacity-0 pointer-events-none" : "opacity-100"
             }`}
           >
             <AppIcon size={32} className="shadow-sm" />
-            <span
-              className={`text-[16px] sm:text-[20px] font-bold whitespace-nowrap ${
-                isNewsBytes ? "text-white" : "text-primary"
-              }`}
-            >
+            <span className="text-[16px] sm:text-[20px] font-bold whitespace-nowrap text-primary">
               mukoko news
             </span>
           </Link>
@@ -175,9 +158,7 @@ export function Header() {
             >
               <button
                 onClick={handleTitleClick}
-                className={`flex items-center gap-2 transition-colors ${
-                  isNewsBytes ? "text-white" : "text-primary hover:text-primary/80"
-                }`}
+                className="flex items-center gap-2 transition-colors text-primary hover:text-primary/80"
                 aria-expanded={isDropdownOpen}
                 aria-haspopup="true"
                 title={isDropdownOpen ? "Refresh page" : "Navigate to page"}
@@ -195,13 +176,7 @@ export function Header() {
 
               {/* Dropdown Menu */}
               {isDropdownOpen && (
-                <div
-                  className={`absolute top-full left-0 mt-2 w-56 rounded-xl shadow-lg border overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200 ${
-                    isNewsBytes
-                      ? "bg-black/90 backdrop-blur-xl border-white/10"
-                      : "bg-surface border-elevated"
-                  }`}
-                >
+                <div className="absolute top-full left-0 mt-2 w-56 rounded-xl shadow-lg border overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200 bg-surface border-elevated">
                   <nav className="py-2">
                     {allPages.map((page) => {
                       const Icon = page.icon;
@@ -211,22 +186,16 @@ export function Header() {
                           key={page.href}
                           href={page.href}
                           className={`flex items-center gap-3 px-4 py-2.5 transition-colors ${
-                            isNewsBytes
-                              ? isActive
-                                ? "bg-white/20 text-white"
-                                : "text-white/80 hover:bg-white/10 hover:text-white"
-                              : isActive
-                                ? "bg-primary/10 text-primary"
-                                : "text-foreground hover:bg-elevated"
+                            isActive
+                              ? "bg-primary/10 text-primary"
+                              : "text-foreground hover:bg-elevated"
                           }`}
                           onClick={() => setIsDropdownOpen(false)}
                         >
                           <Icon className="w-4 h-4" />
                           <span className="font-medium">{page.label}</span>
                           {isActive && (
-                            <span className={`ml-auto w-1.5 h-1.5 rounded-full ${
-                              isNewsBytes ? "bg-white" : "bg-primary"
-                            }`} />
+                            <span className="ml-auto w-1.5 h-1.5 rounded-full bg-primary" />
                           )}
                         </Link>
                       );
@@ -256,41 +225,27 @@ export function Header() {
         </nav>
 
         {/* Actions - pill-shaped icon group with touch targets */}
-        <div className={`flex items-center rounded-full p-0.5 sm:p-1 gap-0.5 sm:gap-1 flex-shrink-0 ${
-          isNewsBytes ? "bg-black/40 backdrop-blur-md" : "bg-primary"
-        }`}>
+        <div className="flex items-center rounded-full p-0.5 sm:p-1 gap-0.5 sm:gap-1 flex-shrink-0 bg-primary">
           <Link
-            href="/search"
-            className={`flex items-center justify-center w-9 h-9 sm:w-11 sm:h-11 rounded-full transition-colors ${
-              isNewsBytes
-                ? "bg-white/10 hover:bg-white/20"
-                : "bg-background/10 hover:bg-background/20"
-            }`}
-            aria-label="Search"
-          >
-            <Search className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
-          </Link>
-          <Link
-            href="/newsbytes"
-            className={`flex items-center justify-center w-9 h-9 sm:w-11 sm:h-11 rounded-full transition-colors ${
-              isNewsBytes
-                ? "bg-white/20 hover:bg-white/30"
-                : "bg-background/10 hover:bg-background/20"
-            }`}
-            aria-label="NewsBytes"
+            href="/platform/tools"
+            className="flex items-center justify-center w-9 h-9 sm:w-11 sm:h-11 rounded-full transition-colors bg-background/10 hover:bg-background/20"
+            aria-label="Tools"
           >
             <Zap className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
           </Link>
           <Link
-            href="/profile"
-            className={`flex items-center justify-center w-9 h-9 sm:w-11 sm:h-11 rounded-full transition-colors overflow-hidden ${
-              isNewsBytes
-                ? "bg-white/10 hover:bg-white/20"
-                : "bg-background/20 hover:bg-background/30"
-            }`}
-            aria-label="Profile"
+            href="/sources"
+            className="flex items-center justify-center w-9 h-9 sm:w-11 sm:h-11 rounded-full transition-colors bg-background/10 hover:bg-background/20"
+            aria-label="Sources"
           >
-            <User className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+            <Compass className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+          </Link>
+          <Link
+            href="/admin"
+            className="flex items-center justify-center w-9 h-9 sm:w-11 sm:h-11 rounded-full transition-colors bg-background/20 hover:bg-background/30"
+            aria-label="Admin"
+          >
+            <Settings className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
           </Link>
         </div>
       </div>
