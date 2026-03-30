@@ -27,6 +27,9 @@ async def require_auth(authorization: str = Header(default="")) -> AuthUser:
     """Require a valid JWT or API_SECRET. Returns AuthUser or raises 401."""
     # Dev mode — no secrets configured at all
     if not settings.platform_jwt_secret and not settings.api_secret:
+        if settings.environment == "production":
+            print("[AUTH] WARNING: No auth secrets configured in production — rejecting request")
+            raise HTTPException(status_code=500, detail="Auth not configured")
         return AuthUser(user_id="dev", role="admin")
 
     token = _extract_bearer(authorization)

@@ -109,7 +109,7 @@ async def verify_email_otp(body: EmailOtpVerifyRequest):
             )
 
     person_id = row["id"]
-    token = create_jwt(person_id, person_id=person_id)
+    token = create_jwt(user_id=person_id, person_id=person_id)
 
     return AuthResponse(
         token=token,

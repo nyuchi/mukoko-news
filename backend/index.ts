@@ -68,13 +68,10 @@ app.get("/api/stats", async (c) => {
   }
 });
 
-// Catch-all — redirect to production API
+// Catch-all — redirect to production API on Fly.io
 app.all("/api/*", (c) => {
-  return c.json({
-    error: "This endpoint has moved",
-    production_api: "https://mukoko-news-api.fly.dev",
-    message: "The production News API now runs on Fly.io. Update your base URL.",
-  }, 301);
+  const path = new URL(c.req.url).pathname;
+  return c.redirect(`https://mukoko-news-api.fly.dev${path}`, 301);
 });
 
 export default app;
