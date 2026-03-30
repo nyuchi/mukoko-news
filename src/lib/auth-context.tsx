@@ -22,14 +22,16 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
-function setAuthCookie(token: string) {
-  const maxAge = 30 * 24 * 60 * 60; // 30 days, matches JWT expiry
+const SESSION_KEY = "mukoko_session_token";
+
+function setSessionCookie(token: string) {
+  const maxAge = 30 * 24 * 60 * 60; // 30 days, matches Stytch session duration
   const secure = window.location.protocol === 'https:' ? '; Secure' : '';
-  document.cookie = `mukoko_news_token=${token}; path=/; max-age=${maxAge}; SameSite=Lax${secure}`;
+  document.cookie = `${SESSION_KEY}=${token}; path=/; max-age=${maxAge}; SameSite=Lax${secure}`;
 }
 
-function clearAuthCookie() {
-  document.cookie = 'mukoko_news_token=; path=/; max-age=0';
+function clearSessionCookie() {
+  document.cookie = `${SESSION_KEY}=; path=/; max-age=0`;
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -38,24 +40,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Restore session on mount
   useEffect(() => {
-    const token = localStorage.getItem("mukoko_news_token");
+    const token = localStorage.getItem(SESSION_KEY);
     if (!token) {
       setLoading(false);
       return;
     }
 
-    setAuthCookie(token);
+    // Keep cookie in sync for middleware
+    setSessionCookie(token);
 
     api.auth
       .getMe()
       .then((res) => {
         const u = res.user;
-        setUser({ id: String(u.id ?? ""), name: u.name as string | undefined, email: u.email as string | undefined, role: u.role as string | undefined, person_id: u.person_id as string | undefined });
+        setUser({
+          id: String(u.id ?? ""),
+          name: u.name as string | undefined,
+          email: u.email as string | undefined,
+          role: u.role as string | undefined,
+          person_id: u.person_id as string | undefined,
+        });
       })
       .catch(() => {
-        localStorage.removeItem("mukoko_news_token");
-        localStorage.removeItem("mukoko_news_person_id");
-        clearAuthCookie();
+        localStorage.removeItem(SESSION_KEY);
+        clearSessionCookie();
       })
       .finally(() => setLoading(false));
   }, []);
@@ -72,23 +80,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const verifyOTP = useCallback(async (email: string, otp: string, fullName?: string) => {
     try {
       const res = await api.auth.verifyOTP(email, otp, fullName);
-      localStorage.setItem("mukoko_news_token", res.token);
-      setAuthCookie(res.token);
-      if (res.person_id) {
-        localStorage.setItem("mukoko_news_person_id", res.person_id);
-      }
+      // Store Stytch session token
+      localStorage.setItem(SESSION_KEY, res.session_token);
+      setSessionCookie(res.session_token);
+
       const u = res.user;
-      setUser({ id: String(u.id ?? ""), name: u.name as string | undefined, email: u.email as string | undefined, role: u.role as string | undefined, person_id: u.person_id as string | undefined });
+      setUser({
+        id: String(u.id ?? ""),
+        name: u.name as string | undefined,
+        email: u.email as string | undefined,
+        role: u.role as string | undefined,
+        person_id: u.person_id as string | undefined,
+      });
       return { success: true };
     } catch (e) {
       return { success: false, error: e instanceof Error ? e.message : "Invalid code" };
     }
   }, []);
 
-  const signOut = useCallback(() => {
-    localStorage.removeItem("mukoko_news_token");
-    localStorage.removeItem("mukoko_news_person_id");
-    clearAuthCookie();
+  const signOut = useCallback(async () => {
+    // Revoke session server-side
+    try { await api.auth.logout(); } catch { /* best-effort */ }
+    localStorage.removeItem(SESSION_KEY);
+    clearSessionCookie();
     setUser(null);
     window.location.href = "/sign-in";
   }, []);

@@ -38,8 +38,8 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Protected routes — check for auth token cookie
-  const token = request.cookies.get("mukoko_news_token")?.value;
+  // Protected routes — check for Stytch session cookie
+  const token = request.cookies.get("mukoko_session_token")?.value;
   if (!token) {
     const signInUrl = new URL("/sign-in", request.url);
     signInUrl.searchParams.set("redirect", pathname);

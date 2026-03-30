@@ -100,18 +100,12 @@ async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> 
     ...(options?.headers as Record<string, string>),
   };
 
-  // Add auth token for protected endpoints
-  // Server-side: use API_SECRET env var (for SSR, Server Components)
-  // Client-side: use JWT from localStorage (for authenticated users)
+  // Add Stytch session token if available (for authenticated endpoints)
+  // Public reads (feeds, articles, search) work without auth
   if (typeof window !== 'undefined') {
-    const token = localStorage.getItem('mukoko_news_token');
+    const token = localStorage.getItem('mukoko_session_token');
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
-    }
-  } else {
-    const apiSecret = process.env.API_SECRET;
-    if (apiSecret) {
-      headers['Authorization'] = `Bearer ${apiSecret}`;
     }
   }
 
@@ -441,7 +435,7 @@ export const api = {
 
     verifyOTP: (email: string, otp: string, fullName?: string) => {
       return fetchAPI<{
-        token: string;
+        session_token: string;
         is_new_user: boolean;
         user: Record<string, unknown>;
         person_id: string | null;

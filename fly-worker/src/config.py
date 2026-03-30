@@ -33,7 +33,6 @@ class Settings(BaseSettings):
     stytch_secret: str = ""
     platform_jwt_secret: str = ""
     platform_api_url: str = "http://mukoko-platform-api.internal:8080"
-    api_secret: str = ""  # Backward compat: static token for server-side & MCP
 
     # CORS
     cors_origins: str = "https://news.mukoko.com,https://mukoko-news.vercel.app,http://localhost:3000"

@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, Query
 
 from src.db import get_pool
-from src.api.auth import require_auth, AuthUser
+from src.api.auth import optional_auth, AuthUser
 
 router = APIRouter(prefix="/api", tags=["feeds"])
 
@@ -59,7 +59,7 @@ async def get_feeds(
     category: str | None = Query(None),
     countries: str | None = Query(None),
     sort: str = Query("latest"),
-    _user: AuthUser = Depends(require_auth),
+    _user: AuthUser | None = Depends(optional_auth),
 ):
     """Get articles feed with filtering and pagination."""
     pool = await get_pool()
@@ -126,7 +126,7 @@ async def get_feeds(
 async def get_sectioned_feed(
     countries: str | None = Query(None),
     categories: str | None = Query(None),
-    _user: AuthUser = Depends(require_auth),
+    _user: AuthUser | None = Depends(optional_auth),
 ):
     """Sectioned feed: top stories, your news, by category, latest."""
     pool = await get_pool()
@@ -237,7 +237,7 @@ async def get_sectioned_feed(
 @router.get("/news-bytes")
 async def get_news_bytes(
     limit: int = Query(20, ge=1, le=50),
-    _user: AuthUser = Depends(require_auth),
+    _user: AuthUser | None = Depends(optional_auth),
 ):
     """NewsBytes: short-form articles for TikTok-style feed."""
     pool = await get_pool()

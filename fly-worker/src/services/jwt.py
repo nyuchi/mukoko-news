@@ -1,7 +1,8 @@
-"""Platform JWT utilities.
+"""Platform JWT utilities — service-to-service auth only.
 
-Signs and verifies HS256 JWTs for Mukoko News authentication.
-Compatible with mukoko-platform's PLATFORM_JWT format.
+Signs and verifies HS256 JWTs for communication between
+mukoko-news and mukoko-platform. NOT used for user auth
+(Stytch session tokens handle that).
 """
 
 import time
@@ -15,10 +16,10 @@ ISSUER = "mukoko-news"
 def create_jwt(
     user_id: str,
     *,
-    role: str = "authenticated",
+    role: str = "service_role",
     person_id: str | None = None,
 ) -> str:
-    """Create a JWT for an authenticated user."""
+    """Create a service JWT for platform-to-platform calls."""
     now = int(time.time())
     payload: dict = {
         "sub": user_id,
@@ -26,7 +27,7 @@ def create_jwt(
         "role": role,
         "iss": ISSUER,
         "iat": now,
-        "exp": now + 60 * 60 * 24 * 30,  # 30 days
+        "exp": now + 60 * 5,  # 5 minutes — short-lived for service calls
     }
     if person_id:
         payload["person_id"] = person_id
@@ -34,18 +35,14 @@ def create_jwt(
 
 
 def verify_jwt(token: str) -> dict | None:
-    """Verify a JWT signed by this service or mukoko-platform.
-
-    Accepts tokens from both issuers (mukoko-news and mukoko-platform)
-    since they share the same PLATFORM_JWT_SECRET.
-    """
+    """Verify a service JWT from mukoko-platform."""
     try:
         payload = jwt.decode(
             token,
             settings.platform_jwt_secret,
             algorithms=[ALGORITHM],
             audience="authenticated",
-            options={"verify_iss": False},  # Accept both issuers
+            options={"verify_iss": False},
         )
         return payload
     except jwt.PyJWTError:
