@@ -28,13 +28,12 @@ class Settings(BaseSettings):
     doris_password: str = ""
     doris_database: str = "mukoko_analytics"
 
-    # API authentication
-    api_secret: str = ""  # Bearer token for frontend-to-backend auth
-    admin_session_secret: str = ""  # Admin dashboard auth
-
-    # OIDC (id.mukoko.com)
-    oidc_issuer_url: str = "https://id.mukoko.com"
-    oidc_client_secret: str = ""
+    # Authentication — Stytch OTP + Platform JWT
+    stytch_project_id: str = ""
+    stytch_secret: str = ""
+    platform_jwt_secret: str = ""
+    platform_api_url: str = "http://mukoko-platform-api.internal:8080"
+    api_secret: str = ""  # Backward compat: static token for server-side & MCP
 
     # CORS
     cors_origins: str = "https://news.mukoko.com,https://mukoko-news.vercel.app,http://localhost:3000"
