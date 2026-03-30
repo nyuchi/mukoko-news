@@ -13,6 +13,7 @@ primary_region = "jnb"
   COUCHDB_DATABASE = "mukoko_articles"
   DORIS_HTTP_URL = "http://doris-fe.internal:8030"
   DORIS_DATABASE = "mukoko_analytics"
+  PLATFORM_API_URL = "http://mukoko-platform-api.internal:8080"
 
 [http_service]
   internal_port = 8080
