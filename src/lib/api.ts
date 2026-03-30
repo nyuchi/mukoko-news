@@ -100,11 +100,19 @@ async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> 
     ...(options?.headers as Record<string, string>),
   };
 
-  // Add API secret if available (for protected endpoints)
-  // Server-side uses API_SECRET, client-side uses EXPO_PUBLIC_API_SECRET (set in Vercel)
-  const apiSecret = process.env.API_SECRET || process.env.EXPO_PUBLIC_API_SECRET;
-  if (apiSecret) {
-    headers['Authorization'] = `Bearer ${apiSecret}`;
+  // Add auth token for protected endpoints
+  // Server-side: use API_SECRET env var (for SSR, Server Components)
+  // Client-side: use JWT from localStorage (for authenticated users)
+  if (typeof window !== 'undefined') {
+    const token = localStorage.getItem('mukoko_news_token');
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+  } else {
+    const apiSecret = process.env.API_SECRET;
+    if (apiSecret) {
+      headers['Authorization'] = `Bearer ${apiSecret}`;
+    }
   }
 
   try {
@@ -417,6 +425,39 @@ export const api = {
       category: string;
       searchMethod: 'semantic' | 'keyword';
     }>(`/api/search?${searchParams.toString()}`);
+  },
+
+  // =====================================================
+  // AUTH - Stytch Email OTP
+  // =====================================================
+
+  auth: {
+    sendOTP: (email: string) => {
+      return fetchAPI<{ message: string; email: string }>('/api/auth/otp/email/send', {
+        method: 'POST',
+        body: JSON.stringify({ email }),
+      });
+    },
+
+    verifyOTP: (email: string, otp: string, fullName?: string) => {
+      return fetchAPI<{
+        token: string;
+        is_new_user: boolean;
+        user: Record<string, unknown>;
+        person_id: string | null;
+      }>('/api/auth/otp/email/verify', {
+        method: 'POST',
+        body: JSON.stringify({ email, otp, full_name: fullName }),
+      });
+    },
+
+    getMe: () => {
+      return fetchAPI<{ user: Record<string, unknown> }>('/api/auth/me');
+    },
+
+    logout: () => {
+      return fetchAPI<{ message: string }>('/api/auth/logout', { method: 'POST' });
+    },
   },
 };
 
