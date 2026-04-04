@@ -52,40 +52,41 @@ _OTP_RATE_LIMIT_WINDOW_MINUTES = 15
 
 
 async def _check_otp_rate_limit(email: str):
-    """Check OTP rate limit using Postgres (works across Fly.io instances)."""
-    pool = await get_pool()
-    async with pool.acquire() as conn:
-        # Ensure tracking table exists (idempotent)
-        await conn.execute("""
-            CREATE TABLE IF NOT EXISTS system.otp_rate_limit (
-                email TEXT NOT NULL,
-                attempted_at TIMESTAMPTZ DEFAULT NOW()
-            )
-        """)
+    """Check OTP rate limit using Postgres (works across Fly.io instances).
 
-        # Count recent attempts
-        count = await conn.fetchval(
-            """SELECT COUNT(*) FROM system.otp_rate_limit
-               WHERE email = $1 AND attempted_at > NOW() - INTERVAL '15 minutes'""",
-            email,
-        )
-
-        if count >= _OTP_RATE_LIMIT_MAX:
-            raise HTTPException(
-                status_code=429,
-                detail="Too many verification code requests. Please wait before trying again.",
+    Fails closed: if the DB is unavailable, returns 503 rather than allowing the send.
+    """
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            count = await conn.fetchval(
+                """SELECT COUNT(*) FROM system.otp_rate_limit
+                   WHERE email = $1 AND attempted_at > NOW() - INTERVAL '15 minutes'""",
+                email,
             )
 
-        # Record this attempt
-        await conn.execute(
-            "INSERT INTO system.otp_rate_limit (email) VALUES ($1)",
-            email,
-        )
+            if count >= _OTP_RATE_LIMIT_MAX:
+                raise HTTPException(
+                    status_code=429,
+                    detail="Too many verification code requests. Please wait before trying again.",
+                )
 
-        # Cleanup old entries (async, non-blocking)
-        await conn.execute(
-            "DELETE FROM system.otp_rate_limit WHERE attempted_at < NOW() - INTERVAL '1 hour'"
-        )
+            # Record this attempt
+            await conn.execute(
+                "INSERT INTO system.otp_rate_limit (email) VALUES ($1)",
+                email,
+            )
+
+            # Cleanup old entries
+            await conn.execute(
+                "DELETE FROM system.otp_rate_limit WHERE attempted_at < NOW() - INTERVAL '1 hour'"
+            )
+    except HTTPException:
+        raise  # Re-raise 429
+    except Exception as e:
+        # Fail closed — don't allow OTP sends if rate limiting is broken
+        print(f"[AUTH] Rate limit check failed (failing closed): {e}")
+        raise HTTPException(status_code=503, detail="Service temporarily unavailable")
 
 
 # ---------------------------------------------------------------------------
@@ -232,7 +233,8 @@ async def logout(
     _check_origin(request)
 
     if is_stytch_configured() and authorization:
-        token = authorization.replace("Bearer ", "")
+        from src.api.auth import _extract_bearer
+        token = _extract_bearer(authorization)
         try:
             client = get_stytch_client()
             await asyncio.to_thread(client.sessions.revoke, session_token=token)

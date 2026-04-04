@@ -4,6 +4,8 @@ Uses Fly.io internal networking (.internal) when both apps are deployed.
 Falls back to public URL via PLATFORM_API_URL config.
 """
 
+from urllib.parse import urlparse
+
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Body
 
@@ -13,9 +15,28 @@ from src.services.jwt import create_jwt
 
 router = APIRouter(prefix="/api/platform", tags=["platform-sync"])
 
+# Only send service JWTs to trusted hosts
+_ALLOWED_PLATFORM_HOSTS = {
+    "mukoko-platform-api.internal",  # Fly.io internal
+    "api.mukoko.com",
+    "localhost",
+}
+
+
+def _validate_platform_url():
+    """Ensure PLATFORM_API_URL points to a trusted host."""
+    parsed = urlparse(settings.platform_api_url)
+    hostname = parsed.hostname or ""
+    if hostname not in _ALLOWED_PLATFORM_HOSTS:
+        raise RuntimeError(
+            f"PLATFORM_API_URL hostname '{hostname}' not in allowlist. "
+            f"Refusing to send service JWT to untrusted host."
+        )
+
 
 def _get_platform_headers() -> dict:
     """Build auth headers for mukoko-platform API calls."""
+    _validate_platform_url()
     token = create_jwt("mukoko-news-service", role="service_role")
     return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 

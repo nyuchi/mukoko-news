@@ -122,6 +122,13 @@ async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> 
     clearTimeout(timeoutId);
 
     if (!response.ok) {
+      // Auto-logout on 401 — session expired or token revoked
+      if (response.status === 401 && typeof window !== 'undefined') {
+        localStorage.removeItem('mukoko_session_token');
+        document.cookie = 'mukoko_session_token=; path=/; max-age=0';
+        window.location.href = '/sign-in';
+        throw new Error('Session expired');
+      }
       throw new Error(`API error: ${response.status} ${response.statusText}`);
     }
 
