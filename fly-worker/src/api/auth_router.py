@@ -6,58 +6,86 @@ GET  /api/auth/me               — current user from session
 POST /api/auth/logout           — revoke Stytch session
 """
 
-import time
-from collections import defaultdict
+import asyncio
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, EmailStr
 
 from src.api.auth import require_auth, AuthUser
+from src.config import settings
 from src.services.stytch_client import get_stytch_client, is_stytch_configured
 from src.db import get_pool
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 # ---------------------------------------------------------------------------
-# CSRF — Origin check
+# CSRF — Origin check (empty origin = curl/server-side, always allowed)
 # ---------------------------------------------------------------------------
 
-ALLOWED_ORIGINS = {
+_PROD_ORIGINS = {
     "https://news.mukoko.com",
     "https://mukoko-news.vercel.app",
-    "http://localhost:3000",
 }
+_DEV_ORIGINS = {"http://localhost:3000"}
+
+
+def _get_allowed_origins() -> set[str]:
+    origins = set(_PROD_ORIGINS)
+    if settings.environment != "production":
+        origins |= _DEV_ORIGINS
+    return origins
 
 
 def _check_origin(request: Request):
     origin = request.headers.get("origin", "")
-    if origin and origin not in ALLOWED_ORIGINS:
+    if origin and origin not in _get_allowed_origins():
         raise HTTPException(status_code=403, detail="Invalid origin")
 
 
 # ---------------------------------------------------------------------------
-# Rate limiter — max 3 OTP sends per email per 15 minutes
+# Rate limiter — Postgres-backed, distributed across instances
+# Max 3 OTP sends per email per 15 minutes
 # ---------------------------------------------------------------------------
 
 _OTP_RATE_LIMIT_MAX = 3
-_OTP_RATE_LIMIT_WINDOW = 15 * 60  # seconds
-
-# { email: [timestamp, ...] }
-_otp_send_timestamps: dict[str, list[float]] = defaultdict(list)
+_OTP_RATE_LIMIT_WINDOW_MINUTES = 15
 
 
-def _check_otp_rate_limit(email: str):
-    now = time.time()
-    cutoff = now - _OTP_RATE_LIMIT_WINDOW
-    timestamps = _otp_send_timestamps[email]
-    # Drop timestamps outside the window
-    timestamps[:] = [t for t in timestamps if t > cutoff]
-    if len(timestamps) >= _OTP_RATE_LIMIT_MAX:
-        raise HTTPException(
-            status_code=429,
-            detail="Too many verification code requests. Please wait before trying again.",
+async def _check_otp_rate_limit(email: str):
+    """Check OTP rate limit using Postgres (works across Fly.io instances)."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        # Ensure tracking table exists (idempotent)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS system.otp_rate_limit (
+                email TEXT NOT NULL,
+                attempted_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        """)
+
+        # Count recent attempts
+        count = await conn.fetchval(
+            """SELECT COUNT(*) FROM system.otp_rate_limit
+               WHERE email = $1 AND attempted_at > NOW() - INTERVAL '15 minutes'""",
+            email,
         )
-    timestamps.append(now)
+
+        if count >= _OTP_RATE_LIMIT_MAX:
+            raise HTTPException(
+                status_code=429,
+                detail="Too many verification code requests. Please wait before trying again.",
+            )
+
+        # Record this attempt
+        await conn.execute(
+            "INSERT INTO system.otp_rate_limit (email) VALUES ($1)",
+            email,
+        )
+
+        # Cleanup old entries (async, non-blocking)
+        await conn.execute(
+            "DELETE FROM system.otp_rate_limit WHERE attempted_at < NOW() - INTERVAL '1 hour'"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -95,11 +123,13 @@ async def send_email_otp(body: EmailOtpSendRequest, request: Request):
     if not is_stytch_configured():
         raise HTTPException(status_code=503, detail="Auth service not configured")
 
-    _check_otp_rate_limit(body.email)
+    await _check_otp_rate_limit(body.email)
 
     client = get_stytch_client()
     try:
-        client.otps.email.send(
+        # Stytch SDK is synchronous — run in thread to avoid blocking event loop
+        await asyncio.to_thread(
+            client.otps.email.send,
             email=body.email,
             expiration_minutes=10,
         )
@@ -122,7 +152,8 @@ async def verify_email_otp(body: EmailOtpVerifyRequest, request: Request):
 
     # Verify OTP — Stytch creates a session automatically
     try:
-        auth_response = client.otps.email.authenticate(
+        auth_response = await asyncio.to_thread(
+            client.otps.email.authenticate,
             email=body.email,
             code=body.otp,
             session_duration_minutes=60 * 24 * 30,  # 30 days
@@ -204,7 +235,7 @@ async def logout(
         token = authorization.replace("Bearer ", "")
         try:
             client = get_stytch_client()
-            client.sessions.revoke(session_token=token)
+            await asyncio.to_thread(client.sessions.revoke, session_token=token)
         except Exception as e:
             print(f"[AUTH] Session revoke failed: {e}")
     return {"message": "Logged out"}

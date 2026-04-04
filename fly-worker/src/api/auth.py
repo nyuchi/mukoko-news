@@ -35,7 +35,7 @@ async def require_auth(authorization: str = Header(default="")) -> AuthUser:
     if not token:
         raise HTTPException(status_code=401, detail="Missing bearer token")
 
-    user = _try_authenticate(token)
+    user = await _try_authenticate(token)
     if user is not None:
         return user
 
@@ -64,11 +64,13 @@ async def optional_auth(authorization: str = Header(default="")) -> AuthUser | N
     if not token:
         return None
 
-    return _try_authenticate(token)
+    return await _try_authenticate(token)
 
 
-def _try_authenticate(token: str) -> AuthUser | None:
+async def _try_authenticate(token: str) -> AuthUser | None:
     """Try to authenticate a token as Platform JWT or Stytch session."""
+    import asyncio
+
     # Try Platform JWT first (service-to-service, fast local check)
     if settings.platform_jwt_secret:
         payload = verify_jwt(token)
@@ -81,10 +83,13 @@ def _try_authenticate(token: str) -> AuthUser | None:
             )
 
     # Try Stytch session token (user auth, remote validation)
+    # Stytch SDK is synchronous — run in thread to avoid blocking event loop
     if is_stytch_configured():
         try:
             client = get_stytch_client()
-            resp = client.sessions.authenticate(session_token=token)
+            resp = await asyncio.to_thread(
+                client.sessions.authenticate, session_token=token
+            )
             user = resp.user
             return AuthUser(
                 user_id=user.user_id,
