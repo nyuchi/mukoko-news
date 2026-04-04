@@ -17,6 +17,7 @@ dependencies = [
     "pydantic-settings>=2.6",
     "stytch>=10.0",
     "pyjwt[crypto]>=2.8",
+    "readability-lxml>=0.8",
 ]
 
 [project.optional-dependencies]

@@ -10,6 +10,7 @@ from src.services.keyword_extractor import extract_keywords
 from src.services.quality_scorer import score_article
 from src.services.couchdb import get_couchdb
 from src.services.embeddings import embed_text, build_article_text
+from src.services.article_scraper import scrape_article
 
 
 async def process_articles_batch(article_ids: list[str]) -> None:
@@ -63,7 +64,8 @@ async def _process_single(pool, article_id: str) -> None:
         article = await conn.fetchrow(
             """SELECT id::text, headline, description, articlebody,
                       article_body_processed, articlesection,
-                      author, image, publisher_organization_id, couchdb_doc_id
+                      author, image, publisher_organization_id, couchdb_doc_id,
+                      mainentityofpage
                FROM news.news_article WHERE id = $1::uuid""",
             article_id,
         )
@@ -82,6 +84,30 @@ async def _process_single(pool, article_id: str) -> None:
                 article_dict["articlebody"] = doc.get("articlebody") or article_dict.get("articlebody", "")
         except Exception:
             pass  # Fall through to Postgres body
+
+    # Scrape full article from source URL if RSS content is thin
+    rss_body = article_dict.get("articlebody", "") or ""
+    rss_word_count = count_words(extract_text(rss_body))
+    source_url = article_dict.get("mainentityofpage", "")
+
+    if rss_word_count < 200 and source_url:
+        scraped = await scrape_article(source_url)
+        if scraped and scraped["word_count"] > rss_word_count:
+            article_dict["articlebody"] = scraped["body_html"]
+            # Update description if RSS had none and scraper found one
+            if not article_dict.get("description") and scraped.get("excerpt"):
+                article_dict["description"] = scraped["excerpt"]
+            # Store full body in CouchDB for future reads
+            if couchdb_id:
+                try:
+                    await get_couchdb().put_doc(couchdb_id, {
+                        "articlebody": scraped["body_html"],
+                        "scraped_from": source_url,
+                        "scraped_word_count": scraped["word_count"],
+                    })
+                except Exception:
+                    pass
+            print(f"[AI] Scraped full article: {rss_word_count} → {scraped['word_count']} words")
 
     # 1. Extract plain text if not already done
     plain_text = extract_text(article_dict.get("articlebody", "") or "")
