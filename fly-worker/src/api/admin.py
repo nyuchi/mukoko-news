@@ -73,6 +73,36 @@ async def admin_sources(
     return {"sources": [dict(r) for r in rows]}
 
 
+@router.get("/sources/health")
+async def admin_sources_health(_admin: AuthUser = Depends(require_admin)):
+    """Get source health summary."""
+    pool = await get_pool()
+
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT health_status, COUNT(*) AS count
+               FROM news.feed_source
+               WHERE is_active = TRUE
+               GROUP BY health_status"""
+        )
+
+        failing = await conn.fetch(
+            """SELECT fs.id::text AS feed_source_id,
+                      org.id::text AS id, org.name,
+                      fs.health_status, fs.consecutive_failures,
+                      fs.last_fetch_error, fs.last_error_at
+               FROM news.feed_source fs
+               JOIN news.news_media_organization org ON fs.organization_id = org.id
+               WHERE fs.is_active = TRUE AND fs.consecutive_failures > 3
+               ORDER BY fs.consecutive_failures DESC"""
+        )
+
+    return {
+        "summary": {r["health_status"]: r["count"] for r in rows},
+        "alerts": [dict(r) for r in failing],
+    }
+
+
 @router.get("/sources/{source_id}")
 async def admin_source_detail(
     source_id: str = Path(...),
@@ -165,36 +195,6 @@ async def update_rss_source(
             )
 
     return {"success": True, "message": "Source updated"}
-
-
-@router.get("/sources/health")
-async def admin_sources_health(_admin: AuthUser = Depends(require_admin)):
-    """Get source health summary."""
-    pool = await get_pool()
-
-    async with pool.acquire() as conn:
-        rows = await conn.fetch(
-            """SELECT health_status, COUNT(*) AS count
-               FROM news.feed_source
-               WHERE is_active = TRUE
-               GROUP BY health_status"""
-        )
-
-        failing = await conn.fetch(
-            """SELECT fs.id::text AS feed_source_id,
-                      org.id::text AS id, org.name,
-                      fs.health_status, fs.consecutive_failures,
-                      fs.last_fetch_error, fs.last_error_at
-               FROM news.feed_source fs
-               JOIN news.news_media_organization org ON fs.organization_id = org.id
-               WHERE fs.is_active = TRUE AND fs.consecutive_failures > 3
-               ORDER BY fs.consecutive_failures DESC"""
-        )
-
-    return {
-        "summary": {r["health_status"]: r["count"] for r in rows},
-        "alerts": [dict(r) for r in failing],
-    }
 
 
 @router.get("/cron-logs")

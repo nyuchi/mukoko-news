@@ -91,8 +91,8 @@ def _try_authenticate(token: str) -> AuthUser | None:
                 email=user.emails[0].email if user.emails else None,
                 role="authenticated",
             )
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[AUTH] Stytch session validation failed: {type(e).__name__}: {e}")
 
     return None
 

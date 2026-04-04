@@ -8,6 +8,8 @@ function SignInContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirect = searchParams.get("redirect") || "/platform";
+  // Validate redirect is a safe relative path
+  const safeRedirect = redirect.startsWith("/") && !redirect.startsWith("//") ? redirect : "/platform";
   const { sendOTP, verifyOTP } = useAuth();
 
   const [email, setEmail] = useState("");

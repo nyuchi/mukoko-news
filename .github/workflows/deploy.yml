@@ -94,4 +94,4 @@ jobs:
           fi
         done
         echo "Health check failed after $max_retries attempts (HTTP $response)"
-        exit 0
+        exit 1

@@ -42,7 +42,7 @@ def verify_jwt(token: str) -> dict | None:
             settings.platform_jwt_secret,
             algorithms=[ALGORITHM],
             audience="authenticated",
-            options={"verify_iss": False},
+            issuer=["mukoko-news", "mukoko-platform"],
         )
         return payload
     except jwt.PyJWTError:

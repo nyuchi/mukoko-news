@@ -23,6 +23,10 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | null>(null);
 
 const SESSION_KEY = "mukoko_session_token";
+// NOTE: Session token is stored in localStorage + mirrored to a non-HttpOnly cookie.
+// This is an XSS risk — the long-term fix is to have the backend set an HttpOnly
+// cookie via Set-Cookie header on /api/auth/otp/email/verify response.
+// Tracked for the next iteration when we add a Next.js API route proxy.
 
 function setSessionCookie(token: string) {
   const maxAge = 30 * 24 * 60 * 60; // 30 days, matches Stytch session duration
