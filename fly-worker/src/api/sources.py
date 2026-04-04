@@ -26,7 +26,7 @@ async def get_sources(
                       MAX(a.datepublished) AS latest_article_at
                FROM news.feed_source fs
                JOIN news.news_media_organization org ON fs.organization_id = org.id
-               LEFT JOIN news.news_article a ON a.publisher_organization_id = org.id AND a.status = 'published'
+               LEFT JOIN news.news_article a ON a.publisher_organization_id = org.id AND a.creativeworkstatus = 'published'
                WHERE fs.is_active = TRUE
                GROUP BY org.id, org.name, org.url,
                         fs.feed_url, fs.area_served, fs.article_section_id,
@@ -126,7 +126,7 @@ async def get_country_article_stats(
         rows = await conn.fetch(
             """SELECT primary_location_country AS country_id, COUNT(*) AS article_count
                FROM news.news_article
-               WHERE status = 'published'
+               WHERE creativeworkstatus = 'published'
                GROUP BY primary_location_country
                ORDER BY article_count DESC"""
         )

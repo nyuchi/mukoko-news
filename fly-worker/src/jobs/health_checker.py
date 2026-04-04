@@ -80,7 +80,7 @@ async def _calc_source_quality(conn, organization_id, since: datetime) -> float:
            FROM news.news_article
            WHERE publisher_organization_id = $1
              AND datepublished >= $2
-             AND status = 'published'""",
+             AND creativeworkstatus = 'published'""",
         organization_id,
         since,
     )

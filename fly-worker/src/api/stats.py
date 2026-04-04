@@ -57,7 +57,7 @@ async def get_stats(
 
     async with pool.acquire() as conn:
         total_articles = await conn.fetchval(
-            "SELECT COUNT(*) FROM news.news_article WHERE status = 'published'"
+            "SELECT COUNT(*) FROM news.news_article WHERE creativeworkstatus = 'published'"
         )
         active_sources = await conn.fetchval(
             "SELECT COUNT(*) FROM news.feed_source WHERE is_active = TRUE"
@@ -66,7 +66,7 @@ async def get_stats(
             "SELECT COUNT(*) FROM engagement.interest_category WHERE is_active = TRUE"
         )
         today_articles = await conn.fetchval(
-            "SELECT COUNT(*) FROM news.news_article WHERE status = 'published' AND datepublished >= CURRENT_DATE"
+            "SELECT COUNT(*) FROM news.news_article WHERE creativeworkstatus = 'published' AND datepublished >= CURRENT_DATE"
         )
 
     return {

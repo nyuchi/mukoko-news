@@ -95,7 +95,7 @@ async def _semantic_search(
                 f"""SELECT {ARTICLE_SELECT},
                            1 - (a.embedding_vector <=> $1::vector) AS similarity
                     {ARTICLE_FROM}
-                    WHERE a.status = 'published'
+                    WHERE a.creativeworkstatus = 'published'
                       AND a.embedding_vector IS NOT NULL
                       {category_clause}
                     ORDER BY a.embedding_vector <=> $1::vector
@@ -165,7 +165,7 @@ async def _hydrate_from_postgres(pool, article_ids: list[str], limit: int) -> tu
             f"""SELECT {ARTICLE_SELECT}
                 {ARTICLE_FROM}
                 WHERE a.id IN ({placeholders})
-                AND a.status = 'published'""",
+                AND a.creativeworkstatus = 'published'""",
             *article_ids,
         )
 
@@ -182,7 +182,7 @@ async def _postgres_search(pool, query: str, limit: int, category: str | None) -
 
     async with pool.acquire() as conn:
         conditions = [
-            "a.status = 'published'",
+            "a.creativeworkstatus = 'published'",
             "(a.headline ILIKE $1 OR a.description ILIKE $1)",
         ]
         params: list = [search_term]
@@ -228,7 +228,7 @@ async def search_by_keyword(
                {ARTICLE_FROM}
                JOIN news.article_keyword ak ON ak.article_id = a.id
                WHERE ak.term_id = $1
-                 AND a.status = 'published'
+                 AND a.creativeworkstatus = 'published'
                ORDER BY a.datepublished DESC
                LIMIT $2""",
             keyword,

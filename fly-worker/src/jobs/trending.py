@@ -29,7 +29,7 @@ async def refresh_trending() -> None:
                JOIN news.news_article a ON a.id = ak.article_id
                JOIN news.defined_term dt ON dt.id = ak.term_id
                WHERE a.datepublished >= $1
-                 AND a.status = 'published'
+                 AND a.creativeworkstatus = 'published'
                GROUP BY ak.term_id, dt.name
                HAVING COUNT(DISTINCT ak.article_id) >= 2
                ORDER BY COUNT(DISTINCT ak.article_id) DESC
@@ -98,7 +98,7 @@ async def refresh_trending() -> None:
                    JOIN news.defined_term dt ON dt.id = ak.term_id
                    WHERE a.datepublished >= $1
                      AND a.primary_location_country = $2
-                     AND a.status = 'published'
+                     AND a.creativeworkstatus = 'published'
                    GROUP BY ak.term_id, dt.name
                    HAVING COUNT(DISTINCT ak.article_id) >= 2
                    ORDER BY COUNT(DISTINCT ak.article_id) DESC

@@ -23,7 +23,7 @@ async def get_categories(
                       ic.sort_order,
                       COUNT(a.id) AS article_count
                FROM engagement.interest_category ic
-               LEFT JOIN news.news_article a ON a.primary_interest_category_id = ic.id AND a.status = 'published'
+               LEFT JOIN news.news_article a ON a.primary_interest_category_id = ic.id AND a.creativeworkstatus = 'published'
                WHERE ic.is_active = TRUE
                GROUP BY ic.id, ic.name, ic.description, ic.emoji, ic.color_hex, ic.sort_order
                ORDER BY ic.sort_order, ic.name"""
@@ -61,7 +61,7 @@ async def get_trending_categories(
                       COUNT(a.id) FILTER (WHERE a.datepublished >= NOW() - INTERVAL '14 days'
                                             AND a.datepublished < NOW() - INTERVAL '7 days') AS prev_count
                FROM engagement.interest_category ic
-               LEFT JOIN news.news_article a ON a.primary_interest_category_id = ic.id AND a.status = 'published'
+               LEFT JOIN news.news_article a ON a.primary_interest_category_id = ic.id AND a.creativeworkstatus = 'published'
                WHERE ic.is_active = TRUE
                GROUP BY ic.id, ic.name
                HAVING COUNT(a.id) FILTER (WHERE a.datepublished >= NOW() - INTERVAL '7 days') > 0

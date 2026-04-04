@@ -21,7 +21,7 @@ async def admin_stats(_admin: AuthUser = Depends(require_admin)):
 
     async with pool.acquire() as conn:
         total_articles = await conn.fetchval("SELECT COUNT(*) FROM news.news_article")
-        published = await conn.fetchval("SELECT COUNT(*) FROM news.news_article WHERE status = 'published'")
+        published = await conn.fetchval("SELECT COUNT(*) FROM news.news_article WHERE creativeworkstatus = 'published'")
         sources = await conn.fetchval("SELECT COUNT(*) FROM news.feed_source")
         enabled_sources = await conn.fetchval("SELECT COUNT(*) FROM news.feed_source WHERE is_active = TRUE")
         categories = await conn.fetchval("SELECT COUNT(*) FROM engagement.interest_category WHERE is_active = TRUE")

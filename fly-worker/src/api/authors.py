@@ -55,7 +55,7 @@ async def get_author(
                {ARTICLE_FROM}
                JOIN news.article_authorship aa ON aa.article_id = a.id
                WHERE aa.person_id = $1
-                 AND a.status = 'published'
+                 AND a.creativeworkstatus = 'published'
                ORDER BY a.datepublished DESC
                LIMIT 20""",
             author["id"],
@@ -105,7 +105,7 @@ async def get_trending_authors(
                FROM identity.person p
                JOIN news.article_authorship aa ON aa.person_id = p.id
                JOIN news.news_article a ON a.id = aa.article_id
-               WHERE a.status = 'published'
+               WHERE a.creativeworkstatus = 'published'
                  AND a.datepublished >= NOW() - INTERVAL '7 days'
                GROUP BY p.id, p.name
                ORDER BY COUNT(a.id) DESC

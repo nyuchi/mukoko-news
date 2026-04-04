@@ -132,7 +132,7 @@ async def get_related_articles(
                    SELECT term_id FROM news.article_keyword WHERE article_id = $1
                )
                AND a.id != $1
-               AND a.status = 'published'
+               AND a.creativeworkstatus = 'published'
                ORDER BY a.datepublished DESC
                LIMIT $2""",
             source_id,
@@ -147,7 +147,7 @@ async def get_related_articles(
                    WHERE a.primary_interest_category_id = $1
                      AND a.primary_location_country = $2
                      AND a.id != $3
-                     AND a.status = 'published'
+                     AND a.creativeworkstatus = 'published'
                    ORDER BY a.datepublished DESC
                    LIMIT $4""",
                 source["primary_interest_category_id"],
@@ -180,7 +180,7 @@ async def get_article_by_source_slug(
                        a.articlebody AS article_body,
                        a.article_body_processed
                {ARTICLE_FROM}
-               WHERE a.publisher_organization_id::text = $1 AND a.slug = $2 AND a.status = 'published'
+               WHERE a.publisher_organization_id::text = $1 AND a.slug = $2 AND a.creativeworkstatus = 'published'
                LIMIT 1""",
             source,
             slug,

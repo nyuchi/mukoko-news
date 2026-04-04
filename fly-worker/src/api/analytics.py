@@ -55,22 +55,22 @@ async def analytics_overview(
 
     async with pool.acquire() as conn:
         total_articles = await conn.fetchval(
-            "SELECT COUNT(*) FROM news.news_article WHERE status = 'published'"
+            "SELECT COUNT(*) FROM news.news_article WHERE creativeworkstatus = 'published'"
         )
         period_articles = await conn.fetchval(
-            f"SELECT COUNT(*) FROM news.news_article WHERE status = 'published' AND datepublished >= NOW() - INTERVAL '{interval}'"
+            f"SELECT COUNT(*) FROM news.news_article WHERE creativeworkstatus = 'published' AND datepublished >= NOW() - INTERVAL '{interval}'"
         )
         active_sources = await conn.fetchval(
             "SELECT COUNT(*) FROM news.feed_source WHERE is_active = TRUE"
         )
         countries = await conn.fetchval(
-            "SELECT COUNT(DISTINCT primary_location_country) FROM news.news_article WHERE status = 'published'"
+            "SELECT COUNT(DISTINCT primary_location_country) FROM news.news_article WHERE creativeworkstatus = 'published'"
         )
         total_views = await conn.fetchval(
-            "SELECT COALESCE(SUM(view_count), 0) FROM news.news_article WHERE status = 'published'"
+            "SELECT COALESCE(SUM(view_count), 0) FROM news.news_article WHERE creativeworkstatus = 'published'"
         )
         total_likes = await conn.fetchval(
-            "SELECT COALESCE(SUM(like_count), 0) FROM news.news_article WHERE status = 'published'"
+            "SELECT COALESCE(SUM(like_count), 0) FROM news.news_article WHERE creativeworkstatus = 'published'"
         )
 
     result = {
@@ -107,7 +107,7 @@ async def top_articles(
     interval = _period_to_interval(period)
 
     conditions = [
-        "a.status = 'published'",
+        "a.creativeworkstatus = 'published'",
         f"a.datepublished >= NOW() - INTERVAL '{interval}'",
     ]
     params: list = []
@@ -242,7 +242,7 @@ async def source_analytics(
                 JOIN news.news_media_organization org ON fs.organization_id = org.id
                 LEFT JOIN news.news_article a
                     ON a.publisher_organization_id = org.id
-                    AND a.status = 'published'
+                    AND a.creativeworkstatus = 'published'
                     AND a.datepublished >= NOW() - INTERVAL '{interval}'
                 WHERE fs.is_active = TRUE
                 GROUP BY org.id, org.name, fs.health_status,
@@ -294,7 +294,7 @@ async def source_performance(
                        COALESCE(SUM(a.like_count), 0) AS likes
                 FROM news.news_article a
                 WHERE a.publisher_organization_id::text = $1
-                  AND a.status = 'published'
+                  AND a.creativeworkstatus = 'published'
                   AND a.datepublished >= NOW() - INTERVAL '{interval}'
                 GROUP BY DATE(a.datepublished)
                 ORDER BY date DESC""",
@@ -338,7 +338,7 @@ async def geo_analytics(
                        COALESCE(AVG(a.engagement_score), 0) AS avg_engagement
                 FROM news.news_article a
                 LEFT JOIN news.country c ON c.id = a.primary_location_country
-                WHERE a.status = 'published'
+                WHERE a.creativeworkstatus = 'published'
                   AND a.datepublished >= NOW() - INTERVAL '{interval}'
                 GROUP BY a.primary_location_country, c.name, c.flag_emoji
                 ORDER BY article_count DESC"""
@@ -377,7 +377,7 @@ async def category_analytics(
                        COALESCE(AVG(a.quality_score), 0) AS avg_quality
                 FROM news.news_article a
                 JOIN engagement.interest_category ic ON a.primary_interest_category_id = ic.id
-                WHERE a.status = 'published'
+                WHERE a.creativeworkstatus = 'published'
                   AND a.datepublished >= NOW() - INTERVAL '{interval}'
                 GROUP BY ic.name, ic.slug, ic.emoji
                 ORDER BY article_count DESC"""

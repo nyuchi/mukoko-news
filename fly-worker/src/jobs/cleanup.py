@@ -20,7 +20,7 @@ async def cleanup_stale_data() -> None:
         # 1. Delete archived articles older than 90 days
         result = await conn.execute(
             """DELETE FROM news.news_article
-               WHERE status = 'archived'
+               WHERE creativeworkstatus = 'archived'
                  AND datepublished < $1""",
             cutoff,
         )

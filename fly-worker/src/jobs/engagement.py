@@ -22,7 +22,7 @@ async def recalc_engagement_scores() -> None:
                       a.share_count, a.datepublished, a.engagement_score
                FROM news.news_article a
                WHERE a.updated_at >= $1
-                 AND a.status = 'published'
+                 AND a.creativeworkstatus = 'published'
                  AND (a.view_count > 0 OR a.like_count > 0 OR a.bookmark_count > 0)""",
             cutoff,
         )

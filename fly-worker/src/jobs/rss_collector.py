@@ -196,7 +196,7 @@ async def _insert_articles(pool, articles: list[dict], stats: dict) -> list[str]
                     author, publisher_organization_id, publisher,
                     articlesection, primary_interest_category_id, primary_location_country,
                     datepublished, source_fingerprint, inlanguage,
-                    wordcount, reading_time_minutes, status, ingestion_method)
+                    wordcount, reading_time_minutes, creativeworkstatus, ingestion_method)
                    VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10,$11::jsonb,$12,$13,$14,$15,$16,$17,$18,$19,'published','rss_feed')
                    RETURNING id::text""",
                 article["headline"],

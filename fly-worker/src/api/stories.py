@@ -23,7 +23,7 @@ async def get_trending_stories(
         rows = await conn.fetch(
             f"""SELECT {ARTICLE_SELECT}
                {ARTICLE_FROM}
-               WHERE a.status = 'published'
+               WHERE a.creativeworkstatus = 'published'
                  AND a.datepublished >= NOW() - INTERVAL '48 hours'
                ORDER BY a.engagement_score DESC, a.datepublished DESC
                LIMIT $1""",
@@ -66,7 +66,7 @@ async def get_story_cluster(
         rows = await conn.fetch(
             f"""SELECT {ARTICLE_SELECT}
                {ARTICLE_FROM}
-               WHERE a.status = 'published'
+               WHERE a.creativeworkstatus = 'published'
                  AND a.primary_interest_category_id = $1
                  AND a.datepublished >= NOW() - INTERVAL '72 hours'
                ORDER BY a.datepublished DESC

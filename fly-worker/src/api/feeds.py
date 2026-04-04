@@ -40,7 +40,7 @@ ARTICLE_SELECT = """
     CASE WHEN a.is_breaking THEN 'breaking'
          WHEN a.is_featured THEN 'urgent'
          ELSE 'standard' END AS urgency,
-    a.status,
+    a.creativeworkstatus,
     ic.name AS section_name,
     ic.emoji AS section_emoji,
     ic.color_hex AS section_color
@@ -67,7 +67,7 @@ async def get_feeds(
 
     async with pool.acquire() as conn:
         # Build query
-        conditions = ["a.status = 'published'"]
+        conditions = ["a.creativeworkstatus = 'published'"]
         params: list = []
         idx = 1
 
@@ -144,7 +144,7 @@ async def get_sectioned_feed(
             top_rows = await conn.fetch(
                 f"""SELECT {ARTICLE_SELECT}
                    {ARTICLE_FROM}
-                   WHERE a.status = 'published'
+                   WHERE a.creativeworkstatus = 'published'
                      AND a.datepublished >= NOW() - INTERVAL '48 hours'
                      AND a.primary_location_country = ANY($1::text[])
                    ORDER BY a.engagement_score DESC, a.datepublished DESC
@@ -155,7 +155,7 @@ async def get_sectioned_feed(
             top_rows = await conn.fetch(
                 f"""SELECT {ARTICLE_SELECT}
                    {ARTICLE_FROM}
-                   WHERE a.status = 'published'
+                   WHERE a.creativeworkstatus = 'published'
                      AND a.datepublished >= NOW() - INTERVAL '48 hours'
                    ORDER BY a.engagement_score DESC, a.datepublished DESC
                    LIMIT 20"""
@@ -168,7 +168,7 @@ async def get_sectioned_feed(
             latest_rows = await conn.fetch(
                 f"""SELECT {ARTICLE_SELECT}
                    {ARTICLE_FROM}
-                   WHERE a.status = 'published'
+                   WHERE a.creativeworkstatus = 'published'
                      AND a.primary_location_country = ANY($1::text[])
                    ORDER BY a.datepublished DESC
                    LIMIT 24""",
@@ -178,7 +178,7 @@ async def get_sectioned_feed(
             latest_rows = await conn.fetch(
                 f"""SELECT {ARTICLE_SELECT}
                    {ARTICLE_FROM}
-                   WHERE a.status = 'published'
+                   WHERE a.creativeworkstatus = 'published'
                    ORDER BY a.datepublished DESC
                    LIMIT 24"""
             )
@@ -198,7 +198,7 @@ async def get_sectioned_feed(
                 cat_rows = await conn.fetch(
                     f"""SELECT {ARTICLE_SELECT}
                        {ARTICLE_FROM}
-                       WHERE a.status = 'published'
+                       WHERE a.creativeworkstatus = 'published'
                          AND a.primary_interest_category_id = $1
                          AND a.primary_location_country = ANY($2::text[])
                        ORDER BY a.datepublished DESC
@@ -210,7 +210,7 @@ async def get_sectioned_feed(
                 cat_rows = await conn.fetch(
                     f"""SELECT {ARTICLE_SELECT}
                        {ARTICLE_FROM}
-                       WHERE a.status = 'published'
+                       WHERE a.creativeworkstatus = 'published'
                          AND a.primary_interest_category_id = $1
                        ORDER BY a.datepublished DESC
                        LIMIT 6""",
@@ -246,7 +246,7 @@ async def get_news_bytes(
         rows = await conn.fetch(
             f"""SELECT {ARTICLE_SELECT}
                {ARTICLE_FROM}
-               WHERE a.status = 'published'
+               WHERE a.creativeworkstatus = 'published'
                  AND a.content_type = 'news-byte'
                ORDER BY a.datepublished DESC
                LIMIT $1""",
@@ -258,7 +258,7 @@ async def get_news_bytes(
             rows = await conn.fetch(
                 f"""SELECT {ARTICLE_SELECT}
                    {ARTICLE_FROM}
-                   WHERE a.status = 'published'
+                   WHERE a.creativeworkstatus = 'published'
                      AND a.wordcount <= 200
                      AND a.image IS NOT NULL
                    ORDER BY a.datepublished DESC
@@ -323,7 +323,7 @@ def _row_to_article(row) -> dict:
         "engagement_score": d.get("engagement_score", 0),
         "content_type": d.get("content_type", "article"),
         "urgency": d.get("urgency", "standard"),
-        "status": d.get("status", "published"),
+        "creativeworkstatus": d.get("creativeworkstatus", "published"),
     }
 
     # Include section info if available
