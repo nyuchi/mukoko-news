@@ -6,26 +6,31 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Mukoko News is a Pan-African digital news aggregation platform. "Mukoko" means "Beehive" in Shona — where community gathers and stores knowledge. Primary market is Zimbabwe with expansion across 16 African countries.
 
-**Architecture**: Next.js 15 frontend (`src/`) + Cloudflare Workers API backend (`backend/`) + Python data processing Worker (`processing/`) + D1 database (`database/`)
+**Architecture**: Next.js 15 frontend (`src/`) + Cloudflare Workers API backend (`backend/`) + Python data processing Worker (`processing/`) + D1 database (`database/`) + Supabase (frontend UI layer)
 
 ## Commands
 
 ### Frontend (root level)
 
 ```bash
-npm run dev              # Next.js dev server (port 3000)
-npm run build            # Production build
-npm run lint             # ESLint check
-npm run lint:fix         # ESLint auto-fix
-npm run typecheck        # TypeScript check
-npm run test             # Vitest (single run)
-npm run test:watch       # Vitest (watch mode)
-npm run test:coverage    # Vitest with v8 coverage
+pnpm dev              # Next.js dev server (port 3000)
+pnpm build            # Production build
+pnpm lint             # ESLint check
+pnpm lint:fix         # ESLint auto-fix
+pnpm typecheck        # TypeScript check
+pnpm test             # Vitest (single run)
+pnpm test:watch       # Vitest (watch mode)
+pnpm test:coverage    # Vitest with v8 coverage
 
 # Run a single test file
-npx vitest run src/lib/__tests__/utils.test.ts
+pnpm vitest run src/lib/__tests__/utils.test.ts
 # Run tests matching a pattern
-npx vitest run -t "formatTimeAgo"
+pnpm vitest run -t "formatTimeAgo"
+
+# Install dependencies
+pnpm install
+# Add a new package
+pnpm add <package>
 ```
 
 ### Backend (`cd backend`)
@@ -82,8 +87,10 @@ npm run typecheck:api    # Type check Python
 - **Tailwind CSS 4.x** with CSS variables for theming (defined in `src/app/globals.css`)
 - **Radix UI** primitives for accessible components
 - **Lucide React** for icons, **next-themes** for dark mode
+- **Supabase** (`@supabase/supabase-js` + `@supabase/ssr`) — UI components & future real-time/auth features
 - **State**: React Context (`PreferencesContext` for country/category, `ThemeContext`)
 - **Path alias**: `@/*` maps to `src/*`
+- **Package manager**: pnpm (v10+)
 
 ### Backend Stack
 
@@ -183,6 +190,10 @@ NEXT_PUBLIC_API_URL=https://mukoko-news-backend.nyuchi.workers.dev
 NEXT_PUBLIC_BASE_URL=https://news.mukoko.com  # Optional, for SEO/JSON-LD
 EXPO_PUBLIC_API_SECRET=your-api-secret  # Client-side API auth
 API_SECRET=your-api-secret               # Server-side API auth
+
+# Supabase (project: tdcpuzqyoodrdsxldgsh)
+NEXT_PUBLIC_SUPABASE_URL=https://tdcpuzqyoodrdsxldgsh.supabase.co
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your-supabase-publishable-key
 ```
 
 ### Backend (Cloudflare Secrets)
@@ -201,6 +212,51 @@ uv run pywrangler secret put ANTHROPIC_API_KEY
 uv run pywrangler secret put MONGODB_API_KEY
 uv run pywrangler secret put MONGODB_APP_ID
 ```
+
+## Supabase Integration
+
+**Project**: `tdcpuzqyoodrdsxldgsh` — `https://tdcpuzqyoodrdsxldgsh.supabase.co`
+
+Supabase is used in the **Next.js frontend layer only**. It does NOT replace the Cloudflare backend stack (D1, Workers, Durable Objects, OIDC auth). The two stacks coexist:
+
+| Concern | Stack |
+|---|---|
+| Article data, feeds, search | Cloudflare Workers + D1 + MongoDB |
+| User auth (primary) | OIDC via `id.mukoko.com` + D1 |
+| Real-time counters | Cloudflare Durable Objects |
+| UI components, Supabase Auth helpers | Supabase (frontend) |
+
+### Supabase Client Files
+
+Generated via `npx shadcn@latest add @supabase/supabase-client-nextjs`:
+
+- `src/lib/supabase/client.ts` — Browser client (`createBrowserClient` from `@supabase/ssr`). Use in Client Components.
+- `src/lib/supabase/server.ts` — Server client (`createServerClient`). Use in Server Components, Route Handlers, Server Actions.
+- `src/lib/supabase/middleware.ts` — Session refresh helper (`updateSession`). Wire into `middleware.ts` if Supabase Auth is used for route protection.
+
+### How to Use
+
+```tsx
+// Client Component
+import { createClient } from '@/lib/supabase/client'
+const supabase = createClient()
+
+// Server Component / Route Handler
+import { createClient } from '@/lib/supabase/server'
+const supabase = await createClient()
+```
+
+### Edge Functions
+
+This project uses **Cloudflare Workers** as its edge runtime — there are no Supabase edge functions (`supabase/functions/` directory does not exist and is not used).
+
+### shadcn Registry
+
+`components.json` includes the Supabase registry:
+```json
+"registries": { "@supabase": "https://supabase.com/ui/r/{name}.json" }
+```
+Add more Supabase UI components: `npx shadcn@latest add @supabase/<component-name>`
 
 ## Design System (Nyuchi Brand v6)
 
