@@ -3,6 +3,7 @@
     "target": "ES2022",
     "module": "ES2022",
     "moduleResolution": "node",
+    "ignoreDeprecations": "5.0",
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
     "allowJs": true,

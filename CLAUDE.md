@@ -6,26 +6,31 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Mukoko News is a Pan-African digital news aggregation platform. "Mukoko" means "Beehive" in Shona — where community gathers and stores knowledge. Primary market is Zimbabwe with expansion across 16 African countries.
 
-**Architecture**: Next.js 15 frontend (`src/`) + Cloudflare Workers API backend (`backend/`) + Python data processing Worker (`processing/`) + D1 database (`database/`)
+**Architecture**: Next.js 15 frontend (`src/`) + Cloudflare Workers API backend (`backend/`) + Python data processing Worker (`processing/`) + D1 database (`database/`) + two Supabase projects (news processing pipeline + platform permanent store)
 
 ## Commands
 
 ### Frontend (root level)
 
 ```bash
-npm run dev              # Next.js dev server (port 3000)
-npm run build            # Production build
-npm run lint             # ESLint check
-npm run lint:fix         # ESLint auto-fix
-npm run typecheck        # TypeScript check
-npm run test             # Vitest (single run)
-npm run test:watch       # Vitest (watch mode)
-npm run test:coverage    # Vitest with v8 coverage
+pnpm dev              # Next.js dev server (port 3000)
+pnpm build            # Production build
+pnpm lint             # ESLint check
+pnpm lint:fix         # ESLint auto-fix
+pnpm typecheck        # TypeScript check
+pnpm test             # Vitest (single run)
+pnpm test:watch       # Vitest (watch mode)
+pnpm test:coverage    # Vitest with v8 coverage
 
 # Run a single test file
-npx vitest run src/lib/__tests__/utils.test.ts
+pnpm vitest run src/lib/__tests__/utils.test.ts
 # Run tests matching a pattern
-npx vitest run -t "formatTimeAgo"
+pnpm vitest run -t "formatTimeAgo"
+
+# Install dependencies
+pnpm install
+# Add a new package
+pnpm add <package>
 ```
 
 ### Backend (`cd backend`)
@@ -82,8 +87,10 @@ npm run typecheck:api    # Type check Python
 - **Tailwind CSS 4.x** with CSS variables for theming (defined in `src/app/globals.css`)
 - **Radix UI** primitives for accessible components
 - **Lucide React** for icons, **next-themes** for dark mode
+- **Supabase** (`@supabase/supabase-js` + `@supabase/ssr`) — reads published articles from `mukoko_platform_cloud` (the permanent store)
 - **State**: React Context (`PreferencesContext` for country/category, `ThemeContext`)
 - **Path alias**: `@/*` maps to `src/*`
+- **Package manager**: pnpm (v10+)
 
 ### Backend Stack
 
@@ -183,6 +190,10 @@ NEXT_PUBLIC_API_URL=https://mukoko-news-backend.nyuchi.workers.dev
 NEXT_PUBLIC_BASE_URL=https://news.mukoko.com  # Optional, for SEO/JSON-LD
 EXPO_PUBLIC_API_SECRET=your-api-secret  # Client-side API auth
 API_SECRET=your-api-secret               # Server-side API auth
+
+# Supabase platform project (mukoko_platform_cloud — permanent store)
+NEXT_PUBLIC_SUPABASE_URL=https://tdcpuzqyoodrdsxldgsh.supabase.co
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your-supabase-publishable-key
 ```
 
 ### Backend (Cloudflare Secrets)
@@ -201,6 +212,105 @@ uv run pywrangler secret put ANTHROPIC_API_KEY
 uv run pywrangler secret put MONGODB_API_KEY
 uv run pywrangler secret put MONGODB_APP_ID
 ```
+
+## Supabase Architecture
+
+Two Supabase projects are used. Supabase is the **processing pipeline** (temporary staging), not permanent storage.
+
+| Project | Supabase ID | Role |
+|---|---|---|
+| `supabase_mukoko_news` | `gjdmtthumkopkwuttwnd` | News processing pipeline — ingest, enrich, moderate (temporary staging) |
+| `mukoko_platform_cloud` | `tdcpuzqyoodrdsxldgsh` | Permanent store — published articles synced here; Next.js reads from here |
+
+**Data flow:**
+```
+RSS / partner feeds
+      ↓
+FastAPI worker (Python + supabase-py)
+      ↓ ingest → enrich → moderate
+supabase_mukoko_news  (staging)
+      ↓ sync_to_platform job (on status = published)
+mukoko_platform_cloud  (permanent)
+      ↓
+Next.js frontend reads via @supabase/supabase-js
+```
+
+**Auth**: Handled by **Stytch** on the platform side. Supabase does not issue JWTs or manage auth in this project.
+
+**Edge functions**: This project uses **Cloudflare Workers** as its edge runtime — `supabase/functions/` does not exist and is not used.
+
+### News Processing Project (`supabase_mukoko_news`)
+
+FastAPI Python backend. Articles are ingested, enriched (NLP, sentiment, geo, categorisation), and moderated here before syncing to the platform. Data is **not permanent** — it stages work in progress.
+
+**Schemas:** `news` · `identity` (projection from platform) · `engagement` (interest categories mirror) · `sync` (audit log) · `system` (feature flags)
+
+**Key tables:**
+- `news.news_article` — core article table with both Schema.org fields and pipeline fields (`sentiment_score`, `named_entities`, `topic_tags`, `moderation_status`, `sync_status`)
+- `news.processing_job` — async enrichment queue polled by workers
+- `news.feed_source` — RSS/Atom/API feed registry
+- `news.news_media_organization` — publishers
+
+**Processing job types** (executed in priority order):
+
+| Job | Priority |
+|---|---|
+| `duplicate_detection` | 1 |
+| `nlp_enrichment` | 2 |
+| `sentiment_analysis` | 3 |
+| `geo_tagging` | 3 |
+| `category_tagging` | 4 |
+| `summary_generation` | 5 |
+| `sync_to_platform` | 1 (triggered on publish) |
+
+**Auto-triggers:** Inserting an article with `ingestion_method` set queues all 7 enrichment jobs. Setting `status = published` queues `sync_to_platform` and sets `sync_status = pending_sync`.
+
+**Python client** (`supabase-py`):
+```python
+from supabase import create_client
+db = create_client(os.environ["SUPABASE_NEWS_URL"], os.environ["SUPABASE_NEWS_SERVICE_KEY"])
+```
+
+**Env vars (FastAPI processing worker):**
+```bash
+SUPABASE_NEWS_URL=https://gjdmtthumkopkwuttwnd.supabase.co
+SUPABASE_NEWS_SERVICE_KEY=<service_role_key>
+SUPABASE_PLATFORM_URL=https://tdcpuzqyoodrdsxldgsh.supabase.co
+SUPABASE_PLATFORM_SERVICE_KEY=<platform_service_role_key>
+```
+
+### Platform Cloud Project (`mukoko_platform_cloud`)
+
+Permanent store. Receives enriched, moderated articles from the news processing project via the `sync_to_platform` worker. Source of truth for all published content.
+
+**Next.js client files** (in `src/lib/supabase/`):
+- `client.ts` — Browser client (`createBrowserClient`). Use in Client Components.
+- `server.ts` — Server client (`createServerClient`). Use in Server Components, Route Handlers, Server Actions.
+- `middleware.ts` — Session refresh helper (`updateSession`).
+
+```tsx
+// Client Component
+import { createClient } from '@/lib/supabase/client'
+const supabase = createClient()
+
+// Server Component / Route Handler
+import { createClient } from '@/lib/supabase/server'
+const supabase = await createClient()
+```
+
+**Env vars (Next.js `.env.local`):**
+```bash
+NEXT_PUBLIC_SUPABASE_URL=https://tdcpuzqyoodrdsxldgsh.supabase.co
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_aNdSABNOLB3sG7OMjHN0Vw_5SDouXAL
+```
+
+### shadcn Registry
+
+`components.json` includes the Supabase registry:
+```json
+"registries": { "@supabase": "https://supabase.com/ui/r/{name}.json" }
+```
+Add more Supabase UI components: `npx shadcn@latest add @supabase/<component-name>`
 
 ## Design System (Nyuchi Brand v6)
 
