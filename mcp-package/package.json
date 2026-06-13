@@ -1,0 +1,22 @@
+{
+  "name": "@nyuchi/mukoko-news-mcp",
+  "version": "1.0.0",
+  "description": "Mukoko News MCP server — Pan-African news for LLMs. Search, browse, and analyse African news coverage.",
+  "keywords": ["mcp", "news", "africa", "zimbabwe", "llm", "claude", "anthropic"],
+  "license": "MIT",
+  "homepage": "https://news.mukoko.com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nyuchi/mukoko-news.git",
+    "directory": "mcp-package"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "bin": {
+    "mukoko-news-mcp": "./bin/mukoko-news-mcp.js"
+  },
+  "files": [
+    "bin/"
+  ]
+}
