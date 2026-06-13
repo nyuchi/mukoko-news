@@ -76,8 +76,8 @@ async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> 
   };
 
   // Add API secret if available (for protected endpoints)
-  // Server-side uses API_SECRET, client-side uses EXPO_PUBLIC_API_SECRET (set in Vercel)
-  const apiSecret = process.env.API_SECRET || process.env.EXPO_PUBLIC_API_SECRET;
+  // Server-side: API_SECRET. Client-side: NEXT_PUBLIC_API_SECRET (NEXT_PUBLIC_ prefix required for browser exposure).
+  const apiSecret = process.env.API_SECRET || process.env.NEXT_PUBLIC_API_SECRET;
   if (apiSecret) {
     headers['Authorization'] = `Bearer ${apiSecret}`;
   }

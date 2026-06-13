@@ -188,8 +188,8 @@ Services follow a class-based pattern with D1 database access:
 ```bash
 NEXT_PUBLIC_API_URL=https://mukoko-news-backend.nyuchi.workers.dev
 NEXT_PUBLIC_BASE_URL=https://news.mukoko.com  # Optional, for SEO/JSON-LD
-EXPO_PUBLIC_API_SECRET=your-api-secret  # Client-side API auth
-API_SECRET=your-api-secret               # Server-side API auth
+API_SECRET=your-api-secret               # Server-side API auth (SSR, Route Handlers)
+NEXT_PUBLIC_API_SECRET=your-api-secret   # Client-side API auth (browser — NEXT_PUBLIC_ prefix required)
 
 # Supabase platform project (mukoko_platform_cloud — permanent store)
 NEXT_PUBLIC_SUPABASE_URL=https://tdcpuzqyoodrdsxldgsh.supabase.co
