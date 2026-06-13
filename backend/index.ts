@@ -556,6 +556,10 @@ app.get("/admin", (c) => {
   return c.html(getAdminHTML());
 });
 
+// Image proxy — /i/<original-url>?w=800&fmt=webp
+import { handleImageProxy } from "./services/ImageProxyService.js";
+app.get("/i/*", handleImageProxy);
+
 // Health check endpoint with full service health
 app.get("/api/health", async (c) => {
   try {
