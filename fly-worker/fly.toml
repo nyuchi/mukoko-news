@@ -1,4 +1,4 @@
-app = "mukoko-news-api"
+app = "mukoko-news"
 primary_region = "jnb"
 
 [build]
