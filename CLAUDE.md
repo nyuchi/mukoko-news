@@ -200,11 +200,16 @@ Services follow a class-based pattern with D1 database access:
 ### Frontend (`.env.local`)
 
 ```bash
-NEXT_PUBLIC_API_URL=https://mukoko-news-backend.nyuchi.workers.dev
-NEXT_PUBLIC_BASE_URL=https://news.mukoko.com  # Optional, for SEO/JSON-LD
-API_SECRET=your-api-secret               # Server-side only — never sent from browser. Read endpoints are public.
+# MongoDB Atlas — Next.js reads/writes directly via server-side Route Handlers
+MONGODB_URI=mongodb+srv://<user>:<pass>@nyuchi-platform-doc-db.ge8d8qi.mongodb.net/?appName=nyuchi-platform-doc-db
+MONGODB_DATABASE=news
 
-# Supabase platform project (mukoko_platform_cloud — permanent store)
+# Leave empty — Next.js Route Handlers serve all reads from MongoDB.
+# Set to Cloudflare Worker URL only for the external widget/MCP API.
+NEXT_PUBLIC_API_URL=
+NEXT_PUBLIC_BASE_URL=https://news.mukoko.com  # Optional, for SEO/JSON-LD
+
+# Supabase platform project (retained for auth middleware; data reads now use MongoDB)
 NEXT_PUBLIC_SUPABASE_URL=https://tdcpuzqyoodrdsxldgsh.supabase.co
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your-supabase-publishable-key
 ```
