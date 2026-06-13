@@ -1,6 +1,6 @@
 """Source health check job.
 
-Evaluates all enabled feed sources and classifies their health status.
+Evaluates all enabled feed sources and updates their trust signals.
 Runs every 6 hours.
 """
 
@@ -13,7 +13,7 @@ async def check_source_health() -> None:
     """Evaluate and update health status for all enabled feed sources."""
     db = get_db()
 
-    sources = await db["feed_sources"].find({"is_active": True}).to_list(None)
+    sources = await db["feedSources"].find({"isActive": True}).to_list(None)
     if not sources:
         return
 
@@ -21,30 +21,31 @@ async def check_source_health() -> None:
     seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
 
     for source in sources:
-        failures = source.get("consecutive_failures", 0) or 0
+        # Consecutive failures tracked as pipeline extra field
+        failures = source.get("consecutiveFailures", 0) or 0
         if failures == 0:
-            new_status = "healthy"
+            health = "healthy"
         elif failures <= 3:
-            new_status = "degraded"
+            health = "degraded"
         elif failures <= 7:
-            new_status = "failing"
+            health = "failing"
         else:
-            new_status = "critical"
+            health = "critical"
 
-        last_success = source.get("last_successful_fetch_at")
-        if last_success:
+        last_success = source.get("lastFetchedAt")
+        if last_success and health == "healthy":
             hours_since = (datetime.now(timezone.utc) - last_success).total_seconds() / 3600
-            if hours_since > 48 and new_status == "healthy":
-                new_status = "degraded"
+            if hours_since > 48:
+                health = "degraded"
 
-        quality_score = await _calc_source_quality(db, source.get("publisher_id", ""), seven_days_ago)
+        trust_score = await _calc_trust_score(db, source["_id"], seven_days_ago)
 
-        await db["feed_sources"].update_one(
+        await db["feedSources"].update_one(
             {"_id": source["_id"]},
             {"$set": {
-                "health_status": new_status,
-                "quality_score": quality_score,
-                "updated_at": datetime.now(timezone.utc),
+                "trustScore": trust_score,
+                "sourceHealth": health,
+                "updatedAt": datetime.now(timezone.utc),
             }},
         )
         updated += 1
@@ -52,18 +53,18 @@ async def check_source_health() -> None:
     print(f"[HEALTH] Updated {updated}/{len(sources)} source health statuses")
 
 
-async def _calc_source_quality(db, publisher_id: str, since: datetime) -> float:
+async def _calc_trust_score(db, feed_source_id: str, since: datetime) -> float:
+    """Calculate trust score from recent article quality scores."""
     pipeline = [
         {"$match": {
-            "publisher_id": publisher_id,
-            "date_published": {"$gte": since},
-            "status": "published",
+            "feedSourceId": feed_source_id,
+            "datePublished": {"$gte": since},
+            "status": {"$in": ["approved", "published"]},
         }},
         {"$group": {
             "_id": None,
             "article_count": {"$sum": 1},
-            "avg_quality": {"$avg": "$quality_score"},
-            "avg_engagement": {"$avg": "$engagement.score"},
+            "avg_quality": {"$avg": "$qualityScore"},
         }},
     ]
 
@@ -73,7 +74,6 @@ async def _calc_source_quality(db, publisher_id: str, since: datetime) -> float:
 
     stats = result[0]
     quality = (stats.get("avg_quality") or 0) / 100.0
-    engagement = min(1.0, (stats.get("avg_engagement") or 0) / 50.0)
     volume = min(1.0, stats["article_count"] / 50.0)
 
-    return round((quality * 0.6 + engagement * 0.3 + volume * 0.1) * 100, 2)
+    return round((quality * 0.7 + volume * 0.3) * 100, 2)

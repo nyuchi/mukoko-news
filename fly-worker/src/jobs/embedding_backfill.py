@@ -1,7 +1,7 @@
 """Embedding backfill job.
 
-Generates BGE-M3 embeddings for articles that were processed before
-the embedding pipeline was added. Runs every 10 minutes.
+Generates BGE-M3 embeddings for articles that were processed by AI
+but don't yet have an embedding. Runs every 10 minutes.
 """
 
 from datetime import datetime, timezone
@@ -15,9 +15,9 @@ async def backfill_embeddings() -> None:
     db = get_db()
 
     rows = await db["articles"].find(
-        {"ai_processed": True, "embedding": None},
-        {"_id": 1, "headline": 1, "description": 1, "article_body_processed": 1},
-    ).sort("date_published", -1).limit(20).to_list(20)
+        {"aiProcessed": True, "embedding": {"$exists": False}},
+        {"_id": 1, "headline": 1, "description": 1, "articleBodyProcessed": 1},
+    ).sort("datePublished", -1).limit(20).to_list(20)
 
     if not rows:
         return
@@ -27,7 +27,13 @@ async def backfill_embeddings() -> None:
     now = datetime.now(timezone.utc)
 
     for row in rows:
-        text = build_article_text(row)
+        # Map to keys expected by build_article_text
+        article_for_embed = {
+            "headline": row.get("headline", ""),
+            "description": row.get("description", ""),
+            "article_body_processed": row.get("articleBodyProcessed", ""),
+        }
+        text = build_article_text(article_for_embed)
         if not text:
             continue
 
@@ -39,8 +45,8 @@ async def backfill_embeddings() -> None:
             {"_id": row["_id"]},
             {"$set": {
                 "embedding": embedding,
-                "embedding_model": "bge-m3",
-                "updated_at": now,
+                "embeddingModel": "bge-m3",
+                "updatedAt": now,
             }},
         )
         success += 1

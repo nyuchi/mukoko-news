@@ -98,7 +98,7 @@ def _parse_entry(entry, source: dict, feed) -> dict | None:
         "source_feed_id": rss_guid,
         "image": image,
         "author": author,
-        "publisher_organization_id": source.get("publisher_id") or source.get("organization_id"),
+        "publisher_organization_id": source.get("mediaOrganizationId") or source.get("publisher_id") or source.get("organization_id"),
         "publisher": publisher,
         "articlesection": articlesection,
         "primary_location_country": source.get("country", "ZW"),

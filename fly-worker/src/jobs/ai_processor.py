@@ -1,7 +1,7 @@
 """AI article processing job.
 
-Runs inline after RSS collection. Extracts keywords, scores quality,
-generates embeddings, and updates articles in MongoDB.
+Runs inline after RSS collection. Extracts keywords (stored as tags),
+scores quality, generates embeddings, and updates articles in MongoDB.
 """
 
 from datetime import datetime, timezone
@@ -37,9 +37,9 @@ async def process_unprocessed() -> None:
     """Fallback: find and process any articles that were missed."""
     db = get_db()
     rows = await db["articles"].find(
-        {"ai_processed": False},
+        {"aiProcessed": False},
         {"_id": 1},
-    ).sort("date_published", 1).limit(50).to_list(50)
+    ).sort("datePublished", 1).limit(50).to_list(50)
 
     if rows:
         ids = [row["_id"] for row in rows]
@@ -52,60 +52,92 @@ async def _process_single(db, article_id: str) -> None:
     if not article:
         return
 
-    # Scrape full article from source URL if RSS content is thin
-    rss_body = article.get("article_body", "") or ""
+    # Scrape full article if RSS body is thin
+    rss_body = article.get("articleBody", "") or ""
     rss_word_count = count_words(extract_text(rss_body))
-    source_url = article.get("url", "")
+    source_url = article.get("externalUrl", "")
 
     if rss_word_count < 200 and source_url:
         scraped = await scrape_article(source_url)
         if scraped and scraped["word_count"] > rss_word_count:
-            article["article_body"] = scraped["body_html"]
+            article["articleBody"] = scraped["body_html"]
             if not article.get("description") and scraped.get("excerpt"):
                 article["description"] = scraped["excerpt"]
             print(f"[AI] Scraped full article: {rss_word_count} → {scraped['word_count']} words")
 
-    plain_text = extract_text(article.get("article_body", "") or "")
+    plain_text = extract_text(article.get("articleBody", "") or "")
     word_count = count_words(plain_text)
 
-    quality_result = score_article(article)
+    # Map to expected keys for quality_scorer and keyword_extractor
+    article_for_processing = {
+        "headline": article.get("headline", ""),
+        "description": article.get("description", ""),
+        "article_body": article.get("articleBody", "") or article.get("articleBodyProcessed", ""),
+    }
+
+    quality_result = score_article(article_for_processing)
     quality_score = quality_result["quality_score"]
 
-    # Load known terms from keywords collection (remap _id → id for extractor)
-    known_terms_raw = await db["keywords"].find(
-        {"enabled": True}, {"_id": 1, "name": 1}
+    # Load known tags (remap _id → id for extractor)
+    known_terms_raw = await db["tags"].find(
+        {}, {"_id": 1, "name": 1}
     ).to_list(None)
     known_terms = [{"id": t["_id"], "name": t["name"]} for t in known_terms_raw]
 
-    keywords = await extract_keywords(article, known_terms)
+    keywords = await extract_keywords(article_for_processing, known_terms)
     keyword_names = [k["name"] for k in keywords]
 
-    embed_text_str = build_article_text(article)
+    # Resolve or create tag documents, collect their IDs
+    tag_ids = []
+    for kw in keywords:
+        tag_slug = kw["term_id"]
+        tag_id = await _upsert_tag(db, tag_slug, kw["name"])
+        if tag_id:
+            tag_ids.append(tag_id)
+
+    embed_text_str = build_article_text(article_for_processing)
     embedding = await embed_text(embed_text_str)
 
     now = datetime.now(timezone.utc)
     update: dict = {
         "$set": {
-            "ai_processed": True,
-            "ai_processed_at": now,
-            "quality_score": quality_score,
-            "word_count": word_count,
-            "keywords": keyword_names,
-            "sync_status": "pending_sync",
-            "updated_at": now,
+            "tagIds": tag_ids,
+            "wordCount": word_count,
+            "aiProcessed": True,
+            "aiProcessedAt": now,
+            "qualityScore": quality_score,
+            "updatedAt": now,
         }
     }
 
     if embedding:
         update["$set"]["embedding"] = embedding
-        update["$set"]["embedding_model"] = "bge-m3"
+        update["$set"]["embeddingModel"] = "bge-m3"
 
     await db["articles"].update_one({"_id": article_id}, update)
 
-    # Upsert keyword entries (track article_count per term)
-    for kw in keywords:
-        await db["keywords"].update_one(
-            {"_id": kw["term_id"]},
-            {"$set": {"name": kw["name"]}, "$inc": {"article_count": 1}},
-            upsert=True,
-        )
+
+async def _upsert_tag(db, tag_slug: str, name: str) -> str | None:
+    """Upsert a tag and return its _id."""
+    import re
+    clean_slug = re.sub(r"[^\w-]", "", tag_slug.lower())[:100] or "unknown"
+
+    result = await db["tags"].find_one_and_update(
+        {"_id": clean_slug},
+        {
+            "$setOnInsert": {
+                "_id": clean_slug,
+                "_schemaVersion": "v3.1",
+                "tagSlug": clean_slug,
+                "name": name,
+                "articleCount": 0,
+                "createdAt": datetime.now(timezone.utc),
+                "updatedAt": datetime.now(timezone.utc),
+            },
+            "$inc": {"articleCount": 1},
+            "$set": {"updatedAt": datetime.now(timezone.utc)},
+        },
+        upsert=True,
+        return_document=True,
+    )
+    return result["_id"] if result else clean_slug

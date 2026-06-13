@@ -24,9 +24,9 @@ async def collect_feeds() -> None:
     stats = {"sources": 0, "fetched": 0, "inserted": 0, "errors": 0, "skipped": 0}
 
     try:
-        sources = await db["feed_sources"].find(
-            {"is_active": True}
-        ).sort([("priority", -1), ("consecutive_failures", 1)]).to_list(None)
+        sources = await db["feedSources"].find(
+            {"isActive": True}
+        ).to_list(None)
 
         stats["sources"] = len(sources)
         print(f"[RSS] Starting collection for {len(sources)} sources")
@@ -50,29 +50,29 @@ async def collect_feeds() -> None:
             f"({duration}ms)"
         )
 
-        await db["pipeline_logs"].insert_one({
-            "job_type": "rss_collection",
+        await db["pipelineLogs"].insert_one({
+            "jobType": "rss_collection",
             "status": "success",
-            "articles_collected": stats["fetched"],
-            "articles_processed": stats["inserted"],
+            "articlesCollected": stats["fetched"],
+            "articlesProcessed": stats["inserted"],
             "errors": stats["errors"],
-            "duration_ms": duration,
+            "durationMs": duration,
             "metadata": stats,
-            "started_at": datetime.fromtimestamp(start, tz=timezone.utc),
-            "completed_at": datetime.now(timezone.utc),
+            "startedAt": datetime.fromtimestamp(start, tz=timezone.utc),
+            "completedAt": datetime.now(timezone.utc),
         })
 
     except Exception as e:
         print(f"[RSS] Collection failed: {e}")
         duration = int((time.time() - start) * 1000)
-        await db["pipeline_logs"].insert_one({
-            "job_type": "rss_collection",
+        await db["pipelineLogs"].insert_one({
+            "jobType": "rss_collection",
             "status": "failed",
             "errors": stats["errors"],
-            "duration_ms": duration,
-            "error_message": str(e),
-            "started_at": datetime.fromtimestamp(start, tz=timezone.utc),
-            "completed_at": datetime.now(timezone.utc),
+            "durationMs": duration,
+            "errorMessage": str(e),
+            "startedAt": datetime.fromtimestamp(start, tz=timezone.utc),
+            "completedAt": datetime.now(timezone.utc),
         })
 
 
@@ -86,10 +86,11 @@ async def _process_batch(sources: list, db, stats: dict) -> list[str]:
     ) as client:
         for source in sources:
             try:
-                if source.get("consecutive_failures", 0) >= 8:
+                # Skip persistently failing sources
+                if source.get("consecutiveFailures", 0) >= 8:
                     continue
 
-                response = await client.get(source["feed_url"])
+                response = await client.get(source["feedUrl"])
                 if response.status_code != 200:
                     await _record_failure(db, source, f"HTTP {response.status_code}")
                     stats["errors"] += 1
@@ -99,7 +100,7 @@ async def _process_batch(sources: list, db, stats: dict) -> list[str]:
                 articles = feed_data["articles"]
                 stats["fetched"] += len(articles)
 
-                ids = await _insert_articles(db, articles, stats)
+                ids = await _insert_articles(db, articles, source, stats)
                 new_ids.extend(ids)
 
                 await _record_success(db, source, len(articles))
@@ -114,15 +115,17 @@ async def _process_batch(sources: list, db, stats: dict) -> list[str]:
     return new_ids
 
 
-async def _insert_articles(db, articles: list[dict], stats: dict) -> list[str]:
+async def _insert_articles(db, articles: list[dict], source: dict, stats: dict) -> list[str]:
     """Insert new articles, skipping duplicates. Returns list of new article IDs."""
     new_ids = []
+    auto_approve = source.get("autoApprove", False)
 
     for article in articles:
+        # Dedup by feedSourceId+guid or externalUrl
         existing = await db["articles"].find_one({
             "$or": [
-                {"source_feed_id": article["source_feed_id"]},
-                {"url": article["mainentityofpage"]},
+                {"feedSourceId": source["_id"], "sourceGuid": article["source_feed_id"]},
+                {"externalUrl": article["mainentityofpage"]},
             ]
         }, {"_id": 1})
 
@@ -131,11 +134,10 @@ async def _insert_articles(db, articles: list[dict], stats: dict) -> list[str]:
             continue
 
         raw_body = article.get("article_body", "") or ""
-        cleaned_body = clean_html(raw_body) if raw_body else ""
         plain_text = extract_text(raw_body) if raw_body else ""
         word_count = count_words(plain_text)
-        reading_time = estimate_reading_time(word_count)
 
+        # Ensure unique slug
         slug = article["slug"]
         if await db["articles"].find_one({"slug": slug}, {"_id": 1}):
             slug = f"{slug}-{article['source_fingerprint'][:8]}"
@@ -143,38 +145,46 @@ async def _insert_articles(db, articles: list[dict], stats: dict) -> list[str]:
         article_id = str(uuid.uuid4())
         now = datetime.now(timezone.utc)
 
+        # image as ImageObject array (schema.org)
+        image_url = (article.get("image") or {}).get("url") if isinstance(article.get("image"), dict) else None
+        image = [{"@type": "ImageObject", "url": image_url}] if image_url else []
+
         doc = {
             "_id": article_id,
+            "_schemaVersion": "v3.1",
+            # Required schema fields
+            "feedSourceId": source["_id"],
+            "mediaOrganizationId": source["mediaOrganizationId"],
+            "externalUrl": article["mainentityofpage"],
             "headline": article["headline"],
-            "description": article.get("description", ""),
-            "article_body": raw_body,
-            "article_body_processed": cleaned_body,
             "slug": slug,
-            "url": article["mainentityofpage"],
-            "source_feed_id": article["source_feed_id"],
-            "image": article.get("image"),
-            "author": article.get("author"),
-            "publisher_id": str(article.get("publisher_organization_id") or ""),
-            "publisher": article.get("publisher"),
-            "section": article.get("articlesection", "general"),
-            "country": article.get("primary_location_country", "ZW"),
-            "date_published": article.get("datepublished"),
-            "source_fingerprint": article["source_fingerprint"],
-            "language": article.get("inlanguage", "en"),
-            "word_count": word_count,
-            "reading_time_minutes": reading_time,
-            "status": "published",
-            "ingestion_method": "rss_feed",
-            "ai_processed": False,
-            "ai_processed_at": None,
-            "quality_score": 0.0,
-            "keywords": [],
-            "embedding": None,
-            "embedding_model": None,
-            "engagement": {"views": 0, "likes": 0, "bookmarks": 0, "shares": 0, "score": 0.0},
-            "sync_status": "pending_sync",
-            "ingested_at": now,
-            "updated_at": now,
+            "inLanguage": article.get("inlanguage", "en"),
+            "status": "approved" if auto_approve else "pending",
+            "isApproved": auto_approve,
+            "scrapedAt": now,
+            "createdAt": now,
+            "updatedAt": now,
+            # Optional schema fields
+            "description": article.get("description", ""),
+            "articleBody": raw_body,
+            "articleSection": article.get("articlesection", "general"),
+            "datePublished": article.get("datepublished"),
+            "image": image,
+            "wordCount": word_count,
+            "categoryIds": [],
+            "tagIds": [],
+            "journalistIds": [],
+            "bundu": {"trustSignals": {}, "ubuntuScoreSnapshot": None},
+            # Pipeline-specific extras (allowed by moderate validation level)
+            "sourceGuid": article["source_feed_id"],
+            "sourceFingerprint": article["source_fingerprint"],
+            "articleBodyProcessed": clean_html(raw_body) if raw_body else "",
+            "readingTimeMinutes": estimate_reading_time(word_count),
+            "aiProcessed": False,
+            "aiProcessedAt": None,
+            "qualityScore": 0.0,
+            "embeddingModel": None,
+            "ingestionMethod": "rss_feed",
         }
 
         try:
@@ -189,24 +199,26 @@ async def _insert_articles(db, articles: list[dict], stats: dict) -> list[str]:
 
 async def _record_success(db, source: dict, articles_count: int) -> None:
     now = datetime.now(timezone.utc)
-    await db["feed_sources"].update_one(
+    await db["feedSources"].update_one(
         {"_id": source["_id"]},
         {"$set": {
-            "last_fetched_at": now,
-            "last_successful_fetch_at": now,
-            "consecutive_failures": 0,
-            "updated_at": now,
-        }, "$inc": {"total_fetch_count": 1}},
+            "lastFetchedAt": now,
+            "lastFetchStatus": "success",
+            "lastFetchError": None,
+            "consecutiveFailures": 0,
+            "updatedAt": now,
+        }, "$inc": {"articleCount": articles_count}},
     )
 
 
 async def _record_failure(db, source: dict, error: str) -> None:
     now = datetime.now(timezone.utc)
-    await db["feed_sources"].update_one(
+    await db["feedSources"].update_one(
         {"_id": source["_id"]},
         {"$set": {
-            "last_fetched_at": now,
-            "last_fetch_error": error,
-            "updated_at": now,
-        }, "$inc": {"consecutive_failures": 1, "total_error_count": 1}},
+            "lastFetchedAt": now,
+            "lastFetchStatus": "error",
+            "lastFetchError": error,
+            "updatedAt": now,
+        }, "$inc": {"consecutiveFailures": 1}},
     )
