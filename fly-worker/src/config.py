@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     doris_password: str = ""
     doris_database: str = "mukoko_analytics"
 
+    # MongoDB — primary data store
+    mongodb_uri: str = ""
+    mongodb_database: str = "mukoko_news"
+
     # Authentication — Stytch OTP + Platform JWT
     stytch_project_id: str = ""
     stytch_secret: str = ""

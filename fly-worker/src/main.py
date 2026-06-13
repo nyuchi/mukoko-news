@@ -13,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from src.config import settings
 from src.db import get_pool, close_pool, run_migrations
 from src.scheduler import create_scheduler
+from src.services.mongodb import get_db, ping_mongodb, close_mongodb
 from src.services.couchdb import init_couchdb, close_couchdb
 from src.services.doris import init_doris, close_doris
 from src.services.analytics import flush_analytics
@@ -27,7 +28,15 @@ async def lifespan(app: FastAPI):
     """Startup: run migrations, start scheduler. Shutdown: stop scheduler, close DB."""
     global _scheduler
 
-    # Database
+    # MongoDB — primary data store
+    print("[MAIN] Connecting to MongoDB...")
+    mongo_ok = await ping_mongodb()
+    if mongo_ok:
+        print("[MAIN] MongoDB connected.")
+    else:
+        print("[MAIN] WARNING: MongoDB unavailable — some features degraded.")
+
+    # Postgres — secondary (relational queries)
     print("[MAIN] Connecting to Postgres...")
     await get_pool()
     print("[MAIN] Running migrations...")
@@ -58,6 +67,7 @@ async def lifespan(app: FastAPI):
     await close_doris()
     await close_couchdb()
     await close_pool()
+    await close_mongodb()
     print("[MAIN] Shutdown complete.")
 
 
@@ -124,6 +134,9 @@ async def health():
     except Exception:
         pass
 
+    # MongoDB status
+    mongo_ok = await ping_mongodb()
+
     # CouchDB status
     from src.services.couchdb import get_couchdb
     couch_ok = False
@@ -149,10 +162,12 @@ async def health():
                 "next_run": next_run.isoformat() if next_run else None,
             }
 
-    # Degraded if DB is down; CouchDB/Doris being down is acceptable
+    # Degraded if MongoDB or Postgres is down
+    healthy = mongo_ok and db_ok
     return {
-        "status": "healthy" if db_ok else "degraded",
+        "status": "healthy" if healthy else "degraded",
         "uptime_seconds": int(time.time() - _start_time),
+        "mongodb": "connected" if mongo_ok else "disconnected",
         "database": "connected" if db_ok else "disconnected",
         "couchdb": "connected" if couch_ok else "disconnected",
         "doris": "connected" if doris_ok else "disconnected",
