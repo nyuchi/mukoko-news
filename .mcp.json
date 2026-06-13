@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "nyuchi-mongodb": {
+      "type": "http",
+      "url": "https://mongodb.nyuchi.dev/mcp"
+    }
+  }
+}
