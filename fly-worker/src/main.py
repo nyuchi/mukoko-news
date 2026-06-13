@@ -1,7 +1,11 @@
-"""Mukoko News Fly.io Backend — FastAPI application entry point.
+"""Mukoko News pipeline — FastAPI entry point.
 
-Serves the full API for news.mukoko.com frontend.
-Also runs background jobs: RSS collection, AI processing, engagement scoring.
+This process is a data pipeline, NOT a user-facing API.
+It ingests RSS feeds, enriches articles with AI, and writes to MongoDB.
+The Next.js frontend reads directly from MongoDB.
+
+Background jobs run via APScheduler on startup.
+FastAPI is used only to expose /health for Fly.io health checks.
 """
 
 import time
@@ -11,13 +15,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.config import settings
-from src.db import get_pool, close_pool, run_migrations
 from src.scheduler import create_scheduler
-from src.services.mongodb import get_db, ping_mongodb, close_mongodb
-from src.services.couchdb import init_couchdb, close_couchdb
-from src.services.doris import init_doris, close_doris
-from src.services.analytics import flush_analytics
-from src.services.embeddings import close_client as close_embeddings
+from src.services.mongodb import ping_mongodb, close_mongodb
 
 _start_time = time.time()
 _scheduler = None
@@ -25,133 +24,51 @@ _scheduler = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup: run migrations, start scheduler. Shutdown: stop scheduler, close DB."""
     global _scheduler
 
-    # MongoDB — primary data store
-    print("[MAIN] Connecting to MongoDB...")
+    print("[PIPELINE] Connecting to MongoDB...")
     mongo_ok = await ping_mongodb()
     if mongo_ok:
-        print("[MAIN] MongoDB connected.")
+        print("[PIPELINE] MongoDB connected.")
     else:
-        print("[MAIN] WARNING: MongoDB unavailable — some features degraded.")
+        print("[PIPELINE] WARNING: MongoDB unavailable — pipeline degraded.")
 
-    # Postgres — secondary (relational queries)
-    print("[MAIN] Connecting to Postgres...")
-    await get_pool()
-    print("[MAIN] Running migrations...")
-    await run_migrations()
-
-    # CouchDB (article body storage)
-    print("[MAIN] Initializing CouchDB...")
-    await init_couchdb()
-
-    # Doris (analytics)
-    print("[MAIN] Initializing Doris...")
-    await init_doris()
-
-    # Scheduler (background jobs)
-    print("[MAIN] Starting scheduler...")
+    print("[PIPELINE] Starting scheduler...")
     _scheduler = create_scheduler()
     _scheduler.start()
-    print("[MAIN] Backend ready.")
+    print("[PIPELINE] Pipeline ready.")
 
     yield
 
-    # Shutdown
-    print("[MAIN] Shutting down...")
+    print("[PIPELINE] Shutting down...")
     if _scheduler:
         _scheduler.shutdown(wait=False)
-    await flush_analytics()
-    await close_embeddings()
-    await close_doris()
-    await close_couchdb()
-    await close_pool()
     await close_mongodb()
-    print("[MAIN] Shutdown complete.")
+    print("[PIPELINE] Shutdown complete.")
 
 
 app = FastAPI(
-    title="Mukoko News API",
-    description="Pan-African news aggregation API — mukoko.com",
-    version="2.0.0",
+    title="Mukoko News Pipeline",
+    description="RSS ingest + AI enrichment pipeline — writes to MongoDB",
+    version="3.0.0",
     lifespan=lifespan,
+    docs_url=None,
+    redoc_url=None,
 )
 
-# CORS
-origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
+# Restrict to internal/admin origins only — this is not a public API
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization", "Cookie"],
-    expose_headers=["Set-Cookie"],
+    allow_origins=["http://localhost:3000"],
+    allow_methods=["GET"],
+    allow_headers=["*"],
 )
 
-# ── Register API routers ────────────────────────────────────
-from src.api.feeds import router as feeds_router
-from src.api.articles import router as articles_router
-from src.api.categories import router as categories_router
-from src.api.sources import router as sources_router
-from src.api.search import router as search_router
-from src.api.stats import router as stats_router
-from src.api.engagement import router as engagement_router
-from src.api.stories import router as stories_router
-from src.api.authors import router as authors_router
-from src.api.admin import router as admin_router
-from src.api.analytics import router as analytics_router
-from src.api.user import router as user_router
-from src.api.auth_router import router as auth_router
-from src.api.platform_sync import router as platform_sync_router
 
-app.include_router(feeds_router)
-app.include_router(articles_router)
-app.include_router(categories_router)
-app.include_router(sources_router)
-app.include_router(search_router)
-app.include_router(stats_router)
-app.include_router(engagement_router)
-app.include_router(stories_router)
-app.include_router(authors_router)
-app.include_router(admin_router)
-app.include_router(analytics_router)  # Public — no auth required
-app.include_router(user_router)
-app.include_router(auth_router)
-app.include_router(platform_sync_router)
-
-
-# ── Root health endpoint (for Fly.io health checks) ─────────
 @app.get("/health")
 async def health():
     """Health check for Fly.io."""
-    pool = await get_pool()
-    db_ok = False
-    try:
-        async with pool.acquire() as conn:
-            await conn.fetchval("SELECT 1")
-            db_ok = True
-    except Exception:
-        pass
-
-    # MongoDB status
     mongo_ok = await ping_mongodb()
-
-    # CouchDB status
-    from src.services.couchdb import get_couchdb
-    couch_ok = False
-    try:
-        couch_ok = await get_couchdb().ping()
-    except Exception:
-        pass
-
-    # Doris status
-    from src.services.doris import get_doris as _get_doris
-    doris_ok = False
-    try:
-        doris_ok = await _get_doris().ping()
-    except Exception:
-        pass
 
     jobs = {}
     if _scheduler:
@@ -162,14 +79,9 @@ async def health():
                 "next_run": next_run.isoformat() if next_run else None,
             }
 
-    # Degraded if MongoDB or Postgres is down
-    healthy = mongo_ok and db_ok
     return {
-        "status": "healthy" if healthy else "degraded",
+        "status": "healthy" if mongo_ok else "degraded",
         "uptime_seconds": int(time.time() - _start_time),
         "mongodb": "connected" if mongo_ok else "disconnected",
-        "database": "connected" if db_ok else "disconnected",
-        "couchdb": "connected" if couch_ok else "disconnected",
-        "doris": "connected" if doris_ok else "disconnected",
         "jobs": jobs,
     }
