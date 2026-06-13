@@ -253,6 +253,15 @@ function he(s: unknown): string {
     .replace(/'/g, '&#39;');
 }
 
+function safeHref(u: unknown, fallback: string): string {
+  const s = String(u ?? '').trim();
+  try {
+    const p = new URL(s);
+    if (p.protocol === 'http:' || p.protocol === 'https:') return he(p.toString());
+  } catch { /* non-URL, fall through */ }
+  return he(fallback);
+}
+
 function fmtDate(d: unknown): string {
   if (!d) return '';
   try {
@@ -268,7 +277,7 @@ function credPips(score: unknown): string {
 }
 
 function articleCard(r: Record<string, unknown>): string {
-  const href = r.original_url ? he(r.original_url) : `${SITE}/article/${he(r.id)}`;
+  const href = safeHref(r.original_url, `${SITE}/article/${encodeURIComponent(String(r.id))}`);
   const category = r.category ? `<span class="bk bk-cat">${he(r.category)}</span>` : '';
   const cc = r.country_id ? `<span class="bk bk-cc">${he(r.country_id)}</span>` : '';
   const src = r.source ? `<span class="bk bk-src">${he(r.source)}</span>` : '';
@@ -294,7 +303,7 @@ function articleCardNumbered(r: Record<string, unknown>, i: number): string {
 }
 
 function page(title: string, body: string): string {
-  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${he(title)} — Mukoko News</title><style>${CSS}</style></head><body>${body}</body></html>`;
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src https:"><title>${he(title)} — Mukoko News</title><style>${CSS}</style></head><body>${body}</body></html>`;
 }
 
 function articlesHtml(rows: Record<string, unknown>[], heading: string, sub = ''): string {
@@ -560,7 +569,7 @@ async function toolListSources(db: D1DB, args: Record<string, unknown>): Promise
     return `<div class="src-row">
   <div class="src-cc">${he(initials)}</div>
   <div style="flex:1;min-width:0">
-    <div class="src-name">${he(r.name)}${r.website_url ? ` <a href="${he(r.website_url)}" target="_blank" rel="noopener" style="color:var(--co);font-size:11px">↗</a>` : ''}</div>
+    <div class="src-name">${he(r.name)}${r.website_url ? ` <a href="${safeHref(r.website_url, '#')}" target="_blank" rel="noopener" style="color:var(--co);font-size:11px">↗</a>` : ''}</div>
     <div class="src-meta">${he(r.country_id)}</div>
     <div class="cred">${credPips(r.credibility_score)}</div>
   </div>
