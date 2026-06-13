@@ -1,22 +1,24 @@
 /**
- * Mukoko News Backend - API & Admin Worker Configuration
- * Zimbabwe's Modern News Platform Backend
+ * Mukoko News Gateway - MCP Server & Public API Worker
+ * Serves: news.mukoko.com/mcp (LLM tool use) and news.mukoko.com/api/* (widget/resale API)
  *
  * For more details on Wrangler configuration:
  * https://developers.cloudflare.com/workers/wrangler/configuration/
  */ {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "mukoko-news-backend",
+  "name": "mukoko-news-gateway",
   "compatibility_date": "2025-04-01",
   "main": "./index.ts",
   "account_id": "125a2dfbc21f76a25c980609609e8218",
 
   /**
-   * Environment Variables
-   * Secrets should be set via `wrangler secret put SECRET_NAME`:
-   * - ADMIN_SESSION_SECRET: Admin session authentication
-   * - API_SECRET: Bearer token for frontend (Vercel) to backend API authentication
+   * Routes — intercept specific paths on news.mukoko.com before Vercel.
+   * All other paths fall through to the Next.js app on Vercel.
    */
+  "routes": [
+    { "pattern": "news.mukoko.com/mcp*", "zone_name": "mukoko.com" },
+    { "pattern": "news.mukoko.com/api/*", "zone_name": "mukoko.com" }
+  ],
   "vars": {
     "NODE_ENV": "production",
     "USE_FALLBACK_CONFIG": "false",
