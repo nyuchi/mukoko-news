@@ -3,6 +3,11 @@
     "nyuchi-mongodb": {
       "type": "http",
       "url": "https://mongodb.nyuchi.dev/mcp"
+    },
+    "fly": {
+      "type": "stdio",
+      "command": "flyctl",
+      "args": ["mcp", "server"]
     }
   }
 }
