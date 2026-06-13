@@ -11,18 +11,28 @@
 
 import type { Context } from "hono";
 
-// Allowed image MIME types — reject anything else
+// Allowed image MIME types — SVG excluded (XSS risk via same-origin execution)
 const ALLOWED_TYPES = new Set([
   "image/jpeg",
   "image/png",
   "image/webp",
   "image/gif",
   "image/avif",
-  "image/svg+xml",
 ]);
 
-// Block SSRF targets — private/loopback ranges
-const BLOCKED_HOSTNAMES = /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/;
+// Allowlist of approved news source domains (SSRF protection)
+// Denylist-based hostname checks are bypassable via DNS rebinding — allowlist only.
+const ALLOWED_DOMAINS = new Set([
+  "media.itnewsafrica.com", "techzim.co.zw", "www.techzim.co.zw",
+  "kubatana.net", "www.kubatana.net", "263chat.com", "www.263chat.com",
+  "newzimbabwe.com", "www.newzimbabwe.com", "zwnews.com", "www.zwnews.com",
+  "newsday.co.zw", "www.newsday.co.zw", "herald.co.zw", "www.herald.co.zw",
+  "chronicle.co.zw", "www.chronicle.co.zw", "thezimbabwean.co", "www.thezimbabwean.co",
+  "ichef.bbci.co.uk", "news.bbcimg.co.uk", "static.reuters.com",
+  "cloudfront-us-east-2.images.arcpublishing.com", "media.allafrica.com",
+  "cdn.vanguardngr.com", "nation.africa", "www.nation.africa",
+  "theeastafrican.co.ke", "www.theeastafrican.co.ke", "i.guim.co.uk",
+]);
 
 function parseImageOptions(url: URL) {
   const w = parseInt(url.searchParams.get("w") ?? "0", 10) || undefined;
@@ -56,8 +66,8 @@ export async function handleImageProxy(c: Context): Promise<Response> {
     return c.text("Only http/https URLs allowed", 400);
   }
 
-  if (BLOCKED_HOSTNAMES.test(parsed.hostname)) {
-    return c.text("Blocked URL", 403);
+  if (!ALLOWED_DOMAINS.has(parsed.hostname.toLowerCase())) {
+    return c.text("Domain not allowed", 403);
   }
 
   const opts = parseImageOptions(requestUrl);

@@ -1,0 +1,15 @@
+{
+  "name": "mukoko-images",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "npm install && wrangler deploy",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250425.0",
+    "typescript": "^5.3.3",
+    "wrangler": "^4.55.0"
+  }
+}
