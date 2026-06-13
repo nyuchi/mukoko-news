@@ -75,9 +75,9 @@ async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> 
     ...(options?.headers as Record<string, string>),
   };
 
-  // Add API secret if available (for protected endpoints)
-  // Server-side: API_SECRET. Client-side: NEXT_PUBLIC_API_SECRET (NEXT_PUBLIC_ prefix required for browser exposure).
-  const apiSecret = process.env.API_SECRET || process.env.NEXT_PUBLIC_API_SECRET;
+  // API_SECRET is server-only (SSR / Route Handlers). Browser fetches are
+  // unauthenticated — read endpoints are public, no secret needed client-side.
+  const apiSecret = process.env.API_SECRET;
   if (apiSecret) {
     headers['Authorization'] = `Bearer ${apiSecret}`;
   }

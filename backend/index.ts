@@ -98,22 +98,15 @@ app.use("*", cors({
 }));
 app.use("*", logger());
 
-// Protect all /api/* routes with API key (except /health and /api/admin/*)
-// Public API requires bearer token from authorized clients (Vercel frontend)
+// Read endpoints are public — no auth required to browse news.
+// Admin routes have their own auth. User-action endpoints (like, save) are
+// handled per-route. optionalApiKey() records whether a valid token was
+// present without rejecting anonymous requests.
 app.use("/api/*", async (c, next) => {
-  // Bypass API key auth for health check and admin routes (admin has its own auth)
-  const bypassPaths = [
-    '/api/health',
-  ];
-
-  // Check if this is an admin route or bypass path
-  if (c.req.path.startsWith('/api/admin/') || bypassPaths.includes(c.req.path)) {
+  if (c.req.path.startsWith('/api/admin/')) {
     return await next();
   }
-
-  // Require API key for all other /api/* routes (including /api/auth/*)
-  // Auth routes are called by trusted clients (Vercel, Expo) that have the API_SECRET
-  return await requireApiKey()(c, next);
+  return await optionalApiKey()(c, next);
 });
 
 // Protect all admin API routes (except login and backfill)
