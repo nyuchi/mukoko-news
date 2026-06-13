@@ -144,9 +144,11 @@ Services follow a class-based pattern with D1 database access:
 
 ### Access Control
 
-- `/api/health` — Public (no auth)
-- `/api/*` — Protected with bearer token (API_SECRET or OIDC JWT)
+- `/api/health` — Public
+- `/api/feeds`, `/api/article/*`, `/api/search`, `/api/categories`, `/api/keywords`, `/api/sources`, `/api/countries`, `/api/trending-*`, `/api/news-bytes`, `/api/stories/*` — **Public** (read-only, no auth required)
+- `/api/articles/:id/like`, `/api/articles/:id/save`, `/api/user/*` — User auth (OIDC JWT)
 - `/api/admin/*` — Admin only (requires admin role via RBAC)
+- Server-side Next.js sends `API_SECRET` as a bearer token for server-to-server calls; browser fetches are unauthenticated
 - Auth middleware: `backend/middleware/apiAuth.ts`, `backend/middleware/oidcAuth.ts`
 - OIDC JWT takes priority over API_SECRET when both present
 
@@ -188,8 +190,7 @@ Services follow a class-based pattern with D1 database access:
 ```bash
 NEXT_PUBLIC_API_URL=https://mukoko-news-backend.nyuchi.workers.dev
 NEXT_PUBLIC_BASE_URL=https://news.mukoko.com  # Optional, for SEO/JSON-LD
-EXPO_PUBLIC_API_SECRET=your-api-secret  # Client-side API auth
-API_SECRET=your-api-secret               # Server-side API auth
+API_SECRET=your-api-secret               # Server-side only — never sent from browser. Read endpoints are public.
 
 # Supabase platform project (mukoko_platform_cloud — permanent store)
 NEXT_PUBLIC_SUPABASE_URL=https://tdcpuzqyoodrdsxldgsh.supabase.co

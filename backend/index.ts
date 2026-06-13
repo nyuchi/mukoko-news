@@ -18,7 +18,7 @@ import { CSRFService } from "./services/CSRFService.js";
 // OIDC Auth - using id.mukoko.com for authentication
 import { oidcAuth, requireAuth, requireAdmin as requireAdminRole, getCurrentUser, getCurrentUserId, isAuthenticated } from "./middleware/oidcAuth.js";
 // API Key Auth - for frontend (Vercel) to backend authentication
-import { apiAuth, requireApiKey } from "./middleware/apiAuth.js";
+import { apiAuth, requireApiKey, optionalApiKey } from "./middleware/apiAuth.js";
 // Additional enhancement services
 import { CategoryManager } from "./services/CategoryManager.js";
 import { ObservabilityService } from "./services/ObservabilityService.js";
@@ -98,23 +98,18 @@ app.use("*", cors({
 }));
 app.use("*", logger());
 
-// Protect all /api/* routes with API key (except /health and /api/admin/*)
-// Public API requires bearer token from authorized clients (Vercel frontend)
+// Public read endpoints: no auth required to browse news (TikTok model).
+// When a valid OIDC JWT is present, attach the user to context so downstream
+// handlers can personalise or gate write actions. Admin routes handle their own auth.
 app.use("/api/*", async (c, next) => {
-  // Bypass API key auth for health check and admin routes (admin has its own auth)
-  const bypassPaths = [
-    '/api/health',
-  ];
-
-  // Check if this is an admin route or bypass path
-  if (c.req.path.startsWith('/api/admin/') || bypassPaths.includes(c.req.path)) {
+  if (c.req.path.startsWith('/api/admin/')) {
     return await next();
   }
-
-  // Require API key for all other /api/* routes (including /api/auth/*)
-  // Auth routes are called by trusted clients (Vercel, Expo) that have the API_SECRET
-  return await requireApiKey()(c, next);
+  return await oidcAuth({ required: false })(c, next);
 });
+
+// User-specific routes always require a valid OIDC JWT.
+app.use("/api/user/*", requireAuth());
 
 // Protect all admin API routes (except login and backfill)
 app.use("/api/admin/*", async (c, next) => {
@@ -590,13 +585,13 @@ app.get("/api/health", async (c) => {
       },
       environment: c.env.NODE_ENV || "production",
       security: {
-        apiAuthEnabled: !!c.env.API_SECRET,
         authMethods: [
-          "Bearer token (API_SECRET) for frontend-to-backend auth",
-          "Bearer token (OIDC JWT) for user authentication"
+          "OIDC JWT (id.mukoko.com) for user actions and profile routes",
+          "API keys reserved for partner/organization management tier"
         ],
-        protectedRoutes: "/api/* (except /api/health)",
-        publicRoutes: "/api/health, /api/admin/* (separate admin auth)"
+        publicRoutes: "GET /api/feeds, /api/article/*, /api/search, /api/categories, /api/countries, /api/sources, /api/keywords, /api/news-bytes, /api/stories/*, /api/trending-*",
+        userRoutes: "POST /api/articles/:id/like|save|comment|view, /api/user/*, /api/author/*/follow, /api/source/*/follow (require OIDC JWT)",
+        adminRoutes: "/api/admin/* (require admin role via OIDC JWT)"
       }
     });
   } catch (error: any) {
@@ -922,7 +917,7 @@ app.get("/api/feeds/personalized", async (c) => {
     const countries = countriesParam ? countriesParam.split(",").filter(c => c.trim()) : null;
 
     // Get user ID from header or session
-    const userId = c.req.header("x-user-id") || c.req.header("x-session-id") || null;
+    const userId = getCurrentUserId(c);
 
     const feedService = new PersonalizedFeedService(c.env.DB);
 
@@ -970,7 +965,7 @@ app.get("/api/feeds/personalized", async (c) => {
 // Get feed explanation - why articles are recommended
 app.get("/api/feeds/personalized/explain", async (c) => {
   try {
-    const userId = c.req.header("x-user-id") || c.req.header("x-session-id");
+    const userId = getCurrentUserId(c);
 
     if (!userId) {
       return c.json({
@@ -2693,7 +2688,7 @@ app.get("/api/search", async (c) => {
         query: query.trim(),
         category: category || null,
         resultsCount: searchResults.length,
-        userId: c.req.header('x-session-id') || 'anonymous'
+        userId: getCurrentUserId(c) || 'anonymous'
       });
     } catch (logError) {
       console.error("Failed to log search:", logError);
@@ -2801,7 +2796,7 @@ const refreshRateLimiter = new Map();
 app.post("/api/refresh", async (c) => {
   try {
     // Get user identifier (session ID or user ID)
-    const userId = c.req.header('x-session-id') || c.req.header('x-user-id') || 'anonymous';
+    const userId = getCurrentUserId(c) || 'anonymous';
 
     // Check rate limit (5 minutes between refreshes)
     const lastRefresh = refreshRateLimiter.get(userId);
@@ -2865,11 +2860,11 @@ app.post("/api/refresh", async (c) => {
 
 // ===== PHASE 2: USER ENGAGEMENT APIs (REQUIRE AUTH) =====
 
-// Article Like/Unlike - with real-time Durable Object updates
-app.post("/api/articles/:id/like", async (c) => {
+// Article Like/Unlike - requires OIDC JWT
+app.post("/api/articles/:id/like", requireAuth(), async (c) => {
   try {
     const articleId = c.req.param("id");
-    const userId = c.req.header('x-user-id') || c.req.header('x-session-id') || 'anonymous';
+    const userId = getCurrentUserId(c)!;
 
     // Check if already liked
     const existing = await c.env.DB.prepare(`
@@ -2930,11 +2925,11 @@ app.post("/api/articles/:id/like", async (c) => {
   }
 });
 
-// Article Save/Bookmark - with real-time Durable Object updates
-app.post("/api/articles/:id/save", async (c) => {
+// Article Save/Bookmark - requires OIDC JWT
+app.post("/api/articles/:id/save", requireAuth(), async (c) => {
   try {
     const articleId = c.req.param("id");
-    const userId = c.req.header('x-user-id') || c.req.header('x-session-id') || 'anonymous';
+    const userId = getCurrentUserId(c)!;
 
     // Check if already saved
     const existing = await c.env.DB.prepare(`
@@ -2995,11 +2990,11 @@ app.post("/api/articles/:id/save", async (c) => {
   }
 });
 
-// Article View Tracking
+// Article View Tracking - anonymous views count; JWT attaches view to user account
 app.post("/api/articles/:id/view", async (c) => {
   try {
     const articleId = c.req.param("id");
-    const userId = c.req.header('x-user-id') || c.req.header('x-session-id') || 'anonymous';
+    const userId = getCurrentUserId(c) || 'anonymous';
 
     const body = await c.req.json();
     const readingTime = body.reading_time || 0; // seconds
@@ -3041,11 +3036,11 @@ app.post("/api/articles/:id/view", async (c) => {
   }
 });
 
-// Article Comment
-app.post("/api/articles/:id/comment", async (c) => {
+// Article Comment - requires OIDC JWT
+app.post("/api/articles/:id/comment", requireAuth(), async (c) => {
   try {
     const articleId = c.req.param("id");
-    const userId = c.req.header('x-user-id') || c.req.header('x-session-id') || 'anonymous';
+    const userId = getCurrentUserId(c)!;
 
     const body = await c.req.json();
     const content = body.content;
@@ -3154,7 +3149,7 @@ app.get("/api/articles/:id/comments", async (c) => {
 // User Preferences - GET
 app.get("/api/user/me/preferences", async (c) => {
   try {
-    const userId = c.req.header('x-user-id') || c.req.header('x-session-id') || 'anonymous';
+    const userId = getCurrentUserId(c) || 'anonymous';
 
     // Get user preferences
     const prefs = await c.env.DB.prepare(`
@@ -3207,7 +3202,7 @@ app.get("/api/user/me/preferences", async (c) => {
 // User Preferences - UPDATE
 app.post("/api/user/me/preferences", async (c) => {
   try {
-    const userId = c.req.header('x-user-id') || c.req.header('x-session-id') || 'anonymous';
+    const userId = getCurrentUserId(c) || 'anonymous';
     const body = await c.req.json();
 
     // Update or insert preferences
@@ -3230,7 +3225,7 @@ app.post("/api/user/me/preferences", async (c) => {
 // Follow Source/Author
 app.post("/api/user/me/follows", async (c) => {
   try {
-    const userId = c.req.header('x-user-id') || c.req.header('x-session-id') || 'anonymous';
+    const userId = getCurrentUserId(c) || 'anonymous';
     const body = await c.req.json();
 
     const followType = body.follow_type; // 'source' or 'author'
@@ -3274,7 +3269,7 @@ app.post("/api/user/me/follows", async (c) => {
 // Unfollow Source/Author
 app.delete("/api/user/me/follows/:type/:id", async (c) => {
   try {
-    const userId = c.req.header('x-user-id') || c.req.header('x-session-id') || 'anonymous';
+    const userId = getCurrentUserId(c) || 'anonymous';
     const followType = c.req.param("type");
     const followId = c.req.param("id");
 
@@ -3311,7 +3306,7 @@ app.delete("/api/user/me/follows/:type/:id", async (c) => {
 // Get user's followed authors
 app.get("/api/user/me/follows/authors", async (c) => {
   try {
-    const userId = c.req.header('x-user-id') || c.req.header('x-session-id');
+    const userId = getCurrentUserId(c);
     if (!userId) {
       return c.json({ authors: [], message: "No user session" });
     }
@@ -3345,7 +3340,7 @@ app.get("/api/user/me/follows/authors", async (c) => {
 // Get user's followed sources
 app.get("/api/user/me/follows/sources", async (c) => {
   try {
-    const userId = c.req.header('x-user-id') || c.req.header('x-session-id');
+    const userId = getCurrentUserId(c);
     if (!userId) {
       return c.json({ sources: [], message: "No user session" });
     }
@@ -3379,7 +3374,7 @@ app.get("/api/user/me/follows/sources", async (c) => {
 // Get user's followed categories
 app.get("/api/user/me/follows/categories", async (c) => {
   try {
-    const userId = c.req.header('x-user-id') || c.req.header('x-session-id');
+    const userId = getCurrentUserId(c);
     if (!userId) {
       return c.json({ categories: [], message: "No user session" });
     }
@@ -3405,7 +3400,7 @@ app.get("/api/user/me/follows/categories", async (c) => {
 // Get all user follows (combined)
 app.get("/api/user/me/follows", async (c) => {
   try {
-    const userId = c.req.header('x-user-id') || c.req.header('x-session-id');
+    const userId = getCurrentUserId(c);
     if (!userId) {
       return c.json({ follows: { authors: [], sources: [], categories: [] }, message: "No user session" });
     }
@@ -3479,7 +3474,7 @@ app.get("/api/countries/:countryId", async (c) => {
 // Get user's country preferences
 app.get("/api/user/me/countries", async (c) => {
   try {
-    const userId = c.req.header('x-user-id') || c.req.header('x-session-id');
+    const userId = getCurrentUserId(c);
 
     if (!userId) {
       return c.json({ error: "User not authenticated" }, 401);
@@ -3501,7 +3496,7 @@ app.get("/api/user/me/countries", async (c) => {
 // Set user's country preferences (replaces all)
 app.put("/api/user/me/countries", async (c) => {
   try {
-    const userId = c.req.header('x-user-id') || c.req.header('x-session-id');
+    const userId = getCurrentUserId(c);
 
     if (!userId) {
       return c.json({ error: "User not authenticated" }, 401);
@@ -3544,7 +3539,7 @@ app.put("/api/user/me/countries", async (c) => {
 // Add a country to user's preferences
 app.post("/api/user/me/countries", async (c) => {
   try {
-    const userId = c.req.header('x-user-id') || c.req.header('x-session-id');
+    const userId = getCurrentUserId(c);
 
     if (!userId) {
       return c.json({ error: "User not authenticated" }, 401);
@@ -3577,7 +3572,7 @@ app.post("/api/user/me/countries", async (c) => {
 // Remove a country from user's preferences
 app.delete("/api/user/me/countries/:countryId", async (c) => {
   try {
-    const userId = c.req.header('x-user-id') || c.req.header('x-session-id');
+    const userId = getCurrentUserId(c);
 
     if (!userId) {
       return c.json({ error: "User not authenticated" }, 401);
@@ -3597,7 +3592,7 @@ app.delete("/api/user/me/countries/:countryId", async (c) => {
 // Set user's primary country
 app.put("/api/user/me/countries/:countryId/primary", async (c) => {
   try {
-    const userId = c.req.header('x-user-id') || c.req.header('x-session-id');
+    const userId = getCurrentUserId(c);
 
     if (!userId) {
       return c.json({ error: "User not authenticated" }, 401);
@@ -4055,13 +4050,11 @@ app.get("/api/author/:slug", async (c) => {
 });
 
 // Follow/unfollow an author
-app.post("/api/author/:authorId/follow", async (c) => {
+app.post("/api/author/:authorId/follow", requireAuth(), async (c) => {
   try {
     const services = initializeServices(c.env);
     const authorId = parseInt(c.req.param("authorId"));
-
-    // Get userId from headers - supports anonymous session-based engagement
-    const userId = c.req.header('x-user-id') || c.req.header('x-session-id') || 'anonymous';
+    const userId = getCurrentUserId(c)!;
 
     const result = await services.authorProfileService.toggleAuthorFollow(userId, authorId);
 
@@ -4073,13 +4066,11 @@ app.post("/api/author/:authorId/follow", async (c) => {
 });
 
 // Follow/unfollow a news source
-app.post("/api/source/:sourceId/follow", async (c) => {
+app.post("/api/source/:sourceId/follow", requireAuth(), async (c) => {
   try {
     const services = initializeServices(c.env);
     const sourceId = c.req.param("sourceId");
-
-    // Get userId from headers - supports anonymous session-based engagement
-    const userId = c.req.header('x-user-id') || c.req.header('x-session-id') || 'anonymous';
+    const userId = getCurrentUserId(c)!;
 
     const result = await services.authorProfileService.toggleSourceFollow(userId, sourceId);
 
@@ -5166,7 +5157,7 @@ app.get("/api/auth/check-username", async (c) => {
 // Get user's linked authentication providers
 app.get("/api/user/me/auth-providers", async (c) => {
   try {
-    const userId = c.req.header('x-user-id') || c.req.header('x-session-id');
+    const userId = getCurrentUserId(c);
     if (!userId) {
       return c.json({ error: "User identification required" }, 401);
     }
@@ -5200,7 +5191,7 @@ app.get("/api/user/me/auth-providers", async (c) => {
 // Link a new authentication provider (OIDC callback handler)
 app.post("/api/user/me/auth-providers/oidc", async (c) => {
   try {
-    const userId = c.req.header('x-user-id') || c.req.header('x-session-id');
+    const userId = getCurrentUserId(c);
     if (!userId) {
       return c.json({ error: "User identification required" }, 401);
     }
@@ -5287,7 +5278,7 @@ async function hasUserField(db: D1Database, userId: string, field: string): Prom
 // Link mobile number
 app.post("/api/user/me/auth-providers/mobile", async (c) => {
   try {
-    const userId = c.req.header('x-user-id') || c.req.header('x-session-id');
+    const userId = getCurrentUserId(c);
     if (!userId) {
       return c.json({ error: "User identification required" }, 401);
     }
@@ -5334,7 +5325,7 @@ app.post("/api/user/me/auth-providers/mobile", async (c) => {
 // Link Web3 wallet
 app.post("/api/user/me/auth-providers/wallet", async (c) => {
   try {
-    const userId = c.req.header('x-user-id') || c.req.header('x-session-id');
+    const userId = getCurrentUserId(c);
     if (!userId) {
       return c.json({ error: "User identification required" }, 401);
     }
@@ -5383,7 +5374,7 @@ app.post("/api/user/me/auth-providers/wallet", async (c) => {
 // Set primary authentication provider
 app.put("/api/user/me/auth-providers/:providerId/primary", async (c) => {
   try {
-    const userId = c.req.header('x-user-id') || c.req.header('x-session-id');
+    const userId = getCurrentUserId(c);
     if (!userId) {
       return c.json({ error: "User identification required" }, 401);
     }
@@ -5416,7 +5407,7 @@ app.put("/api/user/me/auth-providers/:providerId/primary", async (c) => {
 // Unlink authentication provider
 app.delete("/api/user/me/auth-providers/:providerId", async (c) => {
   try {
-    const userId = c.req.header('x-user-id') || c.req.header('x-session-id');
+    const userId = getCurrentUserId(c);
     if (!userId) {
       return c.json({ error: "User identification required" }, 401);
     }
@@ -5451,7 +5442,7 @@ app.delete("/api/user/me/auth-providers/:providerId", async (c) => {
 // Get user identity summary (combines user profile with auth providers)
 app.get("/api/user/me/identity", async (c) => {
   try {
-    const userId = c.req.header('x-user-id') || c.req.header('x-session-id');
+    const userId = getCurrentUserId(c);
     if (!userId) {
       return c.json({ error: "User identification required" }, 401);
     }
@@ -5522,7 +5513,7 @@ app.get("/api/user/me/identity", async (c) => {
 // Sync user profile from OIDC claims (called after OIDC login)
 app.post("/api/user/me/identity/sync-from-oidc", async (c) => {
   try {
-    const userId = c.req.header('x-user-id') || c.req.header('x-session-id');
+    const userId = getCurrentUserId(c);
     if (!userId) {
       return c.json({ error: "User identification required" }, 401);
     }
