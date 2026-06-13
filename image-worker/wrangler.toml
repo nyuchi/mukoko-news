@@ -23,7 +23,6 @@ zone_name = "mukoko.com"
 # Override via wrangler secret if needed
 ALLOWED_DOMAINS = ""
 
-[r2_buckets]
 [[r2_buckets]]
 binding = "CACHE"
 bucket_name = "mukoko-storage"
