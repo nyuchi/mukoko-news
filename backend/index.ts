@@ -38,6 +38,8 @@ import { normalizeTitle, titleSimilarity, clusterArticles, STOP_WORDS } from "./
 
 // Import admin interface
 import { getAdminHTML, getLoginHTML } from "./admin/index.js";
+// MCP server
+import { handleMcp } from "./mcp/server.js";
 
 // Types for Cloudflare bindings
 type Bindings = {
@@ -6481,6 +6483,15 @@ Crawl-delay: 1
       "Cache-Control": "public, max-age=86400" // 24 hour cache
     }
   });
+});
+
+// ── MCP server endpoint ──────────────────────────────────────────────────
+// POST /mcp — Streamable HTTP (JSON-RPC 2.0) for LLM tool use.
+// Tools: search_news, get_article, get_trending, get_similar_stories,
+//        browse_by_tag, browse_by_author, browse_by_source,
+//        list_categories, list_sources, get_stats
+app.all('/mcp', async (c) => {
+  return handleMcp(c.req.raw, c.env.DB);
 });
 
 // Scheduled handler for cron jobs with rotating batch processing
