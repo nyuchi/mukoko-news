@@ -1,7 +1,7 @@
 /**
  * Mukoko Images — image proxy with Cloudflare Image Resizing
  *
- * Route: GET /i/<original-url>?w=800&h=450&fmt=webp&q=85&fit=cover
+ * Route: GET /i/<original-url>?w=800&h=450&fmt=webp&q=85&fit=cover  (assets.mukoko.com)
  *
  * Security:
  * - Allowlist-only: only fetches from approved news source domains.

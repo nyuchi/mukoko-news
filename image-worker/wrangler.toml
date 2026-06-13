@@ -1,8 +1,9 @@
 # Mukoko Images — dedicated image proxy worker
-# Serves: https://images.mukoko.com/i/<original-url>?w=800&fmt=webp
+# Serves: https://assets.mukoko.com/i/<original-url>?w=800&fmt=webp
 #
 # Uses Cloudflare Image Resizing to optimize news article images on the fly.
 # Originals are never stored — only edge-cached. R2 used for persistent cache.
+# R2 bucket (mukoko-storage) also accessible directly at assets-s001.mukoko.com.
 #
 # Deploy: cd image-worker && npx wrangler deploy
 
@@ -14,7 +15,7 @@ compatibility_flags = ["nodejs_compat"]
 account_id = "125a2dfbc21f76a25c980609609e8218"
 
 [[routes]]
-pattern = "images.mukoko.com/i/*"
+pattern = "assets.mukoko.com/i/*"
 zone_name = "mukoko.com"
 
 [vars]

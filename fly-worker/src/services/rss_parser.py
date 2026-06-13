@@ -4,7 +4,6 @@ Parses RSS/Atom XML into normalized article dicts aligned to schema.org NewsArti
 """
 
 import hashlib
-import json
 import re
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
@@ -72,27 +71,23 @@ def _parse_entry(entry, source: dict, feed) -> dict | None:
     elif hasattr(entry, "summary_detail"):
         article_body = entry.summary_detail.get("value", "")
 
-    # schema:author — JSONB string for asyncpg
     author_raw = _extract_author(entry)
-    author = json.dumps({"@type": "Person", "name": author_raw}) if author_raw else None
+    author = {"@type": "Person", "name": author_raw} if author_raw else None
 
-    # schema:image — JSONB string for asyncpg
     image_url = _extract_image(entry)
-    image = json.dumps({"url": image_url}) if image_url else None
+    image = {"url": image_url} if image_url else None
 
-    # schema:articleSection from source default
-    articlesection = source.get("article_section_slug", "general")
+    # section: accept both old key (article_section_slug) and new key (section)
+    articlesection = source.get("section") or source.get("article_section_slug", "general")
 
-    # Generate slug from headline
     slug = _slugify(headline)
 
-    # Content fingerprint for deduplication
     content_for_hash = f"{headline}{main_entity_of_page}"
     source_fingerprint = hashlib.sha256(content_for_hash.encode()).hexdigest()[:16]
 
-    # Publisher as JSONB string for asyncpg
-    org_name = source.get("org_name", "")
-    publisher = json.dumps({"@type": "Organization", "name": org_name}) if org_name else None
+    # publisher_name: accept both old key (org_name) and new key (publisher_name)
+    org_name = source.get("publisher_name") or source.get("org_name", "")
+    publisher = {"@type": "Organization", "name": org_name} if org_name else None
 
     return {
         "headline": headline[:500],
@@ -103,7 +98,7 @@ def _parse_entry(entry, source: dict, feed) -> dict | None:
         "source_feed_id": rss_guid,
         "image": image,
         "author": author,
-        "publisher_organization_id": source.get("organization_id"),
+        "publisher_organization_id": source.get("publisher_id") or source.get("organization_id"),
         "publisher": publisher,
         "articlesection": articlesection,
         "primary_location_country": source.get("country", "ZW"),

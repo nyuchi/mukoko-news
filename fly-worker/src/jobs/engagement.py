@@ -1,68 +1,53 @@
 """Engagement score recalculation job.
 
 Polls for recently updated articles and recalculates engagement scores.
-Replaces the Atlas trigger that fired on view/like/bookmark updates.
+Runs every 5 minutes.
 """
 
 import math
 from datetime import datetime, timedelta, timezone
 
-from src.db import get_pool
-from src.services.doris import get_doris
+from src.services.mongodb import get_db
 
 
 async def recalc_engagement_scores() -> None:
     """Recalculate engagement scores for recently updated articles."""
-    pool = await get_pool()
+    db = get_db()
     cutoff = datetime.now(timezone.utc) - timedelta(minutes=6)
 
-    async with pool.acquire() as conn:
-        articles = await conn.fetch(
-            """SELECT a.id, a.view_count, a.like_count, a.bookmark_count,
-                      a.share_count, a.datepublished, a.engagement_score
-               FROM news.news_article a
-               WHERE a.updated_at >= $1
-                 AND a.creativeworkstatus = 'published'
-                 AND (a.view_count > 0 OR a.like_count > 0 OR a.bookmark_count > 0)""",
-            cutoff,
-        )
+    articles = await db["articles"].find({
+        "updated_at": {"$gte": cutoff},
+        "status": "published",
+        "$or": [
+            {"engagement.views": {"$gt": 0}},
+            {"engagement.likes": {"$gt": 0}},
+            {"engagement.bookmarks": {"$gt": 0}},
+        ],
+    }).to_list(None)
 
     if not articles:
         return
 
     updated = 0
-    async with pool.acquire() as conn:
-        for article in articles:
-            new_score = _compute_score(dict(article))
-            old_score = article["engagement_score"] or 0.0
+    now = datetime.now(timezone.utc)
 
-            # Only update if score changed meaningfully
-            if abs(new_score - old_score) > 0.01:
-                await conn.execute(
-                    """UPDATE news.news_article SET
-                       engagement_score = $2,
-                       sync_status = 'pending_sync'
-                       WHERE id = $1""",
-                    article["id"],
-                    new_score,
-                )
-                updated += 1
+    for article in articles:
+        new_score = _compute_score(article)
+        old_score = (article.get("engagement") or {}).get("score", 0.0) or 0.0
+
+        if abs(new_score - old_score) > 0.01:
+            await db["articles"].update_one(
+                {"_id": article["_id"]},
+                {"$set": {
+                    "engagement.score": new_score,
+                    "sync_status": "pending_sync",
+                    "updated_at": now,
+                }},
+            )
+            updated += 1
 
     if updated:
         print(f"[ENGAGEMENT] Updated {updated}/{len(articles)} scores")
-
-        # Sync updated scores to Doris search index
-        try:
-            doris = get_doris()
-            if await doris.ping():
-                for article in articles:
-                    new_score = _compute_score(dict(article))
-                    safe_id = str(article["id"]).replace("'", "\\'")
-                    await doris.query(
-                        f"UPDATE mukoko_analytics.article_search SET engagement_score = {new_score} WHERE article_id = '{safe_id}'"
-                    )
-        except Exception as e:
-            print(f"[ENGAGEMENT] Doris sync error: {e}")
 
 
 def _compute_score(article: dict) -> float:
@@ -72,15 +57,15 @@ def _compute_score(article: dict) -> float:
     - raw = views*1 + likes*3 + bookmarks*5 + shares*2
     - decay = 1 / (1 + hours_since_published / 48)
     """
-    views = article.get("view_count", 0) or 0
-    likes = article.get("like_count", 0) or 0
-    bookmarks = article.get("bookmark_count", 0) or 0
-    shares = article.get("share_count", 0) or 0
+    eng = article.get("engagement") or {}
+    views = eng.get("views", 0) or 0
+    likes = eng.get("likes", 0) or 0
+    bookmarks = eng.get("bookmarks", 0) or 0
+    shares = eng.get("shares", 0) or 0
 
     raw = views * 1 + likes * 3 + bookmarks * 5 + shares * 2
 
-    # Time decay
-    published = article.get("datepublished")
+    published = article.get("date_published")
     if published:
         if isinstance(published, str):
             published = datetime.fromisoformat(published)
@@ -90,8 +75,6 @@ def _compute_score(article: dict) -> float:
         decay = 0.5
 
     score = raw * decay
-
-    # Log scale for very popular articles
     if score > 100:
         score = 100 + math.log10(score - 99) * 50
 
