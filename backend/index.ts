@@ -585,13 +585,13 @@ app.get("/api/health", async (c) => {
       },
       environment: c.env.NODE_ENV || "production",
       security: {
-        apiAuthEnabled: !!c.env.API_SECRET,
         authMethods: [
-          "Bearer token (API_SECRET) for frontend-to-backend auth",
-          "Bearer token (OIDC JWT) for user authentication"
+          "OIDC JWT (id.mukoko.com) for user actions and profile routes",
+          "API keys reserved for partner/organization management tier"
         ],
-        protectedRoutes: "/api/* (except /api/health)",
-        publicRoutes: "/api/health, /api/admin/* (separate admin auth)"
+        publicRoutes: "GET /api/feeds, /api/article/*, /api/search, /api/categories, /api/countries, /api/sources, /api/keywords, /api/news-bytes, /api/stories/*, /api/trending-*",
+        userRoutes: "POST /api/articles/:id/like|save|comment|view, /api/user/*, /api/author/*/follow, /api/source/*/follow (require OIDC JWT)",
+        adminRoutes: "/api/admin/* (require admin role via OIDC JWT)"
       }
     });
   } catch (error: any) {
