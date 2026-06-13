@@ -1,6 +1,7 @@
 {
   "name": "@nyuchi/mukoko-news-mcp",
   "version": "1.0.0",
+  "mcpName": "io.github.nyuchi/mukoko-news",
   "description": "Mukoko News MCP server — Pan-African news for LLMs. Search, browse, and analyse African news coverage.",
   "keywords": ["mcp", "news", "africa", "zimbabwe", "llm", "claude", "anthropic"],
   "license": "MIT",
