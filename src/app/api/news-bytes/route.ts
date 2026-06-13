@@ -5,7 +5,8 @@ export const runtime = 'nodejs'
 
 export async function GET(request: NextRequest) {
   try {
-    const limit = parseInt(request.nextUrl.searchParams.get('limit') || '10')
+    const rawLimit = parseInt(request.nextUrl.searchParams.get('limit') || '10')
+    const limit = Math.min(Math.max(1, Number.isFinite(rawLimit) ? rawLimit : 10), 50)
     const articles = await getNewsByteArticles(limit)
     return NextResponse.json({ articles })
   } catch (error) {

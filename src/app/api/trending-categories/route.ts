@@ -5,7 +5,8 @@ export const runtime = 'nodejs'
 
 export async function GET(request: NextRequest) {
   try {
-    const limit = parseInt(request.nextUrl.searchParams.get('limit') || '8')
+    const rawLimit = parseInt(request.nextUrl.searchParams.get('limit') || '8')
+    const limit = Math.min(Math.max(1, Number.isFinite(rawLimit) ? rawLimit : 8), 50)
     const trending = await getTrendingCategories(limit)
     return NextResponse.json({ success: true, trending })
   } catch (error) {

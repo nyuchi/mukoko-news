@@ -4,7 +4,7 @@ import { randomUUID } from 'crypto'
 
 export const runtime = 'nodejs'
 
-// Simple like toggle — uses session cookie for idempotency.
+// Session cookie + unique {articleId, sessionId} index prevents double-likes.
 // Replace sessionId with OIDC personId when auth is wired.
 export async function POST(
   request: NextRequest,
@@ -15,49 +15,57 @@ export async function POST(
     const sessionId = request.cookies.get('mukoko_session')?.value || randomUUID()
 
     const db = await getDb()
+
+    // Validate article exists
+    const article = await db.collection('articles').findOne(
+      { _id: articleId as unknown as never },
+      { projection: { _id: 1 } }
+    )
+    if (!article) {
+      return NextResponse.json({ success: false, message: 'Article not found' }, { status: 404 })
+    }
+
     const likesCol = db.collection('articleLikes')
-
-    const existing = await likesCol.findOne({ articleId, sessionId })
-
     let liked: boolean
-    if (existing) {
-      await likesCol.deleteOne({ articleId, sessionId })
-      await db.collection('articles').updateOne(
-        { _id: articleId as unknown as never },
-        { $inc: { likesCount: -1 }, $set: { updatedAt: new Date() } }
-      )
-      liked = false
-    } else {
+
+    try {
+      // Unique index on {articleId, sessionId} makes this fail if already liked
       await likesCol.insertOne({
         _id: randomUUID() as unknown as never,
         articleId,
         sessionId,
         createdAt: new Date(),
       })
-      await db.collection('articles').updateOne(
-        { _id: articleId as unknown as never },
-        { $inc: { likesCount: 1 }, $set: { updatedAt: new Date() } }
-      )
       liked = true
+    } catch (e: unknown) {
+      if ((e as { code?: number }).code === 11000) {
+        // Duplicate — toggle off
+        await likesCol.deleteOne({ articleId, sessionId })
+        liked = false
+      } else {
+        throw e
+      }
     }
 
-    const article = await db.collection('articles').findOne(
+    // Count from DB rather than using a raceable $inc
+    const likesCount = await likesCol.countDocuments({ articleId })
+    await db.collection('articles').updateOne(
       { _id: articleId as unknown as never },
-      { projection: { likesCount: 1 } }
+      { $set: { likesCount, updatedAt: new Date() } }
     )
 
     const response = NextResponse.json({
       success: true,
       liked,
       message: liked ? 'Article liked' : 'Like removed',
-      count: (article as Record<string, number> | null)?.likesCount ?? 0,
+      count: likesCount,
     })
 
     if (!request.cookies.get('mukoko_session')) {
       response.cookies.set('mukoko_session', sessionId, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
+        sameSite: 'strict',
         maxAge: 60 * 60 * 24 * 365,
       })
     }
