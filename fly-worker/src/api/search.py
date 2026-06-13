@@ -8,6 +8,7 @@ Search is a three-tier funnel:
 Each tier falls through to the next if unavailable or returns no results.
 """
 
+import re
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Query
@@ -117,6 +118,13 @@ async def _semantic_search(
         return None
 
 
+def _doris_escape(value: str) -> str:
+    """Escape a string for safe use in Doris SQL string literals."""
+    # Strip control characters, then escape backslashes before single quotes
+    cleaned = re.sub(r'[\x00-\x1f\x7f]', '', value)
+    return cleaned.replace("\\", "\\\\").replace("'", "\\'")
+
+
 async def _doris_search(query: str, limit: int, category: str | None) -> list[str] | None:
     """Query Doris inverted index. Returns article IDs or None if unavailable."""
     doris = get_doris()
@@ -124,14 +132,18 @@ async def _doris_search(query: str, limit: int, category: str | None) -> list[st
         if not await doris.ping():
             return None
 
-        # Escape single quotes for SQL safety
-        safe_q = query.replace("'", "\\'")
+        safe_q = _doris_escape(query)
+
+        # Validate category against a safe pattern (letters, digits, hyphens only)
+        safe_cat = None
+        if category and category != "all":
+            if re.match(r'^[A-Za-z0-9_-]+$', category):
+                safe_cat = category
 
         # Build WHERE clause
         conditions = [f"MATCH_ANY(headline, '{safe_q}') OR MATCH_ANY(description, '{safe_q}') OR MATCH_ANY(keywords, '{safe_q}')"]
-        if category and category != "all":
-            safe_cat = category.replace("'", "\\'")
-            conditions.append(f"category = '{safe_cat}'")
+        if safe_cat:
+            conditions.append(f"category = '{_doris_escape(safe_cat)}'")
 
         where = " AND ".join(f"({c})" for c in conditions)
 

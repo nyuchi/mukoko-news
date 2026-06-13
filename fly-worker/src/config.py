@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     # Worker config
     log_level: str = "info"
     environment: str = "production"
+    allow_dev_noauth: bool = False  # Must be explicitly set; never true in production
 
     # RSS collection
     rss_fetch_timeout: int = 15

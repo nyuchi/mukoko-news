@@ -7,6 +7,7 @@ Business intelligence is for the people, not locked behind admin.
 Only PII-related data (individual user behavior) stays behind admin auth.
 """
 
+import re
 import time
 from datetime import datetime, timezone
 
@@ -17,6 +18,14 @@ from src.services.doris import get_doris
 from src.services.analytics import get_analytics
 
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
+
+_UUID_RE = re.compile(
+    r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.IGNORECASE
+)
+
+
+def _is_uuid(value: str) -> bool:
+    return bool(_UUID_RE.match(value))
 
 # Simple in-memory cache: {key: (data, expires_at)}
 _cache: dict[str, tuple[dict, float]] = {}
@@ -170,20 +179,19 @@ async def article_performance(
     time_series = []
 
     try:
-        if await doris.ping():
-            safe_id = article_id.replace("'", "\\'")
+        if await doris.ping() and _is_uuid(article_id):
             rows = await doris.query(f"""
                 SELECT event_date, SUM(views) AS views, SUM(likes) AS likes,
                        SUM(bookmarks) AS bookmarks, SUM(shares) AS shares
                 FROM mukoko_analytics.article_metrics
-                WHERE article_id = '{safe_id}'
+                WHERE article_id = '{article_id}'
                 GROUP BY event_date
                 ORDER BY event_date DESC
                 LIMIT 90
             """)
             time_series = rows
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[ANALYTICS] Doris time-series error for {article_id}: {e}")
 
     # Always get current totals from Postgres
     pool = await get_pool()
@@ -408,25 +416,18 @@ async def trending_analytics(
     pool = await get_pool()
 
     async with pool.acquire() as conn:
-        scope = "global"
-        params: list = [limit]
-        country_filter = ""
-
-        if country:
-            scope = country
-            country_filter = "AND scope = $2"
-            params.append(country)
+        scope = country if country else "global"
 
         rows = await conn.fetch(
-            f"""SELECT term_id AS id, term_name AS name, score,
+            """SELECT term_id AS id, term_name AS name, score,
                        article_count, scope AS country
                 FROM news.trending_cache
-                WHERE scope = '{scope}'
+                WHERE scope = $2
                   AND expires_at > NOW()
-                  {country_filter}
                 ORDER BY score DESC
                 LIMIT $1""",
-            *params,
+            limit,
+            scope,
         )
 
     result = {

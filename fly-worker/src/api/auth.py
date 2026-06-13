@@ -26,10 +26,9 @@ class AuthUser:
 async def require_auth(authorization: str = Header(default="")) -> AuthUser:
     """Require a valid Stytch session or Platform JWT. Returns AuthUser or raises 401."""
     if not settings.platform_jwt_secret and not is_stytch_configured():
-        if settings.environment == "production":
-            print("[AUTH] WARNING: No auth configured in production — rejecting request")
-            raise HTTPException(status_code=500, detail="Auth not configured")
-        return AuthUser(user_id="dev", role="admin")
+        if settings.environment != "production" and settings.allow_dev_noauth:
+            return AuthUser(user_id="dev", role="admin")
+        raise HTTPException(status_code=500, detail="Auth not configured")
 
     token = _extract_bearer(authorization)
     if not token:
