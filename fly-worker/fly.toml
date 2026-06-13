@@ -1,0 +1,37 @@
+app = "mukoko-news-api"
+primary_region = "jnb"
+
+[build]
+
+[env]
+  # Non-secret env vars. Secrets set via: fly secrets set KEY=VALUE
+  CORS_ORIGINS = "https://news.mukoko.com,https://mukoko-news.vercel.app,http://localhost:3000"
+  LOG_LEVEL = "info"
+  ENVIRONMENT = "production"
+  # CouchDB and Doris URLs — internal Fly.io addresses (secrets set via fly secrets)
+  COUCHDB_URL = "http://couchdb.internal:5984"
+  COUCHDB_DATABASE = "mukoko_articles"
+  DORIS_HTTP_URL = "http://doris-fe.internal:8030"
+  DORIS_DATABASE = "mukoko_analytics"
+  PLATFORM_API_URL = "http://mukoko-platform-api.internal:8080"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 1
+
+[checks]
+  [checks.health]
+    type = "http"
+    port = 8080
+    path = "/health"
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+
+[[vm]]
+  memory = "2048mb"
+  cpu_kind = "shared"
+  cpus = 1
