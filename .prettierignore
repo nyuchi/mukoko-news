@@ -11,8 +11,8 @@ node_modules/
 .next/
 dist/
 .wrangler/
-pnpm-lock.yaml
 **/pnpm-lock.yaml
+**/package-lock.json
 **/.venv/
 
 # Unsupported by prettier
