@@ -75,18 +75,28 @@ const SUPERADMIN_ROLE = 'admin'
 const MODERATOR_ROLES = ['moderator', 'support']
 const MODERATOR_PERMISSION = 'mukoko:news-moderator'
 
-export function isSuperAdmin(user: WorkOSUser): boolean {
-  return user.role === SUPERADMIN_ROLE
+/** True only when the token was issued inside the platform-team org. */
+function inPlatformOrg(user: WorkOSUser, platformOrgId?: string): boolean {
+  return !!platformOrgId && user.orgId === platformOrgId
+}
+
+// Role claims (`admin`, `moderator`, `support`) are scoped to the WorkOS org the
+// token was issued for. They only confer Mukoko staff privileges when that org
+// is platform-team — a user who is `admin` of their own media org must NOT gain
+// platform access. The `mukoko:news-moderator` permission is a Mukoko-namespaced
+// grant and is honoured wherever it is assigned.
+export function isSuperAdmin(user: WorkOSUser, platformOrgId?: string): boolean {
+  return inPlatformOrg(user, platformOrgId) && user.role === SUPERADMIN_ROLE
 }
 
 export function isAdmin(user: WorkOSUser, platformOrgId?: string): boolean {
-  return isSuperAdmin(user) || (!!platformOrgId && user.orgId === platformOrgId)
+  return inPlatformOrg(user, platformOrgId)
 }
 
 export function isModerator(user: WorkOSUser, platformOrgId?: string): boolean {
   return (
     isAdmin(user, platformOrgId) ||
-    (user.role != null && MODERATOR_ROLES.includes(user.role)) ||
+    (inPlatformOrg(user, platformOrgId) && user.role != null && MODERATOR_ROLES.includes(user.role)) ||
     user.permissions.includes(MODERATOR_PERMISSION)
   )
 }
@@ -149,9 +159,9 @@ export function requireModerator(): MiddlewareHandler {
   return workosAuth({ required: true, authorize: (u, env) => isModerator(u, env.WORKOS_PLATFORM_ORG_ID) })
 }
 
-/** Require the WorkOS `admin` role (platform superadmin). */
+/** Require the WorkOS `admin` role within platform-team (superadmin). */
 export function requireSuperAdmin(): MiddlewareHandler {
-  return workosAuth({ required: true, authorize: (u) => isSuperAdmin(u) })
+  return workosAuth({ required: true, authorize: (u, env) => isSuperAdmin(u, env.WORKOS_PLATFORM_ORG_ID) })
 }
 
 export function getCurrentUser(c: Context): WorkOSUser | null {
