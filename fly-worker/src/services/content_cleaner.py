@@ -22,7 +22,7 @@ STRIP_TAGS = {
 }
 
 
-def clean_html(html: str) -> str:
+def clean_html(html: str | None) -> str:
     """Clean HTML content, keeping only safe readable elements."""
     if not html:
         return ""
