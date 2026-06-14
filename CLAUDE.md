@@ -159,13 +159,20 @@ The primary background data pipeline. Runs on Fly.io (Johannesburg region, `jnb`
 
 **Scheduled jobs** (`fly-worker/src/jobs/`):
 
-- `rss_collector.py` — RSS/Atom feed ingestion → `news.feedSources` + `news.articles`
+- `rss_collector.py` — RSS/Atom feed ingestion → `news.feedSources` + `news.articles` (every 15 min)
+- `newsdata_collector.py` — newsdata.io API ingestion + source discovery → `news.articles`, `news.feedSources`, `news.sourceDiscoveryCandidates` (every 6h at :30)
 - `ai_processor.py` — AI enrichment pipeline (Claude NLP, keyword extraction, quality scoring)
 - `engagement.py` — Aggregates `engagement.aggregateContributions` → `news.articles.bundu.ubuntuScoreSnapshot`
 - `health_checker.py` — Source health monitoring → `news.feedSources` + `platform.serviceHealth`
 - `trending.py` — Trending topics and story clustering
 - `embedding_backfill.py` — Vector embedding backfill for semantic search
 - `cleanup.py` — Stale data pruning
+
+**Source discovery flow**: `newsdata_collector` pulls articles for 16 African countries. For each unknown source, it probes common RSS paths (`/feed/`, `/rss`, `/atom.xml`, etc.). If an RSS feed is found, a live `feedSource` is created (`isActive: true`) and the RSS collector picks it up automatically on its next run. If no RSS is found, an inactive placeholder is created (`feedType: "newsdata_api"`, `isActive: false`) so the newsdata job continues supplying articles. All discovered sources are logged in `news.sourceDiscoveryCandidates`.
+
+**Services** (`fly-worker/src/services/`):
+
+- `newsdata_client.py` — newsdata.io HTTP client (`NewsdataClient`), `map_country()`, `map_language()`
 
 **Services** (`fly-worker/src/services/`):
 
@@ -298,6 +305,7 @@ MONGODB_URI=mongodb+srv://<user>:<pass>@nyuchi-platform-doc-db.ge8d8qi.mongodb.n
 ANTHROPIC_API_KEY=...     # Claude AI for article enrichment
 CF_ACCOUNT_ID=...         # Cloudflare account ID for BGE-M3 embeddings
 CF_AI_API_TOKEN=...       # Cloudflare AI API token for embeddings
+NEWSDATA_API_KEY=...      # newsdata.io API key for article ingestion + source discovery
 ```
 
 Named database defaults (override via env if needed):

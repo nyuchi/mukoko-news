@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     mongodb_entity_db: str = "entity"
     mongodb_platform_db: str = "platform"
 
+    # Newsdata.io — article ingestion and source discovery
+    newsdata_api_key: str = ""
+
     # AI services — article enrichment
     anthropic_api_key: str = ""
 

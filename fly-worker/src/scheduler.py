@@ -2,6 +2,7 @@
 
 All scheduled jobs for the Fly.io pipeline:
 - RSS feed collection (every 15 min) — includes inline AI processing
+- Newsdata.io collection + source discovery (every 6 hours at :30)
 - Engagement score recalculation (every 5 min)
 - Trending topics refresh (every 30 min)
 - Source health check (every 6 hours)
@@ -19,6 +20,7 @@ def create_scheduler() -> AsyncIOScheduler:
     scheduler = AsyncIOScheduler(timezone="UTC")
 
     from src.jobs.rss_collector import collect_feeds
+    from src.jobs.newsdata_collector import collect_newsdata
     from src.jobs.engagement import recalc_engagement_scores
     from src.jobs.trending import refresh_trending
     from src.jobs.health_checker import check_source_health
@@ -30,6 +32,14 @@ def create_scheduler() -> AsyncIOScheduler:
         IntervalTrigger(minutes=15),
         id="rss_collector",
         name="RSS Feed Collection",
+        max_instances=1,
+    )
+
+    scheduler.add_job(
+        collect_newsdata,
+        CronTrigger(hour="*/6", minute=30),
+        id="newsdata_collector",
+        name="Newsdata.io Collection + Source Discovery",
         max_instances=1,
     )
 
