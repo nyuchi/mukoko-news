@@ -320,14 +320,23 @@ Named database defaults (override via env if needed):
 **WorkOS AuthKit** handles all user authentication via the custom auth domain `identity.nyuchi.com`.
 Public OAuth client — PKCE only, no client secret.
 
-**Auth domain**: `https://identity.nyuchi.com`
-**Client ID**: `client_01KV2GGE5A7WRSFPWZ5HQJ3FNZ`
-**Redirect URI**: `https://news.mukoko.com/auth/callback`
+Two separate WorkOS OAuth applications:
+
+**1. Web AuthKit** — embedded sign-in components within `news.mukoko.com`
+- Client ID: `WORKOS_CLIENT_ID` (web-specific app)
+- Signs users in via `AuthKitProvider` + embedded components — no redirect to external domain
+- Session stored in encrypted HTTP-only cookie (`WORKOS_COOKIE_PASSWORD`)
+
+**2. MCP OAuth** — PKCE public client for AI agents and Claude Desktop
+- Client ID: `WORKOS_MCP_CLIENT_ID` = `client_01KV2GGE5A7WRSFPWZ5HQJ3FNZ`
+- Auth domain: `https://identity.nyuchi.com` (no secret required)
+- Discovery: `GET https://news.mukoko.com/.well-known/oauth-authorization-server`
 
 **Auth files:**
 - `src/middleware.ts` — AuthKit session middleware; protects `/profile` and `/saved`
 - `src/app/auth/callback/route.ts` — WorkOS OAuth callback handler
 - `src/app/.well-known/oauth-authorization-server/route.ts` — OAuth metadata for MCP clients
+- `src/app/layout.tsx` — wraps app in `AuthKitProvider`
 
 **Usage in Server Components:**
 ```tsx
@@ -338,14 +347,11 @@ const { user } = await withAuth()
 **MCP JWT verification** (`src/lib/mcp/server.ts`) uses `jose` to verify WorkOS JWTs via:
 `https://identity.nyuchi.com/.well-known/jwks.json` (issuer: `https://identity.nyuchi.com`)
 
-**MCP OAuth discovery**: `GET https://news.mukoko.com/.well-known/oauth-authorization-server`
-MCP clients (Claude Desktop, agents) use this to discover auth endpoints and initiate PKCE flow.
-
 **Env vars (Next.js `.env.local`):**
 ```bash
-WORKOS_API_KEY=sk_live_...
-WORKOS_CLIENT_ID=client_01KV2GGE5A7WRSFPWZ5HQJ3FNZ
+WORKOS_CLIENT_ID=your_web_authkit_client_id
 WORKOS_COOKIE_PASSWORD=<32+ char random string>
+WORKOS_MCP_CLIENT_ID=client_01KV2GGE5A7WRSFPWZ5HQJ3FNZ
 ```
 
 ## Design System (Nyuchi Brand v6)
