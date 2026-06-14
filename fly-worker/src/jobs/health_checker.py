@@ -6,12 +6,13 @@ Runs every 6 hours.
 
 from datetime import datetime, timedelta, timezone
 
-from src.services.mongodb import get_db
+from src.services.mongodb import get_db, get_platform_db
 
 
 async def check_source_health() -> None:
     """Evaluate and update health status for all enabled feed sources."""
     db = get_db()
+    platform_db = get_platform_db()
 
     sources = await db["feedSources"].find({"isActive": True}).to_list(None)
     if not sources:
@@ -51,6 +52,31 @@ async def check_source_health() -> None:
         updated += 1
 
     print(f"[HEALTH] Updated {updated}/{len(sources)} source health statuses")
+
+    # Report pipeline health to the platform-wide service health registry
+    critical_count = sum(
+        1 for s in sources
+        if (s.get("consecutiveFailures") or 0) > 7
+    )
+    overall = "outage" if critical_count > len(sources) * 0.5 else (
+        "degraded" if critical_count > 0 else "healthy"
+    )
+    await platform_db["serviceHealth"].update_one(
+        {"serviceKey": "news-pipeline"},
+        {"$set": {
+            "_schemaVersion": "v3.1",
+            "serviceKey": "news-pipeline",
+            "status": overall,
+            "lastCheckedAt": datetime.now(timezone.utc),
+            "metadata": {
+                "sourcesTotal": len(sources),
+                "sourcesCritical": critical_count,
+                "sourcesUpdated": updated,
+            },
+            "updatedAt": datetime.now(timezone.utc),
+        }},
+        upsert=True,
+    )
 
 
 async def _calc_trust_score(db, feed_source_id: str, since: datetime) -> float:

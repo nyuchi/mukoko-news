@@ -6,9 +6,14 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     """Fly.io pipeline settings. All secrets set via `fly secrets set`."""
 
-    # MongoDB — primary data store
+    # MongoDB connection — single URI, multiple databases on the cluster
     mongodb_uri: str = ""
-    mongodb_database: str = "mukoko_news"
+
+    # Named database configs — each domain has its own MongoDB database
+    mongodb_news_db: str = "news"
+    mongodb_engagement_db: str = "engagement"
+    mongodb_entity_db: str = "entity"
+    mongodb_platform_db: str = "platform"
 
     # AI services — article enrichment
     anthropic_api_key: str = ""

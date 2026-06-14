@@ -1,12 +1,15 @@
-"""Async MongoDB client for the Fly.io FastAPI backend.
+"""Async MongoDB client for the Fly.io pipeline.
 
-Uses motor (async pymongo wrapper) with connection pooling.
-Database: mukoko_news (same schema as the Cloudflare processing worker).
+Uses motor (async pymongo) with connection pooling.
+The cluster hosts multiple databases — one per domain. Use the named
+accessors (get_news_db, get_entity_db, etc.) rather than the generic get_db().
 
 Usage:
-    db = get_db()
+    db = get_news_db()
     articles = await db["articles"].find({"status": "published"}).to_list(20)
-    await db["articles"].insert_one({...})
+
+    platform_db = get_platform_db()
+    await platform_db["serviceHealth"].update_one(...)
 """
 
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
@@ -29,8 +32,25 @@ def get_client() -> AsyncIOMotorClient:
     return _client
 
 
+def get_news_db() -> AsyncIOMotorDatabase:
+    return get_client()[settings.mongodb_news_db]
+
+
+def get_engagement_db() -> AsyncIOMotorDatabase:
+    return get_client()[settings.mongodb_engagement_db]
+
+
+def get_entity_db() -> AsyncIOMotorDatabase:
+    return get_client()[settings.mongodb_entity_db]
+
+
+def get_platform_db() -> AsyncIOMotorDatabase:
+    return get_client()[settings.mongodb_platform_db]
+
+
 def get_db() -> AsyncIOMotorDatabase:
-    return get_client()[settings.mongodb_database]
+    """Alias for get_news_db(). Prefer the named accessor in new code."""
+    return get_news_db()
 
 
 async def ping_mongodb() -> bool:
