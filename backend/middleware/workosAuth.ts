@@ -72,6 +72,7 @@ function extractBearer(authHeader: string | undefined): string | null {
 //
 // `platform-team` is matched by its WorkOS organization id (WORKOS_PLATFORM_ORG_ID).
 const SUPERADMIN_ROLE = 'admin'
+const MODERATOR_ROLES = ['moderator', 'support']
 const MODERATOR_PERMISSION = 'mukoko:news-moderator'
 
 export function isSuperAdmin(user: WorkOSUser): boolean {
@@ -83,7 +84,11 @@ export function isAdmin(user: WorkOSUser, platformOrgId?: string): boolean {
 }
 
 export function isModerator(user: WorkOSUser, platformOrgId?: string): boolean {
-  return isAdmin(user, platformOrgId) || user.permissions.includes(MODERATOR_PERMISSION)
+  return (
+    isAdmin(user, platformOrgId) ||
+    (user.role != null && MODERATOR_ROLES.includes(user.role)) ||
+    user.permissions.includes(MODERATOR_PERMISSION)
+  )
 }
 
 interface AuthEnv {
