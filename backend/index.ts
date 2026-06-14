@@ -6491,7 +6491,7 @@ Crawl-delay: 1
 //        browse_by_tag, browse_by_author, browse_by_source,
 //        list_categories, list_sources, get_stats
 app.all('/mcp', async (c) => {
-  return handleMcp(c.req.raw, c.env.DB);
+  return handleMcp(c.req.raw, c.env.DB, c.env.API_SECRET);
 });
 
 // Scheduled handler for cron jobs with rotating batch processing

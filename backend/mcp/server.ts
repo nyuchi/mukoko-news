@@ -1104,7 +1104,19 @@ async function toolGetStats(db: D1DB): Promise<McpToolResult> {
   return ok(text, html);
 }
 
-async function toolGetMyFeed(db: D1DB, args: Record<string, unknown>): Promise<McpToolResult> {
+async function toolGetMyFeed(db: D1DB, args: Record<string, unknown>, req: Request, apiSecret?: string): Promise<McpToolResult> {
+  // get_my_feed returns personal data — require a server-issued API_SECRET bearer token.
+  // The caller (an authenticated server) supplies the user_id it has already verified.
+  // Never expose this tool on an unauthenticated endpoint.
+  const authHeader = req.headers.get('Authorization') ?? '';
+  const bearerToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+  if (!apiSecret || !bearerToken || bearerToken !== apiSecret) {
+    return {
+      content: [{ type: 'text', text: 'Error: get_my_feed requires a valid server-issued bearer token (Authorization: Bearer <API_SECRET>). This tool is not available on unauthenticated connections.' }],
+      isError: true,
+    };
+  }
+
   const userId = sanitize(args.user_id, 100);
   if (!userId) return err('"user_id" is required');
   const limit = clamp(args.limit, 1, 20, 12);
@@ -1486,7 +1498,7 @@ async function toolGetContentAnalytics(db: D1DB, args: Record<string, unknown>):
 
 // ── Dispatch ───────────────────────────────────────────────────────────────
 
-async function callTool(db: D1DB, name: string, args: Record<string, unknown>): Promise<McpToolResult> {
+async function callTool(db: D1DB, name: string, args: Record<string, unknown>, req: Request, apiSecret?: string): Promise<McpToolResult> {
   switch (name as ToolName) {
     case 'get_briefing':       return toolGetBriefing(db, args);
     case 'track_story':        return toolTrackStory(db, args);
@@ -1498,7 +1510,7 @@ async function callTool(db: D1DB, name: string, args: Record<string, unknown>): 
     case 'list_categories':    return toolListCategories(db);
     case 'list_sources':       return toolListSources(db, args);
     case 'get_stats':              return toolGetStats(db);
-    case 'get_my_feed':            return toolGetMyFeed(db, args);
+    case 'get_my_feed':            return toolGetMyFeed(db, args, req, apiSecret);
     case 'get_trending_analytics': return toolGetTrendingAnalytics(db, args);
     case 'detect_surge':           return toolDetectSurge(db, args);
     case 'get_content_analytics':  return toolGetContentAnalytics(db, args);
@@ -1508,7 +1520,7 @@ async function callTool(db: D1DB, name: string, args: Record<string, unknown>): 
 
 // ── Main handler ───────────────────────────────────────────────────────────
 
-export async function handleMcp(req: Request, db: D1DB): Promise<Response> {
+export async function handleMcp(req: Request, db: D1DB, apiSecret?: string): Promise<Response> {
   if (req.method === 'OPTIONS') {
     return new Response(null, {
       headers: {
@@ -1563,7 +1575,7 @@ export async function handleMcp(req: Request, db: D1DB): Promise<Response> {
       case 'tools/call': {
         const name = String((params as Record<string, unknown>)?.name ?? '');
         const args = ((params as Record<string, unknown>)?.arguments ?? {}) as Record<string, unknown>;
-        return jsonRpc(id, await callTool(db, name, args));
+        return jsonRpc(id, await callTool(db, name, args, req, apiSecret));
       }
 
       default:
