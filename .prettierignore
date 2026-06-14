@@ -1,0 +1,23 @@
+# Source files — to be normalized in a dedicated formatting pass
+src/
+backend/src/
+processing/
+fly-worker/
+image-worker/
+mcp-package/
+
+# Generated & lock files
+node_modules/
+.next/
+dist/
+.wrangler/
+pnpm-lock.yaml
+**/pnpm-lock.yaml
+**/.venv/
+
+# Unsupported by prettier
+*.toml
+*.jsonc
+
+# Static assets
+public/

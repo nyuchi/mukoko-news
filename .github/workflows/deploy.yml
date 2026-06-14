@@ -12,6 +12,59 @@ permissions:
   pull-requests: read
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    name: lint / ${{ matrix.check }}
+    strategy:
+      fail-fast: false
+      matrix:
+        check: [actionlint, "JSON validity", prettier, markdownlint, yamllint]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Run actionlint
+      if: matrix.check == 'actionlint'
+      uses: raven-actions/actionlint@v2
+
+    - name: Validate JSON files
+      if: matrix.check == 'JSON validity'
+      run: |
+        find . \
+          -name "*.json" \
+          -not -path "*/node_modules/*" \
+          -not -path "*/.git/*" \
+          -not -path "*/.next/*" \
+          -not -path "*/.wrangler/*" \
+          -not -path "*/.venv/*" \
+          -not -path "*/dist/*" \
+          | while read -r f; do
+              python3 -m json.tool "$f" > /dev/null || { echo "Invalid JSON: $f"; exit 1; }
+            done
+
+    - name: Setup Node.js
+      if: matrix.check == 'prettier'
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+    - name: Run prettier
+      if: matrix.check == 'prettier'
+      run: |
+        npm install --no-save prettier@3
+        npx prettier --check "**/*.json" --ignore-path .gitignore
+
+    - name: Run markdownlint
+      if: matrix.check == 'markdownlint'
+      uses: DavidAnson/markdownlint-cli2-action@v16
+      with:
+        globs: "**/*.md"
+
+    - name: Run yamllint
+      if: matrix.check == 'yamllint'
+      run: |
+        pip install yamllint
+        yamllint -c .yamllint.yml .
+
   test-frontend:
     runs-on: ubuntu-latest
     name: Test Frontend (Next.js)
