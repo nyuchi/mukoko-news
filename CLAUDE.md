@@ -333,7 +333,7 @@ Two separate WorkOS OAuth applications:
 - Discovery: `GET https://news.mukoko.com/.well-known/oauth-authorization-server`
 
 **Auth files:**
-- `src/middleware.ts` — AuthKit session middleware; protects `/profile` and `/saved`
+- `src/middleware.ts` — AuthKit session-refresh middleware (no forced redirect; embedded sign-in handles gating)
 - `src/app/auth/callback/route.ts` — WorkOS OAuth callback handler
 - `src/app/.well-known/oauth-authorization-server/route.ts` — OAuth metadata for MCP clients
 - `src/app/layout.tsx` — wraps app in `AuthKitProvider`
@@ -349,9 +349,9 @@ const { user } = await withAuth()
 
 **Env vars (Next.js `.env.local`):**
 ```bash
-WORKOS_CLIENT_ID=your_web_authkit_client_id
+WORKOS_CLIENT_ID=client_01KV2G41CHGBSH6HG57AQBFKDD       # web AuthKit app
+WORKOS_MCP_CLIENT_ID=client_01KV2GGE5A7WRSFPWZ5HQJ3FNZ   # MCP OAuth app
 WORKOS_COOKIE_PASSWORD=<32+ char random string>
-WORKOS_MCP_CLIENT_ID=client_01KV2GGE5A7WRSFPWZ5HQJ3FNZ
 ```
 
 ## Design System (Nyuchi Brand v6)
