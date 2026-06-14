@@ -16,7 +16,7 @@ import { NewsSourceManager } from "./services/NewsSourceManager.js";
 import { RateLimitService } from "./services/RateLimitService.js";
 import { CSRFService } from "./services/CSRFService.js";
 // OIDC Auth - using id.mukoko.com for authentication
-import { oidcAuth, requireAuth, requireAdmin as requireAdminRole, getCurrentUser, getCurrentUserId, isAuthenticated } from "./middleware/oidcAuth.js";
+import { oidcAuth, requireAuth, requireAdmin as requireAdminRole, getCurrentUser, getCurrentUserId, isAuthenticated } from "./middleware/workosAuth.js";
 // API Key Auth - for frontend (Vercel) to backend authentication
 import { apiAuth, requireApiKey, optionalApiKey } from "./middleware/apiAuth.js";
 // Additional enhancement services
