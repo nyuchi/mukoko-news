@@ -138,39 +138,117 @@ EXPO_PUBLIC_API_SECRET=your_api_secret_here
 }
 ```
 
+## MCP Server
+
+Mukoko News exposes a **Model Context Protocol (MCP) server** so LLMs can search and browse Pan-African news directly.
+
+**Remote endpoint** (no install needed): `https://news.mukoko.com/mcp`
+
+**npm package**: `@nyuchi/mukoko-news-mcp`
+
+### Quick setup
+
+**Claude Desktop / Cursor / any stdio MCP client:**
+
+```json
+{
+  "mcpServers": {
+    "mukoko-news": {
+      "command": "npx",
+      "args": ["@nyuchi/mukoko-news-mcp"]
+    }
+  }
+}
+```
+
+**Streamable HTTP (direct):**
+
+```json
+{
+  "mcpServers": {
+    "mukoko-news": {
+      "type": "http",
+      "url": "https://news.mukoko.com/mcp"
+    }
+  }
+}
+```
+
+### Available tools
+
+| Tool | Description |
+|---|---|
+| `search_news` | Keyword search with optional `category` and `country` (ISO 3166-1, e.g. `ZW`) filters |
+| `get_article` | Full article details by numeric ID or slug |
+| `get_trending` | Most-viewed/liked articles; sort by `views`, `likes`, `trending_score`, or `recent` |
+| `get_similar_stories` | Articles similar to a given article by shared keywords and category |
+| `browse_by_tag` | Browse articles by tag |
+| `browse_by_author` | Articles by a specific author |
+| `browse_by_source` | Articles from a specific news source |
+| `list_categories` | All available categories |
+| `list_sources` | All active news sources |
+| `get_stats` | Platform stats (article count, source count, countries covered) |
+
+No authentication is required — all tools return public content.
+
 ## API
 
-**Base URL**: `https://mukoko-news-backend.nyuchi.workers.dev`
+**Base URL**: `https://news.mukoko.com/api`
 
-### Public Endpoints (Require API Key)
+All public endpoints are unauthenticated. Server-to-server callers send an `Authorization: Bearer <API_SECRET>` header. The full OpenAPI spec is in [`api-schema.yml`](api-schema.yml).
+
+### Public endpoints
 
 ```bash
-# Get articles feed
-GET /api/feeds?limit=20&category=politics&countries=ZW,SA
+# News feed — supports ?limit, ?category, ?countries (comma-separated ISO codes)
+GET /api/feeds
 
-# Get article by ID
+# Feed sections (featured + latest + trending, one request)
+GET /api/feeds/sectioned
+
+# Single article
 GET /api/article/:id
 
-# Get categories
+# Related articles
+GET /api/article/:id/related
+
+# Full-text + semantic search — ?q=query&category=politics&country=ZW
+GET /api/search
+
+# NewsBytes (short-form vertical feed)
+GET /api/news-bytes
+
+# Metadata
 GET /api/categories
+GET /api/sources
+GET /api/keywords
+GET /api/authors
 
-# Get countries
-GET /api/countries
-
-# Health check (no auth required)
+# Health check
 GET /api/health
 ```
 
-### Admin Endpoints (Require Admin Role)
+### Authenticated endpoints (OIDC JWT required)
+
+```bash
+POST /api/articles/:id/like
+POST /api/articles/:id/save
+POST /api/articles/:id/view
+POST /api/articles/:id/comment
+GET  /api/articles/:id/comments
+
+GET  /api/user/me/preferences
+POST /api/user/me/preferences
+POST /api/user/me/follows
+```
+
+### Admin endpoints (admin role required)
 
 ```bash
 GET /api/admin/stats
-GET /api/admin/users
 GET /api/admin/sources
-GET /api/admin/analytics
+GET /api/admin/sources/:id
 ```
-
-Full API documentation: [api-schema.yml](api-schema.yml)
 
 ## Common Commands
 
