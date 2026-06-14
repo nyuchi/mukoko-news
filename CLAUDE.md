@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Mukoko News is a Pan-African digital news aggregation platform. "Mukoko" means "Beehive" in Shona — where community gathers and stores knowledge. Primary market is Zimbabwe with expansion across 16 African countries.
 
-**Architecture**: Next.js 15 frontend (`src/`) + Cloudflare Workers API backend (`backend/`) + Python data processing Worker (`processing/`) + D1 database (`database/`) + two Supabase projects (news processing pipeline + platform permanent store)
+**Architecture**: Next.js 15 frontend (`src/`) + Cloudflare Workers API backend (`backend/`) + Fly.io Python pipeline worker (`fly-worker/`) + Cloudflare Python edge processor (`processing/`) + D1 database (`database/`) + MongoDB Atlas (primary data store, ~30 databases) + Supabase (`mukoko_platform_cloud`, auth middleware only)
 
 ## Commands
 
@@ -66,6 +66,20 @@ cd processing && uv run pytest tests/test_rss_parser.py
 cd processing && uv run pytest -k "test_parses_rss"
 ```
 
+### Fly.io Pipeline Worker (`cd fly-worker`)
+
+```bash
+uv sync --extra dev          # Install including dev deps (uses [project.optional-dependencies])
+uv run pytest                # Run tests
+uv run pyright               # Type check Python
+flyctl deploy --remote-only  # Deploy to Fly.io
+
+# Run a single test file
+cd fly-worker && uv run pytest tests/test_engagement.py
+# Run tests matching a pattern
+cd fly-worker && uv run pytest -k "test_updates_article"
+```
+
 ### From root (shortcuts)
 
 ```bash
@@ -87,7 +101,8 @@ npm run typecheck:api    # Type check Python
 - **Tailwind CSS 4.x** with CSS variables for theming (defined in `src/app/globals.css`)
 - **Radix UI** primitives for accessible components
 - **Lucide React** for icons, **next-themes** for dark mode
-- **Supabase** (`@supabase/supabase-js` + `@supabase/ssr`) — reads published articles from `mukoko_platform_cloud` (the permanent store)
+- **MongoDB** — Next.js Route Handlers read/write `news` database directly via server-side calls
+- **Supabase** (`@supabase/supabase-js` + `@supabase/ssr`) — retained for auth middleware only; data reads use MongoDB
 - **State**: React Context (`PreferencesContext` for country/category, `ThemeContext`)
 - **Path alias**: `@/*` maps to `src/*`
 - **Package manager**: pnpm (v10+)
@@ -105,8 +120,8 @@ npm run typecheck:api    # Type check Python
 ### Processing Worker Stack (`processing/`)
 
 - **Cloudflare Python Workers** (Pyodide-based) with **FastAPI**
-- **Anthropic Claude** via Cloudflare AI Gateway for NLP tasks (replaces Llama-3-8b)
-- **MongoDB Atlas** Data API (HTTP-based, primary data store — planned)
+- **Anthropic Claude** via Cloudflare AI Gateway for NLP tasks
+- **MongoDB Atlas** Data API (HTTP-based via JS FFI transport — edge constraint)
 - **D1** as edge cache (binding: `EDGE_CACHE_DB`, same database as backend)
 - **Workers AI** for embeddings (`baai/bge-base-en-v1.5` for Vectorize compatibility)
 - Libraries: `feedparser`, `beautifulsoup4`, `numpy`, `textstat`
@@ -115,17 +130,52 @@ npm run typecheck:api    # Type check Python
 
 **Python Services** (`processing/services/`):
 
-- `rss_parser.py` — RSS/Atom parsing via feedparser (replaces SimpleRSSService XML logic)
-- `content_cleaner.py` — bs4 HTML cleaning (replaces regex loops in ArticleAIService)
-- `content_extractor.py` — bs4 CSS selector scraping (replaces regex patterns)
+- `rss_parser.py` — RSS/Atom parsing via feedparser
+- `content_cleaner.py` — bs4 HTML cleaning
+- `content_extractor.py` — bs4 CSS selector scraping
 - `article_ai.py` — Full AI processing pipeline orchestrator
 - `ai_client.py` — Anthropic Claude via AI Gateway wrapper
 - `keyword_extractor.py` — AI + text matching keyword extraction
-- `quality_scorer.py` — textstat deterministic scoring (replaces AI-only scoring)
-- `clustering.py` — numpy + AI embeddings clustering (replaces Jaccard-only)
+- `quality_scorer.py` — textstat deterministic scoring
+- `clustering.py` — numpy + AI embeddings clustering
 - `feed_ranker.py` — numpy vectorized feed ranking
 - `search_processor.py` — Vectorize + D1 semantic search
 - `mongodb.py` — MongoDB Atlas Data API client (JS FFI transport)
+
+### Fly.io Pipeline Worker (`fly-worker/`)
+
+The primary background data pipeline. Runs on Fly.io (Johannesburg region, `jnb`) as a persistent FastAPI + APScheduler process with full native Python access — no Pyodide constraints.
+
+- **FastAPI** + **uvicorn** + **APScheduler** for scheduled job execution
+- **Motor** (async pymongo) with connection pooling — native MongoDB driver
+- **Anthropic Claude** via direct API for AI enrichment
+- **Cloudflare Workers AI** for BGE-M3 vector embeddings
+- Config: `fly-worker/fly.toml`, deps: `fly-worker/pyproject.toml`
+- MongoDB cluster: ~30 databases. Named accessors in `fly-worker/src/services/mongodb.py`:
+  - `get_news_db()` → `news` (articles, feedSources)
+  - `get_engagement_db()` → `engagement` (aggregateContributions, aggregateDefinitions)
+  - `get_entity_db()` → `entity`
+  - `get_platform_db()` → `platform` (serviceHealth)
+
+**Scheduled jobs** (`fly-worker/src/jobs/`):
+
+- `rss_collector.py` — RSS/Atom feed ingestion → `news.feedSources` + `news.articles`
+- `ai_processor.py` — AI enrichment pipeline (Claude NLP, keyword extraction, quality scoring)
+- `engagement.py` — Aggregates `engagement.aggregateContributions` → `news.articles.bundu.ubuntuScoreSnapshot`
+- `health_checker.py` — Source health monitoring → `news.feedSources` + `platform.serviceHealth`
+- `trending.py` — Trending topics and story clustering
+- `embedding_backfill.py` — Vector embedding backfill for semantic search
+- `cleanup.py` — Stale data pruning
+
+**Services** (`fly-worker/src/services/`):
+
+- `mongodb.py` — Motor async client, named DB accessors, `ping_mongodb()`, `close_mongodb()`
+- `ai_client.py` — Anthropic Claude wrapper (messages API, async)
+- `rss_parser.py` — feedparser RSS/Atom parsing with structured output
+- `content_cleaner.py` — bs4 HTML cleaning (`clean_html(html: str | None) -> str`)
+- `quality_scorer.py` — textstat deterministic readability scoring
+- `embeddings.py` — BGE-M3 embeddings via Cloudflare Workers AI
+- `keyword_extractor.py` — AI + text matching keyword extraction
 
 ### Backend Services (`backend/services/`)
 
@@ -172,16 +222,25 @@ Services follow a class-based pattern with D1 database access:
 - Run: `cd processing && uv run pytest`
 - Type check: `cd processing && uv run pyright`
 
+**Fly.io Pipeline**: pytest + pytest-asyncio (tests in `fly-worker/tests/`)
+
+- Install: `cd fly-worker && uv sync --extra dev` (uses `[project.optional-dependencies]`, not `--group dev`)
+- Run: `cd fly-worker && uv run pytest`
+- Type check: `cd fly-worker && uv run pyright`
+- Mock pattern: `MagicMock.__getitem__` returns the same object for all keys — always use `side_effect=dict.__getitem__` to dispatch collection names to distinct mocks
+
 **Pre-commit hook** (Husky): typecheck + build validation
+
+**CI** (`.github/workflows/deploy.yml`): lint matrix (actionlint, JSON validity, prettier, markdownlint, yamllint) + test-frontend + test-backend + test-api + test-fly-worker
 
 ## Deployment
 
 - **Frontend**: Auto-deploys to Vercel on push to main
+- **Pipeline Worker** (`mukoko-news`): CI deploys to Fly.io on push to main via `deploy-fly-worker` job (requires `FLY_API_TOKEN` secret). Manual: `cd fly-worker && flyctl deploy --remote-only`
 - **Python Worker** (`mukoko-news-api`): Deployed by Cloudflare GitHub App on push to main. Manual: `cd processing && uv run pywrangler deploy`
-- **Backend** (`mukoko-news-backend`): Deployed by Cloudflare GitHub App on push to main. Manual: `cd backend && npm run deploy`
-- **Image Worker** (`mukoko-images`): Manual: `cd image-worker && npx wrangler deploy`. Routes to `assets.mukoko.com/i/*`.
-- **Cloudflare GitHub App** manages Workers — configure each worker's root directory in the Cloudflare dashboard (Workers & Pages → Settings → Build). For `mukoko-news-backend` the root directory must be set to `backend/`.
-- `.github/workflows/deploy.yml` runs tests only (CI); deployment is handled by Cloudflare
+- **Backend** (`mukoko-news-gateway`): Deployed by Cloudflare GitHub App on push to main. Manual: `cd backend && npm run deploy`
+- **Image Worker** (`mukoko-images`): Deployed by Cloudflare GitHub App on push to main. Manual: `cd image-worker && npx wrangler deploy`. Routes to `assets.mukoko.com/i/*`.
+- **Cloudflare GitHub App** manages Workers — configure each worker's root directory in the Cloudflare dashboard (Workers & Pages → Settings → Build). For `mukoko-news-gateway` the root directory must be set to `backend/`.
 
 ## MCP Servers
 
@@ -191,7 +250,7 @@ Services follow a class-based pattern with D1 database access:
 |---|---|---|
 | `nyuchi-mongodb` | `https://mongodb.nyuchi.dev/mcp` | OAuth — each developer authenticates on first use; tokens stored in `~/.claude.json`, never committed |
 
-**First-time setup**: On session start, Claude Code will prompt for OAuth authentication with `nyuchi-mongodb`. This grants read/write access to the `mukoko_news` MongoDB database. Only team members with nyuchi.dev credentials should approve this.
+**First-time setup**: On session start, Claude Code will prompt for OAuth authentication with `nyuchi-mongodb`. This grants read/write access to the MongoDB cluster. Only team members with nyuchi.dev credentials should approve this.
 
 **Security note**: The URL is committed intentionally (team-shared config). Credentials are never in the file — OAuth tokens are per-developer and stored locally.
 
@@ -209,7 +268,7 @@ MONGODB_DATABASE=news
 NEXT_PUBLIC_API_URL=
 NEXT_PUBLIC_BASE_URL=https://news.mukoko.com  # Optional, for SEO/JSON-LD
 
-# Supabase platform project (retained for auth middleware; data reads now use MongoDB)
+# Supabase platform project (auth middleware only; data reads use MongoDB)
 NEXT_PUBLIC_SUPABASE_URL=https://tdcpuzqyoodrdsxldgsh.supabase.co
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your-supabase-publishable-key
 ```
@@ -231,75 +290,49 @@ uv run pywrangler secret put MONGODB_API_KEY
 uv run pywrangler secret put MONGODB_APP_ID
 ```
 
+### Fly.io Pipeline Worker (Fly.io Secrets)
+
+```bash
+# Set from fly-worker/ directory: flyctl secrets set KEY=value
+MONGODB_URI=mongodb+srv://<user>:<pass>@nyuchi-platform-doc-db.ge8d8qi.mongodb.net/?appName=nyuchi-platform-doc-db
+ANTHROPIC_API_KEY=...     # Claude AI for article enrichment
+CF_ACCOUNT_ID=...         # Cloudflare account ID for BGE-M3 embeddings
+CF_AI_API_TOKEN=...       # Cloudflare AI API token for embeddings
+```
+
+Named database defaults (override via env if needed):
+- `MONGODB_NEWS_DB=news`
+- `MONGODB_ENGAGEMENT_DB=engagement`
+- `MONGODB_ENTITY_DB=entity`
+- `MONGODB_PLATFORM_DB=platform`
+
 ## Supabase Architecture
 
-Two Supabase projects are used. Supabase is the **processing pipeline** (temporary staging), not permanent storage.
+Two Supabase projects exist. **Supabase is no longer the primary data store** — MongoDB Atlas is. Supabase is retained for auth middleware (`mukoko_platform_cloud`) and legacy platform integrations.
 
 | Project | Supabase ID | Role |
 |---|---|---|
-| `supabase_mukoko_news` | `gjdmtthumkopkwuttwnd` | News processing pipeline — ingest, enrich, moderate (temporary staging) |
-| `mukoko_platform_cloud` | `tdcpuzqyoodrdsxldgsh` | Permanent store — published articles synced here; Next.js reads from here |
+| `supabase_mukoko_news` | `gjdmtthumkopkwuttwnd` | Legacy news processing pipeline (staging) — superseded by fly-worker + MongoDB |
+| `mukoko_platform_cloud` | `tdcpuzqyoodrdsxldgsh` | Auth middleware for Next.js; shadcn component registry |
 
-**Data flow:**
+**Current data flow (MongoDB-primary):**
 ```
 RSS / partner feeds
       ↓
-FastAPI worker (Python + supabase-py)
-      ↓ ingest → enrich → moderate
-supabase_mukoko_news  (staging)
-      ↓ sync_to_platform job (on status = published)
-mukoko_platform_cloud  (permanent)
+fly-worker (FastAPI + APScheduler, Fly.io JNB)
+      ↓ ingest → enrich → aggregate
+MongoDB Atlas (~30 databases: news, engagement, entity, platform, ...)
       ↓
-Next.js frontend reads via @supabase/supabase-js
+Next.js Route Handlers read directly from MongoDB
 ```
 
 **Auth**: Handled by **Stytch** on the platform side. Supabase does not issue JWTs or manage auth in this project.
 
 **Edge functions**: This project uses **Cloudflare Workers** as its edge runtime — `supabase/functions/` does not exist and is not used.
 
-### News Processing Project (`supabase_mukoko_news`)
-
-FastAPI Python backend. Articles are ingested, enriched (NLP, sentiment, geo, categorisation), and moderated here before syncing to the platform. Data is **not permanent** — it stages work in progress.
-
-**Schemas:** `news` · `identity` (projection from platform) · `engagement` (interest categories mirror) · `sync` (audit log) · `system` (feature flags)
-
-**Key tables:**
-- `news.news_article` — core article table with both Schema.org fields and pipeline fields (`sentiment_score`, `named_entities`, `topic_tags`, `moderation_status`, `sync_status`)
-- `news.processing_job` — async enrichment queue polled by workers
-- `news.feed_source` — RSS/Atom/API feed registry
-- `news.news_media_organization` — publishers
-
-**Processing job types** (executed in priority order):
-
-| Job | Priority |
-|---|---|
-| `duplicate_detection` | 1 |
-| `nlp_enrichment` | 2 |
-| `sentiment_analysis` | 3 |
-| `geo_tagging` | 3 |
-| `category_tagging` | 4 |
-| `summary_generation` | 5 |
-| `sync_to_platform` | 1 (triggered on publish) |
-
-**Auto-triggers:** Inserting an article with `ingestion_method` set queues all 7 enrichment jobs. Setting `status = published` queues `sync_to_platform` and sets `sync_status = pending_sync`.
-
-**Python client** (`supabase-py`):
-```python
-from supabase import create_client
-db = create_client(os.environ["SUPABASE_NEWS_URL"], os.environ["SUPABASE_NEWS_SERVICE_KEY"])
-```
-
-**Env vars (FastAPI processing worker):**
-```bash
-SUPABASE_NEWS_URL=https://gjdmtthumkopkwuttwnd.supabase.co
-SUPABASE_NEWS_SERVICE_KEY=<service_role_key>
-SUPABASE_PLATFORM_URL=https://tdcpuzqyoodrdsxldgsh.supabase.co
-SUPABASE_PLATFORM_SERVICE_KEY=<platform_service_role_key>
-```
-
 ### Platform Cloud Project (`mukoko_platform_cloud`)
 
-Permanent store. Receives enriched, moderated articles from the news processing project via the `sync_to_platform` worker. Source of truth for all published content.
+Retained for auth middleware session refresh and shadcn component registry.
 
 **Next.js client files** (in `src/lib/supabase/`):
 - `client.ts` — Browser client (`createBrowserClient`). Use in Client Components.

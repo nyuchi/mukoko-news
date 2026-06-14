@@ -30,7 +30,11 @@ mukoko-news/
 │   │   └── layout/   # Layout components (header, footer, bottom-nav)
 │   ├── contexts/     # React contexts (preferences, theme)
 │   └── lib/          # Utilities, API client, constants
-├── backend/          # Cloudflare Workers API (Hono framework)
+├── backend/          # Cloudflare Workers API (Hono framework, mukoko-news-gateway)
+├── fly-worker/       # Fly.io Python pipeline (RSS ingest, AI enrichment, MongoDB writes)
+├── processing/       # Cloudflare Python edge processor (service binding from backend)
+├── image-worker/     # Cloudflare image optimisation worker (assets.mukoko.com)
+├── mcp-package/      # @nyuchi/mukoko-news-mcp — published to npm + MCP Registry
 ├── database/         # D1 schema and migrations
 ├── public/           # Static assets
 └── CLAUDE.md         # AI assistant instructions
@@ -40,9 +44,10 @@ mukoko-news/
 
 ### Prerequisites
 
-- Node.js 20+
-- npm
-- Cloudflare account (for backend)
+- Node.js 20+, pnpm 10+
+- Python 3.12+, [uv](https://docs.astral.sh/uv/) (Python package manager)
+- Cloudflare account (for backend/processing workers)
+- [flyctl](https://fly.io/docs/hands-on/install-flyctl/) (for fly-worker pipeline)
 
 ### Frontend Setup (Next.js)
 
@@ -104,12 +109,19 @@ EXPO_PUBLIC_API_SECRET=your_api_secret_here
 
 - **Runtime**: Cloudflare Workers (edge computing)
 - **Framework**: Hono (lightweight, ~12KB)
-- **Database**: D1 (SQLite at edge)
+- **Database**: D1 (SQLite at edge) + MongoDB Atlas (primary data store)
 - **Cache**: KV Namespaces
 - **Real-time**: Durable Objects (4 classes)
 - **AI**: Workers AI for content processing
 - **Search**: Vectorize for semantic search
 - **Auth**: OIDC via id.mukoko.com
+
+### Pipeline Worker Stack
+
+- **Runtime**: Fly.io (Johannesburg, JNB) — persistent FastAPI + APScheduler process
+- **Database**: MongoDB Atlas via Motor async driver (~30 databases: news, engagement, entity, platform)
+- **AI**: Anthropic Claude for NLP enrichment + Cloudflare Workers AI for BGE-M3 embeddings
+- **Jobs**: RSS ingestion, AI enrichment, engagement aggregation, source health, trending, embeddings
 
 ### Design System (Nyuchi Brand v6)
 
@@ -258,11 +270,19 @@ The Next.js frontend auto-deploys to Vercel on push to main.
 
 ### Backend (Cloudflare Workers)
 
+Deployed automatically by the Cloudflare GitHub App on push to main. Manual:
+
 ```bash
 cd backend && npm run deploy
 ```
 
-**Note**: Backend deployment is manual only (not CI/CD).
+### Pipeline Worker (Fly.io)
+
+Deployed automatically by CI on push to main (`deploy-fly-worker` job, requires `FLY_API_TOKEN` secret). Manual:
+
+```bash
+cd fly-worker && flyctl deploy --remote-only
+```
 
 ## Contributing
 
@@ -306,10 +326,12 @@ Mukoko ("Beehive" in Shona) represents the collective knowledge and community of
 |------|--------------|
 | Frontend (`src/`) | ~15,000 |
 | Backend (`backend/`) | ~38,200 |
+| Pipeline Worker (`fly-worker/`) | ~2,500 |
+| Processing Worker (`processing/`) | ~3,200 |
 | Database (`database/`) | ~6,900 |
-| **Total** | **~61,300** |
+| **Total** | **~65,800** |
 
-Tests: 985 total (437 frontend + 548 backend)
+Tests: 985+ total (437 frontend + 548 backend + fly-worker pytest)
 
 ---
 
