@@ -317,22 +317,17 @@ Named database defaults (override via env if needed):
 
 ## Authentication (WorkOS AuthKit)
 
-**WorkOS AuthKit** handles all user authentication in the Next.js frontend.
+**WorkOS AuthKit** handles all user authentication via the custom auth domain `identity.nyuchi.com`.
+Public OAuth client — PKCE only, no client secret.
 
-**Data flow:**
-```
-RSS / partner feeds
-      ↓
-fly-worker (FastAPI + APScheduler, Fly.io JNB)
-      ↓ ingest → enrich → aggregate
-MongoDB Atlas (~30 databases: news, engagement, entity, platform, ...)
-      ↓
-Next.js Route Handlers read directly from MongoDB
-```
+**Auth domain**: `https://identity.nyuchi.com`
+**Client ID**: `client_01KV2GGE5A7WRSFPWZ5HQJ3FNZ`
+**Redirect URI**: `https://news.mukoko.com/auth/callback`
 
 **Auth files:**
 - `src/middleware.ts` — AuthKit session middleware; protects `/profile` and `/saved`
 - `src/app/auth/callback/route.ts` — WorkOS OAuth callback handler
+- `src/app/.well-known/oauth-authorization-server/route.ts` — OAuth metadata for MCP clients
 
 **Usage in Server Components:**
 ```tsx
@@ -341,7 +336,10 @@ const { user } = await withAuth()
 ```
 
 **MCP JWT verification** (`src/lib/mcp/server.ts`) uses `jose` to verify WorkOS JWTs via:
-`https://api.workos.com/user_management/jwks/${WORKOS_CLIENT_ID}`
+`https://identity.nyuchi.com/.well-known/jwks.json` (issuer: `https://identity.nyuchi.com`)
+
+**MCP OAuth discovery**: `GET https://news.mukoko.com/.well-known/oauth-authorization-server`
+MCP clients (Claude Desktop, agents) use this to discover auth endpoints and initiate PKCE flow.
 
 **Env vars (Next.js `.env.local`):**
 ```bash

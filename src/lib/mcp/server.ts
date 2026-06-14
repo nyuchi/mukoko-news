@@ -45,17 +45,17 @@ let _workosJwks: ReturnType<typeof createRemoteJWKSet> | null = null
 
 function getWorkosJwks() {
   if (!_workosJwks) {
-    const clientId = process.env.WORKOS_CLIENT_ID
-    if (!clientId) throw new Error('WORKOS_CLIENT_ID not set')
-    _workosJwks = createRemoteJWKSet(new URL(`https://api.workos.com/user_management/jwks/${clientId}`))
+    _workosJwks = createRemoteJWKSet(new URL('https://identity.nyuchi.com/.well-known/jwks.json'))
   }
   return _workosJwks
 }
 
 async function verifyWorkOSToken(token: string): Promise<{ userId: string; email?: string } | null> {
-  if (!process.env.WORKOS_CLIENT_ID) return null
   try {
-    const { payload } = await jwtVerify(token, getWorkosJwks(), { algorithms: ['RS256'] })
+    const { payload } = await jwtVerify(token, getWorkosJwks(), {
+      algorithms: ['RS256'],
+      issuer: 'https://identity.nyuchi.com',
+    })
     return { userId: String(payload.sub ?? ''), email: payload.email as string | undefined }
   } catch {
     return null
