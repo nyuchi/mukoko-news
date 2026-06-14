@@ -26,6 +26,8 @@
     "@openauthjs/openauth": "^0.4.3",
     "fast-xml-parser": "^5.3.3",
     "hono": "^4.9.7",
+    "jose": "^6.2.3",
+    "mongodb": "^7.3.0",
     "turndown": "^7.2.2",
     "valibot": "^1.1.0"
   },

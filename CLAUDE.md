@@ -6,6 +6,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Mukoko News is a Pan-African digital news aggregation platform. "Mukoko" means "Beehive" in Shona — where community gathers and stores knowledge. Primary market is Zimbabwe with expansion across 16 African countries.
 
+### Hard architectural rule
+
+- **Tools → Cloudflare Workers** — the MCP and the public/product API live in the gateway Worker (`backend/`). Workers connect to MongoDB Atlas directly via the native driver (`nodejs_compat` + `new MongoClient(MONGODB_URI)`).
+- **App → Vercel** — the Next.js app (`src/`) is the frontend/UI only. It must not host MCP or product-API "tools."
+- **Heavy processing → Fly.io** — the pipeline worker (`fly-worker/`) does ingestion, AI enrichment, aggregation.
+
+Routing: `news.mukoko.com/mcp`, `/api/*`, and `/.well-known/oauth-authorization-server` are intercepted by the Worker (see `backend/wrangler.jsonc` routes); everything else falls through to Vercel.
+
 **Architecture**: Next.js 15 frontend (`src/`) + Cloudflare Workers API backend (`backend/`) + Fly.io Python pipeline worker (`fly-worker/`) + Cloudflare Python edge processor (`processing/`) + D1 database (`database/`) + MongoDB Atlas (primary data store, ~30 databases) + WorkOS AuthKit (authentication)
 
 ## Commands
@@ -344,8 +352,7 @@ import { withAuth } from '@workos-inc/authkit-nextjs'
 const { user } = await withAuth()
 ```
 
-**MCP JWT verification** (`src/lib/mcp/server.ts`) uses `jose` to verify WorkOS JWTs via:
-`https://identity.nyuchi.com/.well-known/jwks.json` (issuer: `https://identity.nyuchi.com`)
+**MCP** lives in the gateway Worker — `backend/mcp/server.ts` (MongoDB-backed, served at `news.mukoko.com/mcp`). It is a public, user-facing MCP using WorkOS **OAuth** (public PKCE client, not M2M). JWT verification uses `jose` against `https://identity.nyuchi.com/.well-known/jwks.json` (issuer `https://identity.nyuchi.com`). Discovery: `news.mukoko.com/.well-known/oauth-authorization-server` (served by the Worker). MongoDB connection: `backend/services/MongoService.ts`.
 
 **Env vars (Next.js `.env.local`):**
 ```bash

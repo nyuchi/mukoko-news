@@ -298,7 +298,7 @@ export default function AnalyticsPage() {
             /api/analytics
           </code>{" "}
           or via our{" "}
-          <Link href="https://news.mukoko.com/api/mcp" className="text-primary underline underline-offset-2">
+          <Link href="https://news.mukoko.com/mcp" className="text-primary underline underline-offset-2">
             MCP server
           </Link>
           .

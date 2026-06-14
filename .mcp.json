@@ -2,7 +2,7 @@
   "mcpServers": {
     "mukoko-news": {
       "type": "http",
-      "url": "https://news.mukoko.com/api/mcp"
+      "url": "https://news.mukoko.com/mcp"
     },
     "nyuchi-mongodb": {
       "type": "http",

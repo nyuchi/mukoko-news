@@ -40,6 +40,8 @@ import { normalizeTitle, titleSimilarity, clusterArticles, STOP_WORDS } from "./
 import { getAdminHTML, getLoginHTML } from "./admin/index.js";
 // MCP server
 import { handleMcp } from "./mcp/server.js";
+import { getMongoDb } from "./services/MongoService.js";
+import { getPublicAnalytics } from "./services/PublicAnalytics.js";
 
 // Types for Cloudflare bindings
 type Bindings = {
@@ -69,6 +71,8 @@ type Bindings = {
   CLOUDFLARE_ACCOUNT_ID?: string;
   ADMIN_SESSION_SECRET: string; // Set via wrangler secret
   API_SECRET?: string; // Set via wrangler secret - bearer token for frontend API authentication
+  MONGODB_URI: string; // Set via wrangler secret - MongoDB Atlas connection string (MCP + public API)
+  WORKOS_MCP_CLIENT_ID?: string; // WorkOS public PKCE client id for MCP OAuth discovery
   AI_INSIGHTS_ENABLED: string;
   AI_SEARCH_ENABLED: string;
   AUTH_ISSUER_URL: string; // OIDC issuer URL (id.mukoko.com)
@@ -6485,13 +6489,41 @@ Crawl-delay: 1
   });
 });
 
-// ── MCP server endpoint (DEPRECATED) ─────────────────────────────────────
-// Moved to Next.js: https://news.mukoko.com/api/mcp (MongoDB-backed, WorkOS auth)
-// This D1-backed route is kept temporarily for backward compatibility.
+// ── MCP server endpoint ──────────────────────────────────────────────────
+// Public, task-oriented MCP at news.mukoko.com/mcp — MongoDB-backed, WorkOS
+// OAuth (public PKCE client at identity.nyuchi.com). Streamable HTTP JSON-RPC.
 app.all('/mcp', async (c) => {
-  c.header('Deprecation', 'true')
-  c.header('Link', '<https://news.mukoko.com/api/mcp>; rel="successor-version"')
-  return handleMcp(c.req.raw, c.env.DB, c.env.API_SECRET);
+  const db = await getMongoDb(c.env.MONGODB_URI);
+  return handleMcp(c.req.raw, db);
+});
+
+// ── Open-data analytics — powers the Vercel /analytics page ───────────────
+app.get('/api/analytics', async (c) => {
+  const db = await getMongoDb(c.env.MONGODB_URI);
+  const data = await getPublicAnalytics(db);
+  return c.json(data, 200, { 'Access-Control-Allow-Origin': '*' });
+});
+
+// OAuth 2.0 Authorization Server Metadata (RFC 8414) — MCP client discovery.
+// Points to the WorkOS AuthKit custom domain (identity.nyuchi.com) public PKCE client.
+app.get('/.well-known/oauth-authorization-server', (c) => {
+  const auth = 'https://identity.nyuchi.com';
+  const clientId = c.env.WORKOS_MCP_CLIENT_ID ?? 'client_01KV2GGE5A7WRSFPWZ5HQJ3FNZ';
+  return c.json(
+    {
+      issuer: auth,
+      authorization_endpoint: `${auth}/oauth/authorize`,
+      token_endpoint: `${auth}/oauth/token`,
+      jwks_uri: `${auth}/.well-known/jwks.json`,
+      response_types_supported: ['code'],
+      grant_types_supported: ['authorization_code', 'refresh_token'],
+      code_challenge_methods_supported: ['S256'],
+      token_endpoint_auth_methods_supported: ['none'],
+      client_id: clientId,
+    },
+    200,
+    { 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'public, max-age=3600' },
+  );
 });
 
 // Scheduled handler for cron jobs with rotating batch processing
