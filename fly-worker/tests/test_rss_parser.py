@@ -1,7 +1,5 @@
 """Tests for RSS/Atom feed parser."""
 
-import json
-
 from src.services.rss_parser import parse_feed, _slugify, _strip_html, _extract_img_from_html
 
 
@@ -21,8 +19,7 @@ class TestParseFeed:
         assert article["mainentityofpage"] == "https://test-news.example.com/article/1"
         assert article["source_feed_id"] == "https://test-news.example.com/article/1"
         assert article["publisher_organization_id"] == sample_source.get("organization_id")
-        publisher = json.loads(article["publisher"])
-        assert publisher["name"] == "Test News"
+        assert article["publisher"]["name"] == "Test News"
         assert article["primary_location_country"] == "ZW"
         assert article["inlanguage"] == "en"
         assert article["source_fingerprint"] is not None
@@ -30,15 +27,12 @@ class TestParseFeed:
 
     def test_extracts_author(self, sample_rss_xml, sample_source):
         result = parse_feed(sample_rss_xml, sample_source)
-        author_0 = json.loads(result["articles"][0]["author"])
-        author_1 = json.loads(result["articles"][1]["author"])
-        assert author_0["name"] == "Jane Reporter"
-        assert author_1["name"] == "John Finance"
+        assert result["articles"][0]["author"]["name"] == "Jane Reporter"
+        assert result["articles"][1]["author"]["name"] == "John Finance"
 
     def test_extracts_image_from_enclosure(self, sample_rss_xml, sample_source):
         result = parse_feed(sample_rss_xml, sample_source)
-        image = json.loads(result["articles"][0]["image"])
-        assert image["url"] == "https://test-news.example.com/images/parliament.jpg"
+        assert result["articles"][0]["image"]["url"] == "https://test-news.example.com/images/parliament.jpg"
 
     def test_skips_entries_without_title(self, sample_rss_xml, sample_source):
         result = parse_feed(sample_rss_xml, sample_source)
@@ -51,8 +45,7 @@ class TestParseFeed:
         assert len(result["articles"]) == 1
         article = result["articles"][0]
         assert article["headline"] == "New Tech Hub Opens in Harare"
-        author = json.loads(article["author"])
-        assert author["name"] == "Tech Reporter"
+        assert article["author"]["name"] == "Tech Reporter"
 
     def test_empty_feed(self, sample_source):
         result = parse_feed("", sample_source)

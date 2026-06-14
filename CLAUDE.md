@@ -178,21 +178,38 @@ Services follow a class-based pattern with D1 database access:
 
 - **Frontend**: Auto-deploys to Vercel on push to main
 - **Python Worker** (`mukoko-news-api`): Deployed by Cloudflare GitHub App on push to main. Manual: `cd processing && uv run pywrangler deploy`
-- **MongoDB Proxy Worker** (`mukoko-mongo-proxy`): Deployed by Cloudflare GitHub App on push to main. Manual: `cd processing/mongo-proxy && npx wrangler deploy`
 - **Backend** (`mukoko-news-backend`): Deployed by Cloudflare GitHub App on push to main. Manual: `cd backend && npm run deploy`
-- **Cloudflare GitHub App** manages all three Workers — configure each worker's root directory in the Cloudflare dashboard (Workers & Pages → Settings → Build). Deploy order must be: mongo-proxy → Python Worker → backend (service binding dependency).
+- **Image Worker** (`mukoko-images`): Manual: `cd image-worker && npx wrangler deploy`. Routes to `assets.mukoko.com/i/*`.
+- **Cloudflare GitHub App** manages Workers — configure each worker's root directory in the Cloudflare dashboard (Workers & Pages → Settings → Build). For `mukoko-news-backend` the root directory must be set to `backend/`.
 - `.github/workflows/deploy.yml` runs tests only (CI); deployment is handled by Cloudflare
+
+## MCP Servers
+
+`.mcp.json` registers project-scoped MCP servers that load automatically in Claude Code.
+
+| Server | URL | Auth |
+|---|---|---|
+| `nyuchi-mongodb` | `https://mongodb.nyuchi.dev/mcp` | OAuth — each developer authenticates on first use; tokens stored in `~/.claude.json`, never committed |
+
+**First-time setup**: On session start, Claude Code will prompt for OAuth authentication with `nyuchi-mongodb`. This grants read/write access to the `mukoko_news` MongoDB database. Only team members with nyuchi.dev credentials should approve this.
+
+**Security note**: The URL is committed intentionally (team-shared config). Credentials are never in the file — OAuth tokens are per-developer and stored locally.
 
 ## Environment Variables
 
 ### Frontend (`.env.local`)
 
 ```bash
-NEXT_PUBLIC_API_URL=https://mukoko-news-backend.nyuchi.workers.dev
-NEXT_PUBLIC_BASE_URL=https://news.mukoko.com  # Optional, for SEO/JSON-LD
-API_SECRET=your-api-secret               # Server-side only — never sent from browser. Read endpoints are public.
+# MongoDB Atlas — Next.js reads/writes directly via server-side Route Handlers
+MONGODB_URI=mongodb+srv://<user>:<pass>@nyuchi-platform-doc-db.ge8d8qi.mongodb.net/?appName=nyuchi-platform-doc-db
+MONGODB_DATABASE=news
 
-# Supabase platform project (mukoko_platform_cloud — permanent store)
+# Leave empty — Next.js Route Handlers serve all reads from MongoDB.
+# Set to Cloudflare Worker URL only for the external widget/MCP API.
+NEXT_PUBLIC_API_URL=
+NEXT_PUBLIC_BASE_URL=https://news.mukoko.com  # Optional, for SEO/JSON-LD
+
+# Supabase platform project (retained for auth middleware; data reads now use MongoDB)
 NEXT_PUBLIC_SUPABASE_URL=https://tdcpuzqyoodrdsxldgsh.supabase.co
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your-supabase-publishable-key
 ```

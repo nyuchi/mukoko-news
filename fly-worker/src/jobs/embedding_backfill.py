@@ -1,41 +1,39 @@
 """Embedding backfill job.
 
-Generates BGE-M3 embeddings for articles that were processed before
-the embedding pipeline was added. Runs periodically until all articles
-have embeddings.
+Generates BGE-M3 embeddings for articles that were processed by AI
+but don't yet have an embedding. Runs every 10 minutes.
 """
 
-from src.db import get_pool
+from datetime import datetime, timezone
+
+from src.services.mongodb import get_db
 from src.services.embeddings import embed_text, build_article_text
 
 
 async def backfill_embeddings() -> None:
-    """Generate embeddings for articles that don't have them yet.
+    """Generate embeddings for articles that don't have them yet."""
+    db = get_db()
 
-    Processes in batches of 20 to avoid overwhelming the CF Workers AI API.
-    """
-    pool = await get_pool()
-
-    async with pool.acquire() as conn:
-        rows = await conn.fetch(
-            """SELECT id::text, headline, description, articlebody,
-                      article_body_processed
-               FROM news.news_article
-               WHERE ai_processed = TRUE
-                 AND embedding_vector IS NULL
-               ORDER BY datepublished DESC
-               LIMIT 20"""
-        )
+    rows = await db["articles"].find(
+        {"aiProcessed": True, "embedding": {"$exists": False}},
+        {"_id": 1, "headline": 1, "description": 1, "articleBodyProcessed": 1},
+    ).sort("datePublished", -1).limit(20).to_list(20)
 
     if not rows:
         return
 
     print(f"[EMBEDDINGS] Backfilling {len(rows)} articles...")
     success = 0
+    now = datetime.now(timezone.utc)
 
     for row in rows:
-        article = dict(row)
-        text = build_article_text(article)
+        # Map to keys expected by build_article_text
+        article_for_embed = {
+            "headline": row.get("headline", ""),
+            "description": row.get("description", ""),
+            "article_body_processed": row.get("articleBodyProcessed", ""),
+        }
+        text = build_article_text(article_for_embed)
         if not text:
             continue
 
@@ -43,18 +41,14 @@ async def backfill_embeddings() -> None:
         if embedding is None:
             continue
 
-        embedding_str = "[" + ",".join(str(v) for v in embedding) + "]"
-
-        async with pool.acquire() as conn:
-            await conn.execute(
-                """UPDATE news.news_article SET
-                       embedding_vector = $2::vector,
-                       embedding_model = 'bge-m3'
-                   WHERE id = $1::uuid""",
-                article["id"],
-                embedding_str,
-            )
-
+        await db["articles"].update_one(
+            {"_id": row["_id"]},
+            {"$set": {
+                "embedding": embedding,
+                "embeddingModel": "bge-m3",
+                "updatedAt": now,
+            }},
+        )
         success += 1
 
     print(f"[EMBEDDINGS] Backfilled {success}/{len(rows)} articles")

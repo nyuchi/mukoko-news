@@ -109,20 +109,6 @@
     ],
 
     /**
-     * Service Bindings — internal Worker-to-Worker RPC
-     *
-     * MONGO: MongoDB proxy Worker (JS Worker with MongoDB Node.js driver)
-     * Python Workers can't use TCP drivers directly (Pyodide limitation),
-     * so all MongoDB operations go through this Service Binding (~1ms RPC).
-     */
-    "services": [
-        {
-            "binding": "MONGO",
-            "service": "mukoko-mongo-proxy"
-        }
-    ],
-
-    /**
      * R2 — file storage for RSS feed snapshots, backups, media
      */
     "r2_buckets": [

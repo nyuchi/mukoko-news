@@ -71,7 +71,7 @@ def _score_readability(text: str) -> float:
         return 50.0
 
     try:
-        flesch = textstat.flesch_reading_ease(text)
+        flesch = textstat.flesch_reading_ease(text)  # type: ignore[attr-defined]
         # Flesch: 0-30 = very hard, 60-70 = standard, 90-100 = very easy
         # For news, 50-70 is ideal
         if 50 <= flesch <= 70:

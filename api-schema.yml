@@ -3,7 +3,7 @@ info:
   title: Harare Metro News API
   description: |
     Zimbabwe News Aggregation API that fetches and categorizes news from multiple local sources.
-    
+
     Features:
     - Real-time RSS feed aggregation
     - Enhanced categorization with Zimbabwe-specific keywords
@@ -45,7 +45,7 @@ paths:
     get:
       summary: Get all news feeds
       description: |
-        Fetches and aggregates news from all enabled RSS sources. 
+        Fetches and aggregates news from all enabled RSS sources.
         Articles are automatically categorized and prioritized based on Zimbabwe relevance.
       operationId: getAllFeeds
       tags:
@@ -57,7 +57,7 @@ paths:
           required: false
           schema:
             type: string
-            enum: 
+            enum:
               - politics
               - economy
               - business
@@ -231,7 +231,7 @@ components:
           maxLength: 100
         category:
           type: string
-          enum: 
+          enum:
             - politics
             - economy
             - business
@@ -439,14 +439,14 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
-    
+
     NotFound:
       description: Endpoint not found
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
-    
+
     ServerError:
       description: Internal server error
       content:
@@ -457,7 +457,7 @@ components:
 tags:
   - name: News
     description: News aggregation and retrieval endpoints
-  - name: Configuration  
+  - name: Configuration
     description: API configuration and metadata endpoints
   - name: System
     description: System health and status endpoints

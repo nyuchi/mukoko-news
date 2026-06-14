@@ -1,4 +1,6 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://mukoko-news-backend.nyuchi.workers.dev';
+// Empty string = relative URLs → Next.js Route Handlers → MongoDB.
+// Set to external URL only for the Cloudflare widget/resale API.
+const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
 interface Article {
   id: string;

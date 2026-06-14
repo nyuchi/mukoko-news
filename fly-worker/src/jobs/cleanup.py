@@ -1,69 +1,50 @@
 """Stale data cleanup job.
 
-Removes archived articles older than 90 days, orphaned keyword links,
-and expired trending cache entries.
-Runs daily at 3:00 UTC.
+Removes archived articles older than 90 days, expired trending cache
+entries, and old pipeline logs. Runs daily at 3:00 UTC.
 """
 
 from datetime import datetime, timedelta, timezone
 
-from src.db import get_pool
+from src.services.mongodb import get_db
 
 
 async def cleanup_stale_data() -> None:
-    """Clean up stale data from the database."""
-    pool = await get_pool()
+    """Clean up stale data from MongoDB."""
+    db = get_db()
     cutoff = datetime.now(timezone.utc) - timedelta(days=90)
-    stats = {"archived": 0, "orphaned_links": 0, "expired_cache": 0, "old_logs": 0}
+    log_cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+    stats = {"archived": 0, "expired_cache": 0, "old_logs": 0}
 
-    async with pool.acquire() as conn:
-        # 1. Delete archived articles older than 90 days
-        result = await conn.execute(
-            """DELETE FROM news.news_article
-               WHERE creativeworkstatus = 'archived'
-                 AND datepublished < $1""",
-            cutoff,
-        )
-        stats["archived"] = _parse_count(result)
+    # Delete archived articles older than 90 days
+    result = await db["articles"].delete_many({
+        "status": "archived",
+        "datePublished": {"$lt": cutoff},
+    })
+    stats["archived"] = result.deleted_count
 
-        # 2. Clean orphaned article_keywords (article deleted)
-        result = await conn.execute(
-            """DELETE FROM news.article_keyword
-               WHERE article_id NOT IN (SELECT id FROM news.news_article)"""
-        )
-        stats["orphaned_links"] = _parse_count(result)
+    # Remove expired trending cache entries
+    result = await db["trendingCache"].delete_many({
+        "expiresAt": {"$lt": datetime.now(timezone.utc)},
+    })
+    stats["expired_cache"] = result.deleted_count
 
-        # 3. Clean orphaned article_authorships
-        await conn.execute(
-            """DELETE FROM news.article_authorship
-               WHERE article_id NOT IN (SELECT id FROM news.news_article)"""
-        )
+    # Clean old pipeline logs
+    result = await db["pipelineLogs"].delete_many({
+        "completedAt": {"$lt": log_cutoff},
+    })
+    stats["old_logs"] = result.deleted_count
 
-        # 4. Remove expired trending cache (backup for TTL)
-        result = await conn.execute(
-            "DELETE FROM news.trending_cache WHERE expires_at < NOW()"
-        )
-        stats["expired_cache"] = _parse_count(result)
-
-        # 5. Clean old collection logs (keep 30 days)
-        log_cutoff = datetime.now(timezone.utc) - timedelta(days=30)
-        result = await conn.execute(
-            "DELETE FROM system.collection_log WHERE created_at < $1", log_cutoff
-        )
-        stats["old_logs"] = _parse_count(result)
-
-        # 6. Clean old sync logs (keep 30 days)
-        await conn.execute(
-            "DELETE FROM sync.sync_log WHERE created_at < $1", log_cutoff
-        )
-
-        # 7. Recalculate keyword article counts
-        await conn.execute(
-            """UPDATE news.defined_term SET
-               article_count = (
-                   SELECT COUNT(*) FROM news.article_keyword
-                   WHERE news.article_keyword.term_id = news.defined_term.id
-               )"""
+    # Recalculate tag article counts
+    tags = await db["tags"].find({}, {"_id": 1}).to_list(None)
+    for tag in tags:
+        count = await db["articles"].count_documents({
+            "tagIds": tag["_id"],
+            "status": {"$in": ["approved", "published"]},
+        })
+        await db["tags"].update_one(
+            {"_id": tag["_id"]},
+            {"$set": {"articleCount": count, "updatedAt": datetime.now(timezone.utc)}},
         )
 
     total = sum(stats.values())
@@ -71,11 +52,3 @@ async def cleanup_stale_data() -> None:
         print(f"[CLEANUP] Removed: {stats}")
     else:
         print("[CLEANUP] Nothing to clean")
-
-
-def _parse_count(result: str) -> int:
-    """Parse row count from asyncpg command result like 'DELETE 5'."""
-    try:
-        return int(result.split()[-1])
-    except (ValueError, IndexError):
-        return 0
