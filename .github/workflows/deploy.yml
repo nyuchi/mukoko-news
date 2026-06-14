@@ -102,10 +102,36 @@ jobs:
         cd processing
         uv run pyright
 
+  test-fly-worker:
+    runs-on: ubuntu-latest
+    name: Test Fly.io Pipeline Worker
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v5
+
+    - name: Install Python dependencies
+      run: |
+        cd fly-worker
+        uv sync --extra dev
+
+    - name: Run Python tests
+      run: |
+        cd fly-worker
+        uv run pytest
+
+    - name: Type check Python
+      run: |
+        cd fly-worker
+        uv run pyright
+
   deploy-fly-worker:
     name: Deploy Fly Worker (Pipeline)
     runs-on: ubuntu-latest
-    needs: [test-frontend, test-backend, test-api]
+    needs: [test-frontend, test-backend, test-api, test-fly-worker]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
     steps:
@@ -124,7 +150,7 @@ jobs:
   publish-mcp-package:
     name: Publish @nyuchi/mukoko-news-mcp to npm + MCP Registry
     runs-on: ubuntu-latest
-    needs: [test-frontend, test-backend, test-api]
+    needs: [test-frontend, test-backend, test-api, test-fly-worker]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: read

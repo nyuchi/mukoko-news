@@ -6,6 +6,7 @@ Native anthropic SDK — no Cloudflare AI Gateway needed on Fly.io.
 import json
 
 import anthropic
+from anthropic.types import TextBlock
 
 from src.config import settings
 
@@ -30,13 +31,16 @@ async def complete(
     """Send a prompt to Claude and return the text response."""
     client = get_client()
     try:
-        response = await client.messages.create(
-            model=model,
-            max_tokens=max_tokens,
-            messages=[{"role": "user", "content": prompt}],
-            system=system or anthropic.NOT_GIVEN,
-        )
-        return response.content[0].text
+        kwargs: dict = {
+            "model": model,
+            "max_tokens": max_tokens,
+            "messages": [{"role": "user", "content": prompt}],
+        }
+        if system:
+            kwargs["system"] = system
+        response = await client.messages.create(**kwargs)  # type: ignore[arg-type]
+        block = response.content[0]
+        return block.text if isinstance(block, TextBlock) else ""
     except Exception as e:
         print(f"[AI_CLIENT] Anthropic call failed: {e}")
         return ""
