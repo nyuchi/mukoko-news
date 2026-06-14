@@ -63,22 +63,38 @@ function extractBearer(authHeader: string | undefined): string | null {
   return m ? m[1].trim() : null
 }
 
-// Admin authorization: WorkOS role or permission (managed in WorkOS).
-const ADMIN_ROLES = ['admin', 'super_admin', 'moderator']
-const ADMIN_PERMISSION = 'platform:admin'
+// ── Authorization model (WorkOS RBAC) ──────────────────────────────────────
+//
+//   superadmin       → WorkOS role `admin`
+//   admin (staff)    → member of the `platform-team` organization
+//   moderator/support→ permission `mukoko:news-moderator`
+//   normal user      → role `member`, no flags
+//
+// `platform-team` is matched by its WorkOS organization id (WORKOS_PLATFORM_ORG_ID).
+const SUPERADMIN_ROLE = 'admin'
+const MODERATOR_PERMISSION = 'mukoko:news-moderator'
 
-export function isAdmin(user: WorkOSUser): boolean {
-  return (
-    (user.role != null && ADMIN_ROLES.includes(user.role)) ||
-    user.permissions.includes(ADMIN_PERMISSION)
-  )
+export function isSuperAdmin(user: WorkOSUser): boolean {
+  return user.role === SUPERADMIN_ROLE
+}
+
+export function isAdmin(user: WorkOSUser, platformOrgId?: string): boolean {
+  return isSuperAdmin(user) || (!!platformOrgId && user.orgId === platformOrgId)
+}
+
+export function isModerator(user: WorkOSUser, platformOrgId?: string): boolean {
+  return isAdmin(user, platformOrgId) || user.permissions.includes(MODERATOR_PERMISSION)
+}
+
+interface AuthEnv {
+  WORKOS_PLATFORM_ORG_ID?: string
 }
 
 export interface AuthMiddlewareOptions {
   /** Return 401 when no valid token is present. */
   required?: boolean
   /** Pass only when the user satisfies this predicate (else 403). */
-  authorize?: (user: WorkOSUser) => boolean
+  authorize?: (user: WorkOSUser, env: AuthEnv) => boolean
 }
 
 export function workosAuth(options: AuthMiddlewareOptions = {}): MiddlewareHandler {
@@ -105,7 +121,7 @@ export function workosAuth(options: AuthMiddlewareOptions = {}): MiddlewareHandl
     c.set('userId', user.sub)
     c.set('isAuthenticated', true)
 
-    if (authorize && !authorize(user)) {
+    if (authorize && !authorize(user, c.env as AuthEnv)) {
       return c.json({ error: 'Insufficient permissions', code: 'FORBIDDEN' }, 403)
     }
 
@@ -118,14 +134,19 @@ export function requireAuth(): MiddlewareHandler {
   return workosAuth({ required: true })
 }
 
-/** Require an admin (WorkOS role/permission). */
+/** Require an admin — platform-team member or superadmin. */
 export function requireAdmin(): MiddlewareHandler {
-  return workosAuth({ required: true, authorize: isAdmin })
+  return workosAuth({ required: true, authorize: (u, env) => isAdmin(u, env.WORKOS_PLATFORM_ORG_ID) })
 }
 
-/** Require the WorkOS super_admin role. */
+/** Require a moderator/support member or above. */
+export function requireModerator(): MiddlewareHandler {
+  return workosAuth({ required: true, authorize: (u, env) => isModerator(u, env.WORKOS_PLATFORM_ORG_ID) })
+}
+
+/** Require the WorkOS `admin` role (platform superadmin). */
 export function requireSuperAdmin(): MiddlewareHandler {
-  return workosAuth({ required: true, authorize: (u) => u.role === 'super_admin' })
+  return workosAuth({ required: true, authorize: (u) => isSuperAdmin(u) })
 }
 
 export function getCurrentUser(c: Context): WorkOSUser | null {

@@ -73,6 +73,7 @@ type Bindings = {
   API_SECRET?: string; // Set via wrangler secret - bearer token for frontend API authentication
   MONGODB_URI: string; // Set via wrangler secret - MongoDB Atlas connection string (MCP + public API)
   WORKOS_MCP_CLIENT_ID?: string; // WorkOS public PKCE client id for MCP OAuth discovery
+  WORKOS_PLATFORM_ORG_ID?: string; // WorkOS org id for `platform-team` → admin/staff access
   AI_INSIGHTS_ENABLED: string;
   AI_SEARCH_ENABLED: string;
   AUTH_ISSUER_URL: string; // OIDC issuer URL (id.mukoko.com)
