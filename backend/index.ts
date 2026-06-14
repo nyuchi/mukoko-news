@@ -6485,12 +6485,12 @@ Crawl-delay: 1
   });
 });
 
-// ── MCP server endpoint ──────────────────────────────────────────────────
-// POST /mcp — Streamable HTTP (JSON-RPC 2.0) for LLM tool use.
-// Tools: search_news, get_article, get_trending, get_similar_stories,
-//        browse_by_tag, browse_by_author, browse_by_source,
-//        list_categories, list_sources, get_stats
+// ── MCP server endpoint (DEPRECATED) ─────────────────────────────────────
+// Moved to Next.js: https://news.mukoko.com/api/mcp (MongoDB-backed, WorkOS auth)
+// This D1-backed route is kept temporarily for backward compatibility.
 app.all('/mcp', async (c) => {
+  c.header('Deprecation', 'true')
+  c.header('Link', '<https://news.mukoko.com/api/mcp>; rel="successor-version"')
   return handleMcp(c.req.raw, c.env.DB, c.env.API_SECRET);
 });
 

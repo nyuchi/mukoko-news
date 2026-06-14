@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Mukoko News is a Pan-African digital news aggregation platform. "Mukoko" means "Beehive" in Shona — where community gathers and stores knowledge. Primary market is Zimbabwe with expansion across 16 African countries.
 
-**Architecture**: Next.js 15 frontend (`src/`) + Cloudflare Workers API backend (`backend/`) + Fly.io Python pipeline worker (`fly-worker/`) + Cloudflare Python edge processor (`processing/`) + D1 database (`database/`) + MongoDB Atlas (primary data store, ~30 databases) + Supabase (`mukoko_platform_cloud`, auth middleware only)
+**Architecture**: Next.js 15 frontend (`src/`) + Cloudflare Workers API backend (`backend/`) + Fly.io Python pipeline worker (`fly-worker/`) + Cloudflare Python edge processor (`processing/`) + D1 database (`database/`) + MongoDB Atlas (primary data store, ~30 databases) + WorkOS AuthKit (authentication)
 
 ## Commands
 
@@ -102,7 +102,7 @@ npm run typecheck:api    # Type check Python
 - **Radix UI** primitives for accessible components
 - **Lucide React** for icons, **next-themes** for dark mode
 - **MongoDB** — Next.js Route Handlers read/write `news` database directly via server-side calls
-- **Supabase** (`@supabase/supabase-js` + `@supabase/ssr`) — retained for auth middleware only; data reads use MongoDB
+- **WorkOS AuthKit** (`@workos-inc/authkit-nextjs`) — authentication, session management via `src/middleware.ts`
 - **State**: React Context (`PreferencesContext` for country/category, `ThemeContext`)
 - **Path alias**: `@/*` maps to `src/*`
 - **Package manager**: pnpm (v10+)
@@ -273,11 +273,12 @@ MONGODB_DATABASE=news
 # Leave empty — Next.js Route Handlers serve all reads from MongoDB.
 # Set to Cloudflare Worker URL only for the external widget/MCP API.
 NEXT_PUBLIC_API_URL=
-NEXT_PUBLIC_BASE_URL=https://news.mukoko.com  # Optional, for SEO/JSON-LD
+NEXT_PUBLIC_BASE_URL=https://news.mukoko.com
 
-# Supabase platform project (auth middleware only; data reads use MongoDB)
-NEXT_PUBLIC_SUPABASE_URL=https://tdcpuzqyoodrdsxldgsh.supabase.co
-NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your-supabase-publishable-key
+# WorkOS AuthKit
+WORKOS_API_KEY=sk_live_...
+WORKOS_CLIENT_ID=client_01KV2GGE5A7WRSFPWZ5HQJ3FNZ
+WORKOS_COOKIE_PASSWORD=<32+ char random string>
 ```
 
 ### Backend (Cloudflare Secrets)
@@ -314,16 +315,11 @@ Named database defaults (override via env if needed):
 - `MONGODB_ENTITY_DB=entity`
 - `MONGODB_PLATFORM_DB=platform`
 
-## Supabase Architecture
+## Authentication (WorkOS AuthKit)
 
-Two Supabase projects exist. **Supabase is no longer the primary data store** — MongoDB Atlas is. Supabase is retained for auth middleware (`mukoko_platform_cloud`) and legacy platform integrations.
+**WorkOS AuthKit** handles all user authentication in the Next.js frontend.
 
-| Project | Supabase ID | Role |
-|---|---|---|
-| `supabase_mukoko_news` | `gjdmtthumkopkwuttwnd` | Legacy news processing pipeline (staging) — superseded by fly-worker + MongoDB |
-| `mukoko_platform_cloud` | `tdcpuzqyoodrdsxldgsh` | Auth middleware for Next.js; shadcn component registry |
-
-**Current data flow (MongoDB-primary):**
+**Data flow:**
 ```
 RSS / partner feeds
       ↓
@@ -334,42 +330,25 @@ MongoDB Atlas (~30 databases: news, engagement, entity, platform, ...)
 Next.js Route Handlers read directly from MongoDB
 ```
 
-**Auth**: Handled by **Stytch** on the platform side. Supabase does not issue JWTs or manage auth in this project.
+**Auth files:**
+- `src/middleware.ts` — AuthKit session middleware; protects `/profile` and `/saved`
+- `src/app/auth/callback/route.ts` — WorkOS OAuth callback handler
 
-**Edge functions**: This project uses **Cloudflare Workers** as its edge runtime — `supabase/functions/` does not exist and is not used.
-
-### Platform Cloud Project (`mukoko_platform_cloud`)
-
-Retained for auth middleware session refresh and shadcn component registry.
-
-**Next.js client files** (in `src/lib/supabase/`):
-- `client.ts` — Browser client (`createBrowserClient`). Use in Client Components.
-- `server.ts` — Server client (`createServerClient`). Use in Server Components, Route Handlers, Server Actions.
-- `middleware.ts` — Session refresh helper (`updateSession`).
-
+**Usage in Server Components:**
 ```tsx
-// Client Component
-import { createClient } from '@/lib/supabase/client'
-const supabase = createClient()
-
-// Server Component / Route Handler
-import { createClient } from '@/lib/supabase/server'
-const supabase = await createClient()
+import { withAuth } from '@workos-inc/authkit-nextjs'
+const { user } = await withAuth()
 ```
+
+**MCP JWT verification** (`src/lib/mcp/server.ts`) uses `jose` to verify WorkOS JWTs via:
+`https://api.workos.com/user_management/jwks/${WORKOS_CLIENT_ID}`
 
 **Env vars (Next.js `.env.local`):**
 ```bash
-NEXT_PUBLIC_SUPABASE_URL=https://tdcpuzqyoodrdsxldgsh.supabase.co
-NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_aNdSABNOLB3sG7OMjHN0Vw_5SDouXAL
+WORKOS_API_KEY=sk_live_...
+WORKOS_CLIENT_ID=client_01KV2GGE5A7WRSFPWZ5HQJ3FNZ
+WORKOS_COOKIE_PASSWORD=<32+ char random string>
 ```
-
-### shadcn Registry
-
-`components.json` includes the Supabase registry:
-```json
-"registries": { "@supabase": "https://supabase.com/ui/r/{name}.json" }
-```
-Add more Supabase UI components: `npx shadcn@latest add @supabase/<component-name>`
 
 ## Design System (Nyuchi Brand v6)
 
