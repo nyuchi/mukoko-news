@@ -83,7 +83,7 @@ export function ArticlesModerator({ initialArticles, activeFilter }: ArticlesMod
                     {a.status}
                   </span>
                 )}
-                {a.url && (
+                {a.url && /^https?:\/\//i.test(a.url) && (
                   <a
                     href={a.url}
                     target="_blank"

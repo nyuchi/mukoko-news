@@ -94,9 +94,13 @@ export function isAdmin(user: WorkOSUser, platformOrgId?: string): boolean {
 }
 
 export function isModerator(user: WorkOSUser, platformOrgId?: string): boolean {
+  if (isAdmin(user, platformOrgId)) return true
+  // Moderator grants (role AND the mukoko:news-moderator permission) are only
+  // honoured inside platform-team — WorkOS permission slugs are environment-wide
+  // and assignable per-org, so an un-scoped permission check is a cross-org bypass.
+  if (!inPlatformOrg(user, platformOrgId)) return false
   return (
-    isAdmin(user, platformOrgId) ||
-    (inPlatformOrg(user, platformOrgId) && user.role != null && MODERATOR_ROLES.includes(user.role)) ||
+    (user.role != null && MODERATOR_ROLES.includes(user.role)) ||
     user.permissions.includes(MODERATOR_PERMISSION)
   )
 }

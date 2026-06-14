@@ -8,8 +8,8 @@
  *
  *   superadmin        → WorkOS role `admin` within the platform-team org
  *   admin (staff)     → member of the platform-team org
- *   moderator/support → role `moderator`/`support` in platform-team OR the
- *                       `mukoko:news-moderator` permission (assignable anywhere)
+ *   moderator/support → (within platform-team) role `moderator`/`support` OR the
+ *                       `mukoko:news-moderator` permission
  *   normal user       → everything else
  *
  * platform-team is identified by its WorkOS org id (WORKOS_PLATFORM_ORG_ID).
@@ -47,10 +47,15 @@ export function isAdmin(claims: WorkOSClaims): boolean {
 }
 
 export function isModerator(claims: WorkOSClaims): boolean {
+  if (isAdmin(claims)) return true
+  // All moderator grants — role AND the mukoko:news-moderator permission — are
+  // honoured only inside the platform-team org. WorkOS permission slugs are
+  // environment-wide and assignable per-org, so an un-scoped permission check
+  // would let a non-staff org's session gain moderator access.
+  if (!inPlatformOrg(claims)) return false
   const perms = claims.permissions ?? []
   return (
-    isAdmin(claims) ||
-    (inPlatformOrg(claims) && !!claims.role && MODERATOR_ROLES.includes(claims.role)) ||
+    (!!claims.role && MODERATOR_ROLES.includes(claims.role)) ||
     perms.includes(MODERATOR_PERMISSION)
   )
 }

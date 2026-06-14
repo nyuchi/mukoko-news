@@ -85,15 +85,19 @@ export function SourcesManager({ initialSources }: SourcesManagerProps) {
               <tr key={s.id} className="border-t border-elevated">
                 <td className="px-4 py-3">
                   <div className="font-medium text-foreground">{s.name}</div>
-                  <a
-                    href={s.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-xs text-text-tertiary hover:text-primary"
-                  >
-                    {s.url}
-                    <ExternalLink className="w-3 h-3" />
-                  </a>
+                  {s.url && /^https?:\/\//i.test(s.url) ? (
+                    <a
+                      href={s.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-xs text-text-tertiary hover:text-primary"
+                    >
+                      {s.url}
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  ) : (
+                    <span className="text-xs text-text-tertiary">{s.url}</span>
+                  )}
                   {s.lastFetchError && (
                     <div className="text-xs text-warning mt-1">{s.lastFetchError}</div>
                   )}
