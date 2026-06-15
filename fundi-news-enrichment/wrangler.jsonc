@@ -17,5 +17,8 @@
   },
   "placement": {
     "mode": "smart"
-  }
+  },
+  "custom_domains": [
+    { "hostname": "news-enrichment.fundi.nyuchi.dev" }
+  ]
 }

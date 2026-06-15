@@ -8,7 +8,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.52.0",
     "hono": "^4.9.7",
     "mongodb": "^7.3.0"
   },
