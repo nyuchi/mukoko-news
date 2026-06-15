@@ -1,0 +1,20 @@
+{
+  "name": "fundi-news-enrichment",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.52.0",
+    "hono": "^4.9.7",
+    "mongodb": "^7.3.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250508.0",
+    "typescript": "^5.7.3",
+    "wrangler": "^4.20.0"
+  }
+}
