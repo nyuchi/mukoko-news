@@ -10,6 +10,7 @@ FastAPI is used only to expose /health for Fly.io health checks.
 
 import asyncio
 import time
+from collections import deque
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Header, HTTPException, status
@@ -21,6 +22,30 @@ from src.services.mongodb import ping_mongodb, close_mongodb
 
 _start_time = time.time()
 _scheduler = None
+
+
+class _SlidingWindow:
+    """Global in-memory sliding window rate limiter (single-instance safe)."""
+
+    def __init__(self, max_calls: int, window: float) -> None:
+        self._max = max_calls
+        self._window = window
+        self._timestamps: deque[float] = deque()
+        self._lock = asyncio.Lock()
+
+    async def is_allowed(self) -> bool:
+        async with self._lock:
+            now = time.monotonic()
+            cutoff = now - self._window
+            while self._timestamps and self._timestamps[0] < cutoff:
+                self._timestamps.popleft()
+            if len(self._timestamps) >= self._max:
+                return False
+            self._timestamps.append(now)
+            return True
+
+
+_trigger_limiter = _SlidingWindow(max_calls=3, window=60.0)
 
 
 @asynccontextmanager
@@ -75,10 +100,16 @@ app.add_middleware(
 
 @app.post("/trigger/collect", status_code=202)
 async def trigger_collect(authorization: str = Header(default="")):
-    """On-demand RSS collection — called by Next.js pull-to-refresh."""
+    """On-demand RSS collection — called by Next.js pull-to-refresh.
+
+    Global rate limit: 3 triggers per minute regardless of caller count.
+    """
     token = authorization.removeprefix("Bearer ").strip()
     if not settings.fly_trigger_token or token != settings.fly_trigger_token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+
+    if not await _trigger_limiter.is_allowed():
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Rate limit exceeded — 3 triggers/min")
 
     from src.jobs.rss_collector import collect_feeds
     asyncio.create_task(collect_feeds())
