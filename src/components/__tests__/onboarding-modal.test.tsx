@@ -145,7 +145,7 @@ describe('OnboardingModal', () => {
 
       await waitFor(() => {
         expect(screen.getByText(/Zimbabwe/)).toBeInTheDocument();
-        expect(screen.getByText(/South Africa/)).toBeInTheDocument();
+        expect(screen.getByText(/Kenya/)).toBeInTheDocument();
       });
     });
   });
