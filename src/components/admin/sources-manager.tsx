@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, useTransition } from 'react'
-import { RefreshCw, ExternalLink, Loader2, Check, X } from 'lucide-react'
+import { useState } from 'react'
+import { ExternalLink, Loader2, Check, X } from 'lucide-react'
 import type { AdminSource } from '@/lib/mongodb/admin'
-import { setSourceActive, refreshSources } from '@/lib/admin/gateway'
+import { setSourceActive } from '@/lib/admin/gateway'
 import { COUNTRIES } from '@/lib/constants'
 
 const countryName = (code: string) =>
@@ -17,7 +17,6 @@ export function SourcesManager({ initialSources }: SourcesManagerProps) {
   const [sources, setSources] = useState(initialSources)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
-  const [isRefreshing, startRefresh] = useTransition()
 
   const toggle = (source: AdminSource) => {
     setBusyId(source.id)
@@ -41,26 +40,10 @@ export function SourcesManager({ initialSources }: SourcesManagerProps) {
       .finally(() => setBusyId(null))
   }
 
-  const refresh = () => {
-    setNotice(null)
-    startRefresh(async () => {
-      const res = await refreshSources()
-      setNotice(res.ok ? 'RSS refresh queued.' : res.error ?? 'Refresh failed.')
-    })
-  }
-
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
         <p className="text-sm text-text-secondary">{sources.length} sources</p>
-        <button
-          onClick={refresh}
-          disabled={isRefreshing}
-          className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-xl text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-60"
-        >
-          <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-          Refresh RSS feeds
-        </button>
       </div>
 
       {notice && (

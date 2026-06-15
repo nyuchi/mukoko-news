@@ -2,14 +2,14 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { Check, X, ExternalLink, Loader2 } from 'lucide-react'
+import { Check, X, Flag, ExternalLink, Loader2 } from 'lucide-react'
 import type { AdminArticle } from '@/lib/mongodb/admin'
 import { moderateArticle } from '@/lib/admin/gateway'
 
 const FILTERS = [
-  { key: 'pending', label: 'Pending' },
-  { key: 'approved', label: 'Approved' },
-  { key: 'rejected', label: 'Rejected' },
+  { key: 'flagged', label: 'Flagged' },
+  { key: 'active', label: 'Active' },
+  { key: 'removed', label: 'Removed' },
   { key: 'all', label: 'All' },
 ]
 
@@ -23,16 +23,15 @@ export function ArticlesModerator({ initialArticles, activeFilter }: ArticlesMod
   const [busyId, setBusyId] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
 
-  const moderate = (id: string, status: 'approved' | 'rejected') => {
+  const moderate = (id: string, moderationStatus: 'active' | 'flagged' | 'removed') => {
     setBusyId(id)
     setNotice(null)
-    moderateArticle(id, status)
+    moderateArticle(id, moderationStatus)
       .then((res) => {
         if (res.ok) {
-          // Drop the row from the current (pending) view.
           setArticles((prev) =>
             activeFilter === 'all'
-              ? prev.map((a) => (a.id === id ? { ...a, status } : a))
+              ? prev.map((a) => (a.id === id ? { ...a, moderationStatus } : a))
               : prev.filter((a) => a.id !== id),
           )
         } else {
@@ -48,7 +47,7 @@ export function ArticlesModerator({ initialArticles, activeFilter }: ArticlesMod
         {FILTERS.map((f) => (
           <Link
             key={f.key}
-            href={`/admin/articles?status=${f.key}`}
+            href={`/admin/articles?moderationStatus=${f.key}`}
             className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
               activeFilter === f.key
                 ? 'bg-primary text-white'
@@ -97,7 +96,7 @@ export function ArticlesModerator({ initialArticles, activeFilter }: ArticlesMod
             </div>
             <div className="flex shrink-0 items-center gap-2">
               <button
-                onClick={() => moderate(a.id, 'approved')}
+                onClick={() => moderate(a.id, 'active')}
                 disabled={busyId === a.id}
                 className="inline-flex items-center gap-1.5 rounded-lg bg-success/10 px-3 py-1.5 text-xs font-medium text-success hover:bg-success/20 transition-colors disabled:opacity-60"
               >
@@ -109,12 +108,20 @@ export function ArticlesModerator({ initialArticles, activeFilter }: ArticlesMod
                 Approve
               </button>
               <button
-                onClick={() => moderate(a.id, 'rejected')}
+                onClick={() => moderate(a.id, 'flagged')}
                 disabled={busyId === a.id}
                 className="inline-flex items-center gap-1.5 rounded-lg bg-warning/10 px-3 py-1.5 text-xs font-medium text-warning hover:bg-warning/20 transition-colors disabled:opacity-60"
               >
+                <Flag className="w-3 h-3" />
+                Flag
+              </button>
+              <button
+                onClick={() => moderate(a.id, 'removed')}
+                disabled={busyId === a.id}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-destructive/10 px-3 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/20 transition-colors disabled:opacity-60"
+              >
                 <X className="w-3 h-3" />
-                Reject
+                Remove
               </button>
             </div>
           </div>

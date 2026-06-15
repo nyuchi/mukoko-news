@@ -18,6 +18,7 @@ interface MongoArticle {
   slug: string
   inLanguage: string
   status: string
+  moderationStatus?: string
   isApproved: boolean
   scrapedAt: Date
   createdAt: Date
@@ -78,7 +79,8 @@ export async function getArticles(params: {
   const { limit = 20, page = 1, category, countries, sort = 'latest' } = params
 
   const filter: Filter<MongoArticle> = {
-    status: { $in: ['approved', 'published'] },
+    status: { $ne: 'rejected' },
+    moderationStatus: { $ne: 'removed' },
   }
   if (category) filter.articleSection = category
   if (countries?.length) {
@@ -145,7 +147,7 @@ export async function getRelatedArticles(articleId: string, limit = 5): Promise<
           queryVector: article.embedding,
           numCandidates: limit * 15,
           limit: limit + 1,
-          filter: { status: { $in: ['approved', 'published'] } },
+          filter: { status: { $ne: 'rejected' }, moderationStatus: { $ne: 'removed' } },
         },
       },
       { $match: { _id: { $ne: articleId } } },
@@ -157,7 +159,8 @@ export async function getRelatedArticles(articleId: string, limit = 5): Promise<
     // Fallback: same section, same source, recent
     const filter: Filter<MongoArticle> = {
       _id: { $ne: articleId },
-      status: { $in: ['approved', 'published'] },
+      status: { $ne: 'rejected' },
+      moderationStatus: { $ne: 'removed' },
       feedSourceId: article.feedSourceId,
     }
     if (article.articleSection) filter.articleSection = article.articleSection
@@ -181,7 +184,8 @@ export async function getNewsByteArticles(limit = 10): Promise<Article[]> {
   const db = await getDb()
   const docs = await db.collection<MongoArticle>('articles')
     .find({
-      status: { $in: ['approved', 'published'] },
+      status: { $ne: 'rejected' },
+      moderationStatus: { $ne: 'removed' },
       wordCount: { $lte: 300 },
       'image.0': { $exists: true },
     })

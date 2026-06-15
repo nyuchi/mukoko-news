@@ -58,18 +58,14 @@ export async function setSourceActive(id: string, isActive: boolean): Promise<Ga
   })
 }
 
-/** Trigger an RSS refresh (gateway: POST /api/admin/sources/refresh). */
-export async function refreshSources(): Promise<GatewayResult> {
-  return callGateway('/api/admin/sources/refresh', { method: 'POST' })
-}
-
-/** Moderate an article (gateway: PATCH /api/admin/articles/:id). */
+/** Moderate an article — sets moderationStatus (gateway: PATCH /api/moderator/articles/:id). */
 export async function moderateArticle(
   id: string,
-  status: 'approved' | 'rejected' | 'pending',
+  moderationStatus: 'active' | 'flagged' | 'removed',
+  reason?: string,
 ): Promise<GatewayResult> {
-  return callGateway(`/api/admin/articles/${encodeURIComponent(id)}`, {
+  return callGateway(`/api/moderator/articles/${encodeURIComponent(id)}`, {
     method: 'PATCH',
-    body: JSON.stringify({ status }),
+    body: JSON.stringify({ moderationStatus, reason }),
   })
 }

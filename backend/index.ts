@@ -70,6 +70,7 @@ type Bindings = {
   RESEND_API_KEY?: string; // Set via wrangler secret for email
   EMAIL_FROM?: string; // Default sender email address
   DATA_PROCESSOR: Fetcher; // Service Binding to mukoko-news-api Python Worker
+  API_SECRET?: string; // Shared secret for server-to-server calls (Next.js → Worker)
 };
 
 // Export Durable Object classes for Cloudflare

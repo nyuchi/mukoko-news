@@ -29,6 +29,7 @@ export interface AdminArticle {
   countryCode?: string
   category?: string
   status?: string
+  moderationStatus?: string
   url?: string
   datePublished?: string
 }
@@ -62,6 +63,7 @@ interface MongoArticle {
   countryCode?: string
   category?: string
   status?: string
+  moderationStatus?: string
   link?: string
   url?: string
   datePublished?: Date
@@ -75,14 +77,15 @@ export async function getAdminStats(): Promise<AdminStats> {
 
   const [totalArticles, activeSources, categories, todayArticles, pendingArticles] =
     await Promise.all([
-      db.collection('articles').countDocuments({ status: { $in: ['approved', 'published'] } }),
+      db.collection('articles').countDocuments({ status: { $ne: 'rejected' }, moderationStatus: { $ne: 'removed' } }),
       db.collection('feedSources').countDocuments({ isActive: true }),
       db.collection('categories').countDocuments({}),
       db.collection('articles').countDocuments({
-        status: { $in: ['approved', 'published'] },
+        status: { $ne: 'rejected' },
+        moderationStatus: { $ne: 'removed' },
         datePublished: { $gte: today },
       }),
-      db.collection('articles').countDocuments({ status: 'pending' }),
+      db.collection('articles').countDocuments({ moderationStatus: 'flagged' }),
     ])
 
   return { totalArticles, activeSources, categories, todayArticles, pendingArticles }
@@ -112,13 +115,10 @@ export async function getAdminSources(): Promise<AdminSource[]> {
   }))
 }
 
-/**
- * Articles for the moderation queue.
- * @param status optional status filter ('pending' by default surfaces the queue).
- */
-export async function getAdminArticles(status?: string): Promise<AdminArticle[]> {
+/** Articles for the moderation queue, filtered by moderationStatus. */
+export async function getAdminArticles(moderationStatus?: string): Promise<AdminArticle[]> {
   const db = await getDb()
-  const filter = status ? { status } : {}
+  const filter = moderationStatus ? { moderationStatus } : {}
   const docs = await db
     .collection<MongoArticle>('articles')
     .find(filter)
@@ -133,6 +133,7 @@ export async function getAdminArticles(status?: string): Promise<AdminArticle[]>
     countryCode: d.countryCode,
     category: d.category,
     status: d.status,
+    moderationStatus: d.moderationStatus,
     url: d.link ?? d.url,
     datePublished: d.datePublished?.toISOString(),
   }))

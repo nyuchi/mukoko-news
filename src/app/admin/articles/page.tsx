@@ -6,14 +6,14 @@ export const metadata = { title: 'Moderation' }
 export const dynamic = 'force-dynamic'
 
 interface PageProps {
-  searchParams: Promise<{ status?: string }>
+  searchParams: Promise<{ moderationStatus?: string }>
 }
 
-// Server Component: reads the moderation queue from MongoDB. Approve/reject
-// mutations go through the gateway Worker.
+// Server Component: reads the moderation queue from MongoDB. Moderation actions
+// (approve/flag/remove) route through the gateway Worker.
 export default async function AdminArticlesPage({ searchParams }: PageProps) {
-  const { status } = await searchParams
-  const filter = status ?? 'pending'
+  const { moderationStatus } = await searchParams
+  const filter = moderationStatus ?? 'flagged'
 
   let articles: AdminArticle[] = []
   let dbError = false
@@ -29,8 +29,8 @@ export default async function AdminArticlesPage({ searchParams }: PageProps) {
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-foreground mb-1">Article moderation</h1>
         <p className="text-text-secondary">
-          Review the article queue. Approving or rejecting routes through the gateway
-          Worker.
+          Review the moderation queue. Actions (approve/flag/remove) route through the
+          gateway Worker.
         </p>
       </div>
 
