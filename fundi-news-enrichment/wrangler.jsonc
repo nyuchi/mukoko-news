@@ -9,8 +9,7 @@
     "binding": "AI"
   },
   "vars": {
-    "NODE_ENV": "production",
-    "AI_GATEWAY_ID": "mukoko-ai-gateway"
+    "NODE_ENV": "production"
   },
   "observability": {
     "enabled": true
