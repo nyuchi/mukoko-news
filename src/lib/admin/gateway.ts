@@ -45,7 +45,7 @@ async function callGateway<T = unknown>(
     }
     return { ok: true, status: res.status, data }
   } catch (err) {
-    console.error(`[ADMIN_GATEWAY] ${init.method} ${path} failed`, err)
+    console.error('[ADMIN_GATEWAY] request failed', { method: init.method, path }, err)
     return { ok: false, status: 0, error: 'Could not reach the gateway.' }
   }
 }
