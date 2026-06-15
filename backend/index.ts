@@ -70,7 +70,7 @@ type Bindings = {
   RESEND_API_KEY?: string; // Set via wrangler secret for email
   EMAIL_FROM?: string; // Default sender email address
   DATA_PROCESSOR: Fetcher; // Service Binding to mukoko-news-api Python Worker
-  API_SECRET?: string; // Shared secret for server-to-server calls (Next.js → Worker)
+  API_SECRET?: string; // Shared secret for fundi-news-enrichment → Gateway authenticated calls
 };
 
 // Export Durable Object classes for Cloudflare
@@ -5632,28 +5632,6 @@ app.get("/api/admin/seo/stats", async (c) => {
   } catch (error: any) {
     console.error("[SEO] Stats error:", error);
     return c.json({ error: "Failed to get SEO stats" }, 500);
-  }
-});
-
-// ===== INTERNAL TRIGGER ENDPOINTS =====
-
-// Trigger RSS feed collection on demand (called by Fly.io pipeline worker)
-app.post("/api/internal/trigger/collect", async (c) => {
-  // Require API_SECRET bearer token
-  const authHeader = c.req.header('Authorization');
-  if (!c.env.API_SECRET || authHeader !== `Bearer ${c.env.API_SECRET}`) {
-    return c.json({ error: 'Unauthorized' }, 401);
-  }
-
-  try {
-    const resp = await c.env.DATA_PROCESSOR.fetch(
-      new Request("http://processing/feed/collect", { method: "POST" })
-    );
-    const result = await resp.json();
-    return c.json({ ok: true, triggered: true, message: "Feed collection triggered", result });
-  } catch (error: any) {
-    console.error('[INTERNAL] trigger/collect error:', error);
-    return c.json({ ok: false, error: error.message }, 500);
   }
 });
 

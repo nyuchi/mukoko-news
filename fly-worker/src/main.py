@@ -8,10 +8,11 @@ Background jobs run via APScheduler on startup.
 FastAPI is used only to expose /health for Fly.io health checks.
 """
 
+import asyncio
 import time
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Header, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.config import settings
@@ -64,13 +65,24 @@ app = FastAPI(
     redoc_url=None,
 )
 
-# Restrict to internal/admin origins only — this is not a public API
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000"],
     allow_methods=["GET"],
     allow_headers=["*"],
 )
+
+
+@app.post("/trigger/collect", status_code=202)
+async def trigger_collect(authorization: str = Header(default="")):
+    """On-demand RSS collection — called by Next.js pull-to-refresh."""
+    token = authorization.removeprefix("Bearer ").strip()
+    if not settings.fly_trigger_token or token != settings.fly_trigger_token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+
+    from src.jobs.rss_collector import collect_feeds
+    asyncio.create_task(collect_feeds())
+    return {"ok": True, "message": "Collection triggered"}
 
 
 @app.get("/health")

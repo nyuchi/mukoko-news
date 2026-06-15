@@ -15,6 +15,7 @@ import { usePreferences } from "@/contexts/preferences-context";
 import { api, type Article, type StoryCluster as StoryClusterType, type CategorySection } from "@/lib/api";
 import { isValidImageUrl } from "@/lib/utils";
 import { BASE_URL } from "@/lib/constants";
+import { triggerFeedCollection } from "@/lib/actions/refresh";
 
 // Redesigned layout - Top Stories, Your News, By Category, Latest
 
@@ -88,6 +89,7 @@ export default function FeedPage() {
   // Refresh handler
   const handleRefresh = useCallback(() => {
     if (!refreshing && !loading) {
+      void triggerFeedCollection();
       fetchData(true);
     }
   }, [refreshing, loading, fetchData]);
