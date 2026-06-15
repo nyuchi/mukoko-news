@@ -49,7 +49,6 @@ export async function enrichArticle(article: Article, env: Env): Promise<Partial
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': env.ANTHROPIC_API_KEY,
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({

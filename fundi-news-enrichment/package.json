@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "wrangler dev",
+    "build": "npm install --prefer-offline 2>/dev/null || npm install && wrangler deploy --dry-run",
     "deploy": "wrangler deploy",
     "typecheck": "tsc --noEmit"
   },
