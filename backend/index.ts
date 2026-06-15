@@ -1028,7 +1028,7 @@ app.post("/api/refresh-rss", async (c) => {
  * Public endpoint for initial setup - can be called once to populate sources
  * Subsequent calls will skip existing sources
  */
-app.post("/api/feed/initialize-sources", async (c) => {
+app.post("/api/feed/initialize-sources", requireAdminRole(), async (c) => {
   try {
     console.log("[API] Initializing Pan-African RSS sources...");
 
@@ -2612,8 +2612,8 @@ app.post("/api/articles/:id/view", async (c) => {
     const userId = getCurrentUserId(c) || 'anonymous';
 
     const body = await c.req.json();
-    const readingTime = body.reading_time || 0; // seconds
-    const scrollDepth = body.scroll_depth || 0; // percentage 0-100
+    const readingTime = Math.min(Math.max(parseInt(body.reading_time) || 0, 0), 3600); // seconds, capped 0–3600
+    const scrollDepth = Math.min(Math.max(parseInt(body.scroll_depth) || 0, 0), 100);  // percentage, capped 0–100
 
     // Insert or update reading history
     await c.env.DB.prepare(`
@@ -4020,7 +4020,7 @@ app.get("/api/trending-categories", async (c) => {
 app.get("/api/user/personalized-categories", async (c) => {
   try {
     const services = initializeServices(c.env);
-    const userId = c.req.query('userId');
+    const userId = getCurrentUserId(c);
 
     if (!userId) {
       return c.json({ error: 'User ID required' }, 400);
@@ -4239,7 +4239,7 @@ app.post("/api/admin/sources/health/:sourceId/reset", async (c) => {
 app.get("/api/user/bookmarks", async (c) => {
   try {
     const services = initializeServices(c.env);
-    const userId = c.req.query('userId');
+    const userId = getCurrentUserId(c);
     const limit = parseInt(c.req.query('limit') || '100');
     const offset = parseInt(c.req.query('offset') || '0');
 
@@ -4265,7 +4265,7 @@ app.get("/api/user/bookmarks", async (c) => {
 app.get("/api/user/history", async (c) => {
   try {
     const services = initializeServices(c.env);
-    const userId = c.req.query('userId');
+    const userId = getCurrentUserId(c);
     const limit = parseInt(c.req.query('limit') || '50');
     const offset = parseInt(c.req.query('offset') || '0');
 
@@ -4291,7 +4291,7 @@ app.get("/api/user/history", async (c) => {
 app.get("/api/user/stats", async (c) => {
   try {
     const services = initializeServices(c.env);
-    const userId = c.req.query('userId');
+    const userId = getCurrentUserId(c);
 
     if (!userId) {
       return c.json({ error: 'User ID required' }, 400);
