@@ -200,7 +200,7 @@ class TestCollectNewsdata:
             patch("src.jobs.newsdata_collector.get_db", return_value=db),
             patch("src.jobs.newsdata_collector.get_entity_db", return_value=entity_db),
             patch("src.jobs.newsdata_collector.NewsdataClient", return_value=mock_client),
-            patch("src.jobs.newsdata_collector.process_articles_batch", new_callable=AsyncMock),
+            patch("src.jobs.newsdata_collector.notify_enrichment_worker", new_callable=AsyncMock),
         ):
             mock_settings.newsdata_api_key = "test-key"
             await collect_newsdata()
@@ -222,7 +222,7 @@ class TestCollectNewsdata:
             patch("src.jobs.newsdata_collector.get_db", return_value=db),
             patch("src.jobs.newsdata_collector.get_entity_db", return_value=entity_db),
             patch("src.jobs.newsdata_collector.NewsdataClient", return_value=mock_client),
-            patch("src.jobs.newsdata_collector.process_articles_batch", new_callable=AsyncMock),
+            patch("src.jobs.newsdata_collector.notify_enrichment_worker", new_callable=AsyncMock),
         ):
             mock_settings.newsdata_api_key = "test-key"
             await collect_newsdata()
@@ -246,7 +246,7 @@ class TestCollectNewsdata:
             patch("src.jobs.newsdata_collector.get_db", return_value=db),
             patch("src.jobs.newsdata_collector.get_entity_db", return_value=entity_db),
             patch("src.jobs.newsdata_collector.NewsdataClient", return_value=mock_client),
-            patch("src.jobs.newsdata_collector.process_articles_batch", new_callable=AsyncMock),
+            patch("src.jobs.newsdata_collector.notify_enrichment_worker", new_callable=AsyncMock),
         ):
             mock_settings.newsdata_api_key = "test-key"
             await collect_newsdata()

@@ -16,8 +16,8 @@ import httpx
 from bs4 import BeautifulSoup
 
 from src.config import settings
-from src.jobs.ai_processor import process_articles_batch
 from src.services.content_cleaner import clean_html, count_words, estimate_reading_time
+from src.services.enrichment_notifier import notify_enrichment_worker
 from src.services.mongodb import get_db, get_entity_db
 from src.services.newsdata_client import NewsdataClient, map_country, map_language
 from src.services.organization_resolver import resolve_or_create_org
@@ -89,8 +89,7 @@ async def collect_newsdata() -> None:
                 stats["errors"] += 1
 
         if new_article_ids:
-            print(f"[NEWSDATA] Running AI on {len(new_article_ids)} new articles...")
-            await process_articles_batch(new_article_ids)
+            await notify_enrichment_worker(new_article_ids, source="newsdata_api")
 
         duration = int((time.time() - start) * 1000)
         print(

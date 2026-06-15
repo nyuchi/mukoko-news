@@ -38,6 +38,10 @@ class Settings(BaseSettings):
     gateway_url: str = "https://news.mukoko.com"
     gateway_internal_token: str = ""   # API_SECRET for internal endpoints
 
+    # fundi-news-enrichment — AI enrichment agent (Cloudflare Worker)
+    fundi_enrichment_url: str = ""     # e.g. https://fundi-news-enrichment.workers.dev
+    fundi_enrichment_token: str = ""   # ENRICHMENT_API_TOKEN
+
     model_config = {"env_prefix": "", "case_sensitive": False}
 
 

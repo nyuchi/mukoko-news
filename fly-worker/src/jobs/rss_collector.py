@@ -1,7 +1,8 @@
 """RSS feed collection job.
 
 Fetches RSS feeds from all enabled feed sources, parses articles,
-deduplicates, inserts new articles, then runs AI processing inline.
+deduplicates, and inserts new articles. AI enrichment is handled by the
+fundi-news-enrichment Cloudflare Worker, notified via enrichment_notifier.
 """
 
 import time
@@ -14,7 +15,7 @@ from src.config import settings
 from src.services.mongodb import get_db
 from src.services.rss_parser import parse_feed
 from src.services.content_cleaner import clean_html, extract_text, count_words, estimate_reading_time
-from src.jobs.ai_processor import process_articles_batch
+from src.services.enrichment_notifier import notify_enrichment_worker
 
 
 async def collect_feeds() -> None:
@@ -40,8 +41,7 @@ async def collect_feeds() -> None:
             new_article_ids.extend(batch_ids)
 
         if new_article_ids:
-            print(f"[RSS] Processing {len(new_article_ids)} new articles with AI...")
-            await process_articles_batch(new_article_ids)
+            await notify_enrichment_worker(new_article_ids, source="rss")
 
         duration = int((time.time() - start) * 1000)
         print(
