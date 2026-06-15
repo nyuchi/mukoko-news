@@ -16,8 +16,5 @@
   },
   "placement": {
     "mode": "smart"
-  },
-  "routes": [
-    { "pattern": "news-enrichment.fundi.nyuchi.dev/*", "zone_name": "nyuchi.dev" }
-  ]
+  }
 }
