@@ -16,7 +16,7 @@ import { NewsSourceManager } from "./services/NewsSourceManager.js";
 import { RateLimitService } from "./services/RateLimitService.js";
 import { CSRFService } from "./services/CSRFService.js";
 // OIDC Auth - using id.mukoko.com for authentication
-import { oidcAuth, requireAuth, requireAdmin as requireAdminRole, getCurrentUser, getCurrentUserId, isAuthenticated } from "./middleware/workosAuth.js";
+import { oidcAuth, requireAuth, requireAdmin as requireAdminRole, requireModerator, getCurrentUser, getCurrentUserId, isAuthenticated } from "./middleware/workosAuth.js";
 // Additional enhancement services
 import { CategoryManager } from "./services/CategoryManager.js";
 import { ObservabilityService } from "./services/ObservabilityService.js";
@@ -5765,6 +5765,112 @@ const scheduledHandler = async (
     `).bind('scheduled_task', 'failed', error.message).run();
   }
 };
+
+// ── Moderator routes ──────────────────────────────────────────────────────────
+// Gated by requireModerator() — platform-team moderators and above.
+
+app.use("/api/moderator/*", requireModerator());
+
+// Content moderation: set moderationStatus on an article.
+// moderationStatus: 'active' | 'flagged' | 'removed'
+app.patch("/api/moderator/articles/:id", async (c) => {
+  const id = c.req.param("id");
+
+  let body: { moderationStatus?: string; reason?: string };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Invalid JSON body" }, 400);
+  }
+
+  const { moderationStatus, reason } = body;
+  const valid = ["active", "flagged", "removed"];
+  if (!moderationStatus || !valid.includes(moderationStatus)) {
+    return c.json({ error: "moderationStatus must be one of: active, flagged, removed" }, 400);
+  }
+
+  const mongoUri = (c.env as any).MONGODB_URI as string | undefined;
+  if (!mongoUri) {
+    return c.json({ error: "Database configuration error" }, 500);
+  }
+
+  try {
+    const db = await getMongoDb(mongoUri, "news");
+    const now = new Date();
+    const update: Record<string, unknown> = {
+      moderationStatus,
+      moderatedAt: now,
+      moderatedBy: getCurrentUserId(c),
+      updatedAt: now,
+    };
+    if (reason !== undefined) update.moderationReason = reason;
+
+    const result = await db.collection("articles").updateOne(
+      { _id: id as any },
+      { $set: update }
+    );
+
+    if (result.matchedCount === 0) return c.json({ error: "Article not found" }, 404);
+
+    return c.json({ ok: true, id, moderationStatus });
+  } catch (err: any) {
+    console.error("[MODERATOR] Failed to update article:", err);
+    return c.json({ error: "Failed to update moderation status" }, 500);
+  }
+});
+
+// ── Admin source mutation ────────────────────────────────────────────────────
+// Toggle isActive or update entity verification status on a feedSource.
+
+app.patch("/api/admin/sources/:id", async (c) => {
+  const id = c.req.param("id");
+
+  let body: { isActive?: boolean; status?: string };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Invalid JSON body" }, 400);
+  }
+
+  const { isActive, status } = body;
+  if (isActive === undefined && status === undefined) {
+    return c.json({ error: "Provide isActive or status" }, 400);
+  }
+
+  const validStatuses = ["pending", "claimed", "approved", "verified", "rejected"];
+  if (status !== undefined && !validStatuses.includes(status)) {
+    return c.json({ error: "status must be one of: pending, claimed, approved, verified, rejected" }, 400);
+  }
+
+  const mongoUri = (c.env as any).MONGODB_URI as string | undefined;
+  if (!mongoUri) {
+    return c.json({ error: "Database configuration error" }, 500);
+  }
+
+  try {
+    const db = await getMongoDb(mongoUri, "news");
+    const now = new Date();
+    const update: Record<string, unknown> = { updatedAt: now };
+    if (isActive !== undefined) update.isActive = isActive;
+    if (status !== undefined) update.status = status;
+
+    const result = await db.collection("feedSources").updateOne(
+      { _id: id as any },
+      { $set: update }
+    );
+
+    if (result.matchedCount === 0) return c.json({ error: "Source not found" }, 404);
+
+    const updated: Record<string, unknown> = {};
+    if (isActive !== undefined) updated.isActive = isActive;
+    if (status !== undefined) updated.status = status;
+
+    return c.json({ ok: true, id, updated });
+  } catch (err: any) {
+    console.error("[ADMIN] Failed to update source:", err);
+    return c.json({ error: "Failed to update source" }, 500);
+  }
+});
 
 // Type for scheduled controller
 interface ScheduledController {
