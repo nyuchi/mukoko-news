@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { COUNTRIES, CATEGORY_META, getCategoryEmoji, BASE_URL, getArticleUrl, getFullUrl } from '../constants';
 
 describe('COUNTRIES', () => {
-  it('should have all 16 Pan-African countries', () => {
-    expect(COUNTRIES).toHaveLength(16);
+  it('should have all 54 AU member states', () => {
+    expect(COUNTRIES).toHaveLength(54);
   });
 
   it('should have Zimbabwe as the first country (primary market)', () => {

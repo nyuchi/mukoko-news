@@ -151,7 +151,7 @@ describe("DiscoverPage", () => {
     const countryLinks = screen
       .getAllByRole("link")
       .filter((l) => l.getAttribute("href")?.startsWith("/discover?country="));
-    expect(countryLinks.length).toBe(16); // All 16 African countries
+    expect(countryLinks.length).toBe(54); // All 54 AU member states
   });
 });
 
