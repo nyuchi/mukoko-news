@@ -59,7 +59,16 @@ def _make_db(
     }
     db = MagicMock()
     db.__getitem__ = MagicMock(side_effect=colls.__getitem__)
-    return db, articles_coll, feed_sources_coll, pipeline_logs_coll, orgs_coll, candidates_coll
+
+    # entity_db mock
+    entities_coll = MagicMock()
+    entities_coll.insert_one = AsyncMock()
+    entities_coll.update_one = AsyncMock()
+    entity_colls = {"entities": entities_coll}
+    entity_db = MagicMock()
+    entity_db.__getitem__ = MagicMock(side_effect=entity_colls.__getitem__)
+
+    return db, articles_coll, feed_sources_coll, pipeline_logs_coll, orgs_coll, candidates_coll, entity_db
 
 
 def _raw_article(
@@ -168,17 +177,18 @@ class TestParseNewsdataDate:
 
 class TestCollectNewsdata:
     async def test_skips_when_no_api_key(self):
-        db, _, _, logs, _, _ = _make_db()
+        db, _, _, logs, _, _, entity_db = _make_db()
         with (
             patch("src.jobs.newsdata_collector.settings") as mock_settings,
             patch("src.jobs.newsdata_collector.get_db", return_value=db),
+            patch("src.jobs.newsdata_collector.get_entity_db", return_value=entity_db),
         ):
             mock_settings.newsdata_api_key = ""
             await collect_newsdata()
         logs.insert_one.assert_not_called()
 
     async def test_logs_success_on_completion(self):
-        db, articles, feed_sources, logs, orgs, candidates = _make_db()
+        db, articles, feed_sources, logs, orgs, candidates, entity_db = _make_db()
 
         mock_client = MagicMock()
         mock_client.get_latest_news = AsyncMock(
@@ -188,6 +198,7 @@ class TestCollectNewsdata:
         with (
             patch("src.jobs.newsdata_collector.settings") as mock_settings,
             patch("src.jobs.newsdata_collector.get_db", return_value=db),
+            patch("src.jobs.newsdata_collector.get_entity_db", return_value=entity_db),
             patch("src.jobs.newsdata_collector.NewsdataClient", return_value=mock_client),
             patch("src.jobs.newsdata_collector.process_articles_batch", new_callable=AsyncMock),
         ):
@@ -201,7 +212,7 @@ class TestCollectNewsdata:
 
     async def test_counts_errors_when_api_raises(self):
         """Per-language errors are caught; the job still finishes and logs success with errors."""
-        db, _, _, logs, _, _ = _make_db()
+        db, _, _, logs, _, _, entity_db = _make_db()
 
         mock_client = MagicMock()
         mock_client.get_latest_news = AsyncMock(side_effect=RuntimeError("boom"))
@@ -209,6 +220,7 @@ class TestCollectNewsdata:
         with (
             patch("src.jobs.newsdata_collector.settings") as mock_settings,
             patch("src.jobs.newsdata_collector.get_db", return_value=db),
+            patch("src.jobs.newsdata_collector.get_entity_db", return_value=entity_db),
             patch("src.jobs.newsdata_collector.NewsdataClient", return_value=mock_client),
             patch("src.jobs.newsdata_collector.process_articles_batch", new_callable=AsyncMock),
         ):
@@ -222,7 +234,7 @@ class TestCollectNewsdata:
 
     async def test_skips_duplicate_articles(self):
         raw = _raw_article(duplicate=True)
-        db, articles, feed_sources, logs, orgs, candidates = _make_db()
+        db, articles, feed_sources, logs, orgs, candidates, entity_db = _make_db()
 
         mock_client = MagicMock()
         mock_client.get_latest_news = AsyncMock(
@@ -232,6 +244,7 @@ class TestCollectNewsdata:
         with (
             patch("src.jobs.newsdata_collector.settings") as mock_settings,
             patch("src.jobs.newsdata_collector.get_db", return_value=db),
+            patch("src.jobs.newsdata_collector.get_entity_db", return_value=entity_db),
             patch("src.jobs.newsdata_collector.NewsdataClient", return_value=mock_client),
             patch("src.jobs.newsdata_collector.process_articles_batch", new_callable=AsyncMock),
         ):
@@ -247,13 +260,13 @@ class TestCollectNewsdata:
 
 class TestResolveSource:
     async def test_uses_cache_on_second_call(self):
-        db, _, feed_sources, _, orgs, candidates = _make_db()
+        db, _, feed_sources, _, orgs, candidates, entity_db = _make_db()
         cache: dict = {}
 
         # Prime the cache manually
         cache["herald_zw"] = ("existing-id", "org-herald-zw")
 
-        result = await _resolve_source(db, _raw_article(), "ZW", "en", cache, {"new_sources": 0})
+        result = await _resolve_source(db, entity_db, _raw_article(), "ZW", "en", cache, {"new_sources": 0})
 
         assert result == ("existing-id", "org-herald-zw")
         feed_sources.find_one.assert_not_called()
@@ -263,24 +276,23 @@ class TestResolveSource:
         feed_sources_coll.find_one = AsyncMock(
             return_value={"_id": "existing-fs", "mediaOrganizationId": "org-abc"}
         )
-        db, _, _, _, orgs, candidates = _make_db(feed_sources_coll=feed_sources_coll)
+        db, _, _, _, orgs, candidates, entity_db = _make_db(feed_sources_coll=feed_sources_coll)
         cache: dict = {}
 
-        result = await _resolve_source(db, _raw_article(), "ZW", "en", cache, {"new_sources": 0})
+        result = await _resolve_source(db, entity_db, _raw_article(), "ZW", "en", cache, {"new_sources": 0})
         assert result == ("existing-fs", "org-abc")
         assert cache["herald_zw"] == ("existing-fs", "org-abc")
 
     async def test_creates_new_source_with_rss_found(self):
-        db, _, feed_sources, _, orgs, candidates = _make_db()
+        db, _, feed_sources, _, orgs, candidates, entity_db = _make_db()
         stats = {"new_sources": 0}
         cache: dict = {}
 
-        with patch(
-            "src.jobs.newsdata_collector._probe_rss",
-            new_callable=AsyncMock,
-            return_value="https://www.herald.co.zw/feed/",
+        with (
+            patch("src.jobs.newsdata_collector._probe_rss", new_callable=AsyncMock, return_value="https://www.herald.co.zw/feed/"),
+            patch("src.jobs.newsdata_collector.resolve_or_create_org", new_callable=AsyncMock, return_value=("org-herald-zw-abc12345", "entity-uuid-1234")),
         ):
-            result = await _resolve_source(db, _raw_article(), "ZW", "en", cache, stats)
+            result = await _resolve_source(db, entity_db, _raw_article(), "ZW", "en", cache, stats)
 
         assert result[0] == "newsdata-herald_zw"
         assert stats["new_sources"] == 1
@@ -291,16 +303,15 @@ class TestResolveSource:
         assert inserted["feedType"] == "rss"
 
     async def test_creates_inactive_source_without_rss(self):
-        db, _, feed_sources, _, orgs, candidates = _make_db()
+        db, _, feed_sources, _, orgs, candidates, entity_db = _make_db()
         stats = {"new_sources": 0}
         cache: dict = {}
 
-        with patch(
-            "src.jobs.newsdata_collector._probe_rss",
-            new_callable=AsyncMock,
-            return_value=None,
+        with (
+            patch("src.jobs.newsdata_collector._probe_rss", new_callable=AsyncMock, return_value=None),
+            patch("src.jobs.newsdata_collector.resolve_or_create_org", new_callable=AsyncMock, return_value=("org-herald-zw-abc12345", "entity-uuid-1234")),
         ):
-            result = await _resolve_source(db, _raw_article(), "ZW", "en", cache, stats)
+            result = await _resolve_source(db, entity_db, _raw_article(), "ZW", "en", cache, stats)
 
         assert result[0] == "newsdata-herald_zw"
         inserted = feed_sources.insert_one.call_args[0][0]
@@ -315,7 +326,7 @@ class TestResolveSource:
 
 class TestInsertArticle:
     async def test_inserts_article_and_returns_id(self):
-        db, articles, _, _, _, _ = _make_db()
+        db, articles, _, _, _, _, entity_db = _make_db()
         raw = _raw_article()
 
         article_id = await _insert_article(db, raw, raw["link"], "newsdata-herald_zw", "org-herald-zw", "ZW", "en")
@@ -330,27 +341,27 @@ class TestInsertArticle:
         assert doc["isApproved"] is True
 
     async def test_returns_none_for_missing_headline(self):
-        db, articles, _, _, _, _ = _make_db()
+        db, articles, _, _, _, _, entity_db = _make_db()
         raw = _raw_article(title="")
 
-        result = await _insert_article(db, raw, raw["link"], "newsdata-herald_zw", None, "ZW", "en")
+        result = await _insert_article(db, raw, raw["link"], "newsdata-herald_zw", "", "ZW", "en")
 
         assert result is None
         articles.insert_one.assert_not_called()
 
     async def test_includes_image_object(self):
-        db, articles, _, _, _, _ = _make_db()
+        db, articles, _, _, _, _, entity_db = _make_db()
         raw = _raw_article()
-        await _insert_article(db, raw, raw["link"], "newsdata-herald_zw", None, "ZW", "en")
+        await _insert_article(db, raw, raw["link"], "newsdata-herald_zw", "", "ZW", "en")
 
         doc = articles.insert_one.call_args[0][0]
         assert doc["image"] == [{"@type": "ImageObject", "url": "https://www.herald.co.zw/img/economy.jpg"}]
 
     async def test_date_parsed_correctly(self):
         from datetime import timezone
-        db, articles, _, _, _, _ = _make_db()
+        db, articles, _, _, _, _, entity_db = _make_db()
         raw = _raw_article()
-        await _insert_article(db, raw, raw["link"], "newsdata-herald_zw", None, "ZW", "en")
+        await _insert_article(db, raw, raw["link"], "newsdata-herald_zw", "", "ZW", "en")
 
         doc = articles.insert_one.call_args[0][0]
         assert doc["datePublished"].year == 2026

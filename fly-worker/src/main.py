@@ -33,6 +33,14 @@ async def lifespan(app: FastAPI):
     else:
         print("[PIPELINE] WARNING: MongoDB unavailable — pipeline degraded.")
 
+    # Bootstrap missing org+entity records for existing feedSources (idempotent).
+    # Runs in the background so it does not delay startup.
+    if mongo_ok:
+        import asyncio
+        from src.jobs.organization_bootstrapper import bootstrap_organizations
+        asyncio.create_task(bootstrap_organizations())
+        print("[PIPELINE] Organization bootstrap scheduled.")
+
     print("[PIPELINE] Starting scheduler...")
     _scheduler = create_scheduler()
     _scheduler.start()

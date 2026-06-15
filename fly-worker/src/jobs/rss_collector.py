@@ -160,6 +160,7 @@ async def _insert_articles(db, articles: list[dict], source: dict, stats: dict) 
             "slug": slug,
             "inLanguage": article.get("inlanguage", "en"),
             "status": "approved" if auto_approve else "pending",
+            "moderationStatus": "active",
             "isApproved": auto_approve,
             "scrapedAt": now,
             "createdAt": now,

@@ -34,6 +34,10 @@ class Settings(BaseSettings):
     log_level: str = "info"
     environment: str = "production"
 
+    # Gateway URL — for triggering Cloudflare processing pipeline
+    gateway_url: str = "https://news.mukoko.com"
+    gateway_internal_token: str = ""   # API_SECRET for internal endpoints
+
     model_config = {"env_prefix": "", "case_sensitive": False}
 
 

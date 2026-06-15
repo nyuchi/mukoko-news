@@ -18,8 +18,9 @@ from bs4 import BeautifulSoup
 from src.config import settings
 from src.jobs.ai_processor import process_articles_batch
 from src.services.content_cleaner import clean_html, count_words, estimate_reading_time
-from src.services.mongodb import get_db
+from src.services.mongodb import get_db, get_entity_db
 from src.services.newsdata_client import NewsdataClient, map_country, map_language
+from src.services.organization_resolver import resolve_or_create_org
 
 # Country batches split by primary language to stay within request limits.
 # newsdata.io free tier: 200 credits/day → 2 requests per 6h run.
@@ -50,6 +51,7 @@ async def collect_newsdata() -> None:
 
     start = time.time()
     db = get_db()
+    entity_db = get_entity_db()
     client = NewsdataClient(settings.newsdata_api_key)
     stats: dict[str, int] = {
         "fetched": 0,
@@ -60,7 +62,7 @@ async def collect_newsdata() -> None:
     }
 
     # Cache source resolutions for this run: newsdata source_id → (feed_source_id, org_id)
-    source_cache: dict[str, tuple[str, str | None]] = {}
+    source_cache: dict[str, tuple[str, str]] = {}
 
     try:
         new_article_ids: list[str] = []
@@ -76,7 +78,7 @@ async def collect_newsdata() -> None:
                 articles = response.get("results") or []
                 stats["fetched"] += len(articles)
 
-                ids = await _ingest_articles(db, articles, source_cache, stats)
+                ids = await _ingest_articles(db, entity_db, articles, source_cache, stats)
                 new_article_ids.extend(ids)
 
             except httpx.HTTPStatusError as e:
@@ -124,8 +126,9 @@ async def collect_newsdata() -> None:
 
 async def _ingest_articles(
     db,
+    entity_db,
     articles: list[dict],
-    source_cache: dict[str, tuple[str, str | None]],
+    source_cache: dict[str, tuple[str, str]],
     stats: dict[str, int],
 ) -> list[str]:
     """Normalize and insert newsdata.io articles. Returns IDs of newly inserted articles."""
@@ -149,7 +152,7 @@ async def _ingest_articles(
             language_iso = map_language(raw.get("language") or "en")
 
             feed_source_id, org_id = await _resolve_source(
-                db, raw, country_iso, language_iso, source_cache, stats
+                db, entity_db, raw, country_iso, language_iso, source_cache, stats
             )
 
             article_id = await _insert_article(
@@ -168,12 +171,13 @@ async def _ingest_articles(
 
 async def _resolve_source(
     db,
+    entity_db,
     raw: dict,
     country_iso: str,
     language_iso: str,
-    source_cache: dict[str, tuple[str, str | None]],
+    source_cache: dict[str, tuple[str, str]],
     stats: dict[str, int],
-) -> tuple[str, str | None]:
+) -> tuple[str, str]:
     """Return (feedSourceId, mediaOrganizationId) for a newsdata.io article.
 
     Checks the in-run cache, then the DB. On first encounter of a source,
@@ -191,23 +195,18 @@ async def _resolve_source(
         {"_id": 1, "mediaOrganizationId": 1},
     )
     if existing:
-        result = (existing["_id"], existing.get("mediaOrganizationId"))
+        cached_org_id: str = existing.get("mediaOrganizationId") or ""
+        result: tuple[str, str] = (existing["_id"], cached_org_id)
         source_cache[newsdata_source_id] = result
         return result
 
     source_url = raw.get("source_url", "")
     source_name = raw.get("source_name") or newsdata_source_id
 
-    # Match an existing media org by domain
-    org_id: str | None = None
-    if source_url:
-        domain = _extract_domain(source_url)
-        org = await db["newsMediaOrganizations"].find_one(
-            {"url": {"$regex": re.escape(domain), "$options": "i"}},
-            {"_id": 1},
-        )
-        if org:
-            org_id = org["_id"]
+    # Resolve or create org + entity records (guaranteed non-None org_id)
+    org_id, entity_id = await resolve_or_create_org(
+        db, entity_db, source_name, source_url or None, country_iso, newsdata_source_id
+    )
 
     # Probe for RSS feed and create the feedSource
     now = datetime.now(timezone.utc)
@@ -226,6 +225,7 @@ async def _resolve_source(
         "countryCode": country_iso,
         "language": language_iso,
         "mediaOrganizationId": org_id,
+        "entityId": entity_id,
         "articleCount": 1,
         "rssProbeStatus": "found" if rss_url else "not_found",
         "rssFeedUrl": rss_url,
@@ -235,9 +235,9 @@ async def _resolve_source(
     })
     stats["new_sources"] += 1
 
-    result = (virtual_id, org_id)
-    source_cache[newsdata_source_id] = result
-    return result
+    new_result: tuple[str, str] = (virtual_id, org_id)
+    source_cache[newsdata_source_id] = new_result
+    return new_result
 
 
 async def _probe_rss(source_url: str) -> str | None:
@@ -276,7 +276,7 @@ async def _create_feed_source(
     newsdata_source_id: str,
     country_iso: str,
     language_iso: str,
-    org_id: str | None,
+    org_id: str,
     now: datetime,
 ) -> None:
     """Upsert a feedSource record for a newsdata.io-discovered source.
@@ -322,7 +322,7 @@ async def _insert_article(
     raw: dict,
     url: str,
     feed_source_id: str,
-    org_id: str | None,
+    org_id: str,
     country_iso: str,
     language_iso: str,
 ) -> str | None:
@@ -367,6 +367,7 @@ async def _insert_article(
         "slug": slug,
         "inLanguage": language_iso,
         "status": "approved",
+        "moderationStatus": "active",
         "isApproved": True,
         "scrapedAt": now,
         "createdAt": now,

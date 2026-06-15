@@ -8,6 +8,7 @@ All scheduled jobs for the Fly.io pipeline:
 - Source health check (every 6 hours)
 - Embedding backfill (every 10 min)
 - Stale data cleanup (daily at 3:00 UTC)
+- Organization bootstrap (daily at 4:00 UTC) — idempotent, fills missing org+entity docs
 """
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -26,6 +27,7 @@ def create_scheduler() -> AsyncIOScheduler:
     from src.jobs.health_checker import check_source_health
     from src.jobs.cleanup import cleanup_stale_data
     from src.jobs.embedding_backfill import backfill_embeddings
+    from src.jobs.organization_bootstrapper import bootstrap_organizations
 
     scheduler.add_job(
         collect_feeds,
@@ -80,6 +82,14 @@ def create_scheduler() -> AsyncIOScheduler:
         CronTrigger(hour=3, minute=0),
         id="cleanup",
         name="Stale Data Cleanup",
+        max_instances=1,
+    )
+
+    scheduler.add_job(
+        bootstrap_organizations,
+        CronTrigger(hour=4, minute=0),
+        id="org_bootstrap",
+        name="Organization Bootstrap",
         max_instances=1,
     )
 
