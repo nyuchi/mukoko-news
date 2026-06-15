@@ -13,10 +13,9 @@ import time
 from collections import deque
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Header, HTTPException, status
+from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 
-from src.config import settings
 from src.scheduler import create_scheduler
 from src.services.mongodb import ping_mongodb, close_mongodb
 
@@ -99,15 +98,11 @@ app.add_middleware(
 
 
 @app.post("/trigger/collect", status_code=202)
-async def trigger_collect(authorization: str = Header(default="")):
+async def trigger_collect():
     """On-demand RSS collection — called by Next.js pull-to-refresh.
 
     Global rate limit: 3 triggers per minute regardless of caller count.
     """
-    token = authorization.removeprefix("Bearer ").strip()
-    if not settings.fly_trigger_token or token != settings.fly_trigger_token:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
     if not await _trigger_limiter.is_allowed():
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Rate limit exceeded — 3 triggers/min")
 

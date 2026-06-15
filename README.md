@@ -116,12 +116,14 @@ EXPO_PUBLIC_API_SECRET=your_api_secret_here
 - **Search**: Vectorize for semantic search
 - **Auth**: OIDC via id.mukoko.com
 
-### Pipeline Worker Stack
+### Pipeline Worker Stack (`fly-worker/`)
 
-- **Runtime**: Fly.io (Johannesburg, JNB) — persistent FastAPI + APScheduler process
-- **Database**: MongoDB Atlas via Motor async driver (~30 databases: news, engagement, entity, platform)
+- **Runtime**: Fly.io (`mukoko-news-api`, Johannesburg JNB) — persistent FastAPI + APScheduler process
+- **Database**: MongoDB Atlas via Motor async driver (`news`, `engagement`, `entity`, `platform` databases)
 - **AI**: Anthropic Claude for NLP enrichment + Cloudflare Workers AI for BGE-M3 embeddings
-- **Jobs**: RSS ingestion, AI enrichment, engagement aggregation, source health, trending, embeddings
+- **Jobs**: RSS ingestion (every 15 min), newsdata.io ingestion (every 6 h), AI enrichment, engagement aggregation, source health monitoring, trending, embedding backfill
+- **Endpoints**: `GET /health` (Fly.io health check), `POST /trigger/collect` (on-demand RSS trigger, rate-limited 3/min)
+- **No auth on trigger endpoint** — it's rate-limited only; callers are trusted internal services
 
 ### Design System (Nyuchi Brand v6)
 
@@ -315,9 +317,11 @@ npm run test:watch   # Watch mode
 npm run test:coverage # With coverage
 ```
 
-**Test Files** (131 tests total):
+**Test Files** (frontend):
 - `src/lib/__tests__/utils.test.ts` - Utility functions + CSS injection & XSS attack vector tests
 - `src/lib/__tests__/constants.test.ts` - Constants, URL helpers, path traversal & injection tests
+- `src/lib/__tests__/rate-limit.test.ts` - Rate limiter + IP extraction tests
+- `src/lib/__tests__/refresh.test.ts` - Feed refresh server action tests
 - `src/components/__tests__/json-ld.test.tsx` - JSON-LD XSS prevention + expanded injection payloads
 - `src/components/__tests__/breadcrumb.test.tsx` - Breadcrumb navigation tests
 - `src/components/__tests__/bottom-nav.test.tsx` - Mobile bottom navigation + routing tests
@@ -354,13 +358,15 @@ Deployed automatically by the Cloudflare GitHub App on push to main. Manual:
 cd backend && npm run deploy
 ```
 
-### Pipeline Worker (Fly.io)
+### Pipeline Worker (Fly.io — `mukoko-news-api`)
 
 Deployed automatically by CI on push to main (`deploy-fly-worker` job, requires `FLY_API_TOKEN` secret). Manual:
 
 ```bash
 cd fly-worker && flyctl deploy --remote-only
 ```
+
+Smoke tests run after every deploy and check `/health` (MongoDB connected + all jobs scheduled).
 
 ## Contributing
 

@@ -5,6 +5,38 @@ All notable changes to Mukoko News will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.0.0] - 2026-06-15
+
+### Added
+
+- **newsdata.io ingestion** (`fly-worker`): New `newsdata_collector` job runs every 6 h, ingesting articles from 16 African countries across English and French language batches. Probes 9 RSS paths on new sources — creates active `feedSource` if found, inactive placeholder otherwise. All discovered sources logged in `news.sourceDiscoveryCandidates`.
+- **MongoDB Atlas search indexes**: `articles_vector_search` (1024-dim BGE-M3 cosine via `$vectorSearch`) and `articles_text_search` (lucene.english fuzzy via `$search`). `getRelatedArticles()` and `searchArticles()` now use Atlas search with regex fallback.
+- **MCP server v2.0.0** (`backend/mcp/server.ts`): Complete rewrite to task-based tools supporting country codes (ZW, KE), region names (East Africa), and city names (Harare, Lagos). Task tools: `get_briefing`, `track_story`, `get_location_news`, `compare_locations`, `get_source_view`, `find_stories`, `get_my_feed`. Open data analytics: `get_trending_analytics`, `detect_surge`, `get_content_analytics`.
+- **CI test coverage**: `test-image-worker`, `test-fundi-enrichment`, and `smoke-tests` jobs added — smoke tests check all live endpoints after every Fly.io deploy.
+- **OpenAPI schema**: Expanded from 6 to 84 paths covering backend, fly-worker, and fundi enrichment worker.
+- **fly-worker README**: Full documentation for pipeline worker — jobs, endpoints, secrets, deployment.
+- **New tests**: `fly-worker/tests/test_trigger_collect.py`, `src/lib/__tests__/rate-limit.test.ts`, `src/lib/__tests__/refresh.test.ts`.
+
+### Changed
+
+- **fly-worker**: Pure pipeline worker (`mukoko-news-api` on Fly.io). `POST /trigger/collect` is rate-limited (3/min) with no authentication.
+- **fundi-news-enrichment**: Added `pnpm-lock.yaml` so Cloudflare GitHub App CI installs dependencies correctly.
+- **image-worker**: Added to CI (`test-image-worker` typecheck job).
+
+### Security
+
+- **IDOR fixes** (`backend/index.ts`): Four `/api/user/*` handlers replaced `c.req.query('userId')` with `getCurrentUserId(c)` — identity now comes from verified JWT, not query param.
+- **Admin gate**: `POST /api/feed/initialize-sources` now requires admin role via `requireAdminRole()`.
+- **Input clamping**: `POST /api/articles/:id/view` clamps `reading_time` (0–3600 s) and `scroll_depth` (0–100%).
+
+### Fixed
+
+- **Fly.io app name**: `fly.toml` corrected to `mukoko-news-api` (was `mukoko-news`).
+- **DNS**: `news-ingestion.fly-worker.nyuchi.dev` CNAME updated to point at `mukoko-news-api.fly.dev`.
+- **fundi CI**: 3-second build failures fixed by adding `pnpm-lock.yaml` to the subdirectory.
+
+---
+
 ## [4.0.2] - 2026-01-24
 
 ### Added

@@ -53,77 +53,35 @@ class TestTriggerCollect:
         from src.main import _trigger_limiter
         _trigger_limiter._timestamps.clear()
 
-    async def test_rejects_missing_authorization(self):
+    async def test_returns_202_body(self):
         from src.main import trigger_collect
 
-        with patch("src.main.settings") as s:
-            s.fly_trigger_token = "secret"
-            with pytest.raises(HTTPException) as exc:
-                await trigger_collect(authorization="")
-        assert exc.value.status_code == 401
-
-    async def test_rejects_wrong_token(self):
-        from src.main import trigger_collect
-
-        with patch("src.main.settings") as s:
-            s.fly_trigger_token = "secret"
-            with pytest.raises(HTTPException) as exc:
-                await trigger_collect(authorization="Bearer wrong-token")
-        assert exc.value.status_code == 401
-
-    async def test_rejects_when_no_token_configured(self):
-        """If the server has no token configured, every request is rejected."""
-        from src.main import trigger_collect
-
-        with patch("src.main.settings") as s:
-            s.fly_trigger_token = ""
-            with pytest.raises(HTTPException) as exc:
-                await trigger_collect(authorization="Bearer anything")
-        assert exc.value.status_code == 401
-
-    async def test_accepts_valid_token_and_returns_202_body(self):
-        from src.main import trigger_collect
-
-        with (
-            patch("src.main.settings") as s,
-            patch("src.jobs.rss_collector.collect_feeds", new_callable=AsyncMock),
-        ):
-            s.fly_trigger_token = "secret"
-            result = await trigger_collect(authorization="Bearer secret")
+        with patch("src.jobs.rss_collector.collect_feeds", new_callable=AsyncMock):
+            result = await trigger_collect()
 
         assert result == {"ok": True, "message": "Collection triggered"}
 
     async def test_rate_limits_after_three_calls(self):
         from src.main import trigger_collect
 
-        with (
-            patch("src.main.settings") as s,
-            patch("src.jobs.rss_collector.collect_feeds", new_callable=AsyncMock),
-        ):
-            s.fly_trigger_token = "tok"
+        with patch("src.jobs.rss_collector.collect_feeds", new_callable=AsyncMock):
             for _ in range(3):
-                await trigger_collect(authorization="Bearer tok")
+                await trigger_collect()
             with pytest.raises(HTTPException) as exc:
-                await trigger_collect(authorization="Bearer tok")
+                await trigger_collect()
 
         assert exc.value.status_code == 429
 
-    async def test_rate_limit_is_global_not_per_caller(self):
-        """Rate limit applies regardless of how many distinct callers send requests."""
+    async def test_rate_limit_message(self):
         from src.main import trigger_collect
 
-        with (
-            patch("src.main.settings") as s,
-            patch("src.jobs.rss_collector.collect_feeds", new_callable=AsyncMock),
-        ):
-            s.fly_trigger_token = "tok"
+        with patch("src.jobs.rss_collector.collect_feeds", new_callable=AsyncMock):
             for _ in range(3):
-                await trigger_collect(authorization="Bearer tok")
+                await trigger_collect()
             with pytest.raises(HTTPException) as exc:
-                # Same token, same limiter bucket → still blocked
-                await trigger_collect(authorization="Bearer tok")
+                await trigger_collect()
 
-        assert exc.value.status_code == 429
+        assert "Rate limit" in exc.value.detail
 
 
 class TestHealthEndpoint:

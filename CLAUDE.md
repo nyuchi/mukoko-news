@@ -251,8 +251,8 @@ Services follow a class-based pattern with D1 database access:
 ## Deployment
 
 - **Frontend**: Auto-deploys to Vercel on push to main
-- **Pipeline Worker** (`mukoko-news`): CI deploys to Fly.io on push to main via `deploy-fly-worker` job (requires `FLY_API_TOKEN` secret). Manual: `cd fly-worker && flyctl deploy --remote-only`
-- **Python Worker** (`mukoko-news-api`): Deployed by Cloudflare GitHub App on push to main. Manual: `cd processing && uv run pywrangler deploy`
+- **Pipeline Worker** (`mukoko-news-api`): CI deploys to Fly.io on push to main via `deploy-fly-worker` job (requires `FLY_API_TOKEN` secret). Manual: `cd fly-worker && flyctl deploy --remote-only`
+- **Python Worker** (`mukoko-news-processor`): Deployed by Cloudflare GitHub App on push to main. Manual: `cd processing && uv run pywrangler deploy`
 - **Backend** (`mukoko-news-gateway`): Deployed by Cloudflare GitHub App on push to main. Manual: `cd backend && npm run deploy`
 - **Image Worker** (`mukoko-images`): Deployed by Cloudflare GitHub App on push to main. Manual: `cd image-worker && npx wrangler deploy`. Routes to `assets.mukoko.com/i/*`.
 - **Cloudflare GitHub App** manages Workers — configure each worker's root directory in the Cloudflare dashboard (Workers & Pages → Settings → Build). For `mukoko-news-gateway` the root directory must be set to `backend/`.
