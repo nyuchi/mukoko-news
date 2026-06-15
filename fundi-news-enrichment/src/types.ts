@@ -1,6 +1,7 @@
 export interface Env {
   AI: Ai;
   MONGODB_URI: string;
+  ANTHROPIC_API_KEY: string;
   ENRICHMENT_API_TOKEN: string;
   FUNDI_INGESTION_URL: string;      // https://news-ingestion.fly-worker.nyuchi.dev
   FUNDI_INGESTION_TOKEN: string;

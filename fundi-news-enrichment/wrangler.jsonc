@@ -18,7 +18,7 @@
   "placement": {
     "mode": "smart"
   },
-  "custom_domains": [
-    { "hostname": "news-enrichment.fundi.nyuchi.dev" }
+  "routes": [
+    { "pattern": "news-enrichment.fundi.nyuchi.dev/*", "zone_name": "nyuchi.dev" }
   ]
 }

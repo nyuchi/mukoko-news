@@ -1,5 +1,9 @@
 import type { Env, Article, EnrichmentResult, NamedEntity } from './types';
 
+const ACCOUNT_ID = '125a2dfbc21f76a25c980609609e8218';
+const GATEWAY = 'shamwari';
+const MODEL = 'claude-haiku-4-5-20251001';
+
 const SYSTEM_PROMPT =
   'You are an African news article enrichment AI for Mukoko News. Respond only with valid JSON — no markdown, no explanation.';
 
@@ -33,19 +37,36 @@ Article:
 ${content}`;
 }
 
-export async function enrichArticle(article: Article, env: Env): Promise<Partial<EnrichmentResult>> {
-  const result = await env.AI.run('@cf/meta/llama-3.3-70b-instruct-fp8-fast' as Parameters<typeof env.AI.run>[0], {
-    messages: [
-      { role: 'system', content: SYSTEM_PROMPT },
-      { role: 'user', content: buildPrompt(article) },
-    ],
-    response_format: { type: 'json_object' },
-    max_tokens: 1024,
-  });
+interface AnthropicResponse {
+  content: Array<{ type: string; text: string }>;
+  stop_reason: string;
+}
 
-  const text = typeof result === 'object' && result !== null && 'response' in result
-    ? String((result as { response: unknown }).response)
-    : '';
+export async function enrichArticle(article: Article, env: Env): Promise<Partial<EnrichmentResult>> {
+  const resp = await fetch(
+    `https://gateway.ai.cloudflare.com/v1/${ACCOUNT_ID}/${GATEWAY}/anthropic/v1/messages`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        max_tokens: 1024,
+        system: SYSTEM_PROMPT,
+        messages: [{ role: 'user', content: buildPrompt(article) }],
+      }),
+    }
+  );
+
+  if (!resp.ok) {
+    throw new Error(`Anthropic via Shamwari gateway: ${resp.status} ${await resp.text()}`);
+  }
+
+  const result = (await resp.json()) as AnthropicResponse;
+  const text = result.content.find((b) => b.type === 'text')?.text ?? '';
 
   let data: Record<string, unknown> = {};
   try {
