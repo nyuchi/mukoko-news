@@ -9,30 +9,90 @@ import httpx
 
 NEWSDATA_BASE_URL = "https://newsdata.io/api/1"
 
-# newsdata.io country codes for the 16 African countries we cover
+# newsdata.io country codes for all supported African countries
 AFRICAN_COUNTRY_CODES = [
-    "zw", "za", "ke", "ng", "gh", "et", "eg", "ma", "tz", "ug", "sn", "ci", "cm", "mz", "zm", "rw",
+    # East Africa
+    "zw", "ke", "tz", "ug", "rw", "et", "bi", "dj", "er", "so", "ss", "km", "mg", "mu", "sc",
+    # Southern Africa
+    "za", "bw", "zm", "mw", "na", "mz", "ls", "sz", "ao",
+    # West Africa
+    "ng", "gh", "sn", "ci", "cm", "bj", "bf", "cv", "gm", "gn", "gw", "lr", "ml", "mr", "ne", "sl", "tg", "gq",
+    # Central Africa
+    "cd", "cg", "cf", "td", "ga",
+    # North Africa
+    "eg", "ma", "tn", "dz", "ly", "sd",
 ]
 
 # newsdata.io response country names → ISO 3166-1 alpha-2
 _COUNTRY_NAME_TO_ISO: dict[str, str] = {
+    # East Africa
     "zimbabwe": "ZW",
-    "south africa": "ZA",
     "kenya": "KE",
-    "nigeria": "NG",
-    "ghana": "GH",
-    "ethiopia": "ET",
-    "egypt": "EG",
-    "morocco": "MA",
     "tanzania": "TZ",
     "uganda": "UG",
+    "rwanda": "RW",
+    "ethiopia": "ET",
+    "burundi": "BI",
+    "djibouti": "DJ",
+    "eritrea": "ER",
+    "somalia": "SO",
+    "south sudan": "SS",
+    "comoros": "KM",
+    "madagascar": "MG",
+    "mauritius": "MU",
+    "seychelles": "SC",
+    # Southern Africa
+    "south africa": "ZA",
+    "botswana": "BW",
+    "zambia": "ZM",
+    "malawi": "MW",
+    "namibia": "NA",
+    "mozambique": "MZ",
+    "lesotho": "LS",
+    "eswatini": "SZ",
+    "swaziland": "SZ",
+    "angola": "AO",
+    # West Africa
+    "nigeria": "NG",
+    "ghana": "GH",
     "senegal": "SN",
     "ivory coast": "CI",
     "cote d'ivoire": "CI",
+    "côte d'ivoire": "CI",
     "cameroon": "CM",
-    "mozambique": "MZ",
-    "zambia": "ZM",
-    "rwanda": "RW",
+    "benin": "BJ",
+    "burkina faso": "BF",
+    "cabo verde": "CV",
+    "cape verde": "CV",
+    "gambia": "GM",
+    "the gambia": "GM",
+    "guinea": "GN",
+    "guinea-bissau": "GW",
+    "liberia": "LR",
+    "mali": "ML",
+    "mauritania": "MR",
+    "niger": "NE",
+    "sierra leone": "SL",
+    "togo": "TG",
+    "equatorial guinea": "GQ",
+    "sao tome and principe": "ST",
+    "são tomé and príncipe": "ST",
+    # Central Africa
+    "democratic republic of the congo": "CD",
+    "dr congo": "CD",
+    "congo, democratic republic": "CD",
+    "republic of the congo": "CG",
+    "congo": "CG",
+    "central african republic": "CF",
+    "chad": "TD",
+    "gabon": "GA",
+    # North Africa
+    "egypt": "EG",
+    "morocco": "MA",
+    "tunisia": "TN",
+    "algeria": "DZ",
+    "libya": "LY",
+    "sudan": "SD",
 }
 
 # newsdata.io language names → ISO 639-1
