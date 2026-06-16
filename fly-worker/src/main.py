@@ -9,13 +9,15 @@ FastAPI is used only to expose /health for Fly.io health checks.
 """
 
 import asyncio
+import hmac
 import time
 from collections import deque
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 
+from src.config import settings
 from src.scheduler import create_scheduler
 from src.services.mongodb import ping_mongodb, close_mongodb
 
@@ -98,11 +100,18 @@ app.add_middleware(
 
 
 @app.post("/trigger/collect", status_code=202)
-async def trigger_collect():
+async def trigger_collect(request: Request):
     """On-demand RSS collection — called by Next.js pull-to-refresh.
 
+    Requires Bearer token when FLY_TRIGGER_TOKEN is set.
     Global rate limit: 3 triggers per minute regardless of caller count.
     """
+    expected = settings.fly_trigger_token
+    if expected:
+        auth = request.headers.get("Authorization", "")
+        if not hmac.compare_digest(auth, f"Bearer {expected}"):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+
     if not await _trigger_limiter.is_allowed():
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Rate limit exceeded — 3 triggers/min")
 
