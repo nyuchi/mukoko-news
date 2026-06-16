@@ -42,6 +42,9 @@ class Settings(BaseSettings):
     fundi_enrichment_url: str = ""     # e.g. https://fundi-news-enrichment.workers.dev
     fundi_enrichment_token: str = ""   # ENRICHMENT_API_TOKEN
 
+    # Trigger auth — Next.js pull-to-refresh must send this as Bearer token
+    fly_trigger_token: str = ""
+
     model_config = {"env_prefix": "", "case_sensitive": False}
 
 

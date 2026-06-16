@@ -53,11 +53,22 @@ class TestTriggerCollect:
         from src.main import _trigger_limiter
         _trigger_limiter._timestamps.clear()
 
+    @pytest.fixture(autouse=True)
+    def disable_auth(self, monkeypatch):
+        """Disable token auth so rate-limit tests run without credentials."""
+        import src.main as m
+        monkeypatch.setattr(m.settings, "fly_trigger_token", "")
+
+    def _make_request(self, auth_header: str = "") -> MagicMock:
+        req = MagicMock()
+        req.headers.get.return_value = auth_header
+        return req
+
     async def test_returns_202_body(self):
         from src.main import trigger_collect
 
         with patch("src.jobs.rss_collector.collect_feeds", new_callable=AsyncMock):
-            result = await trigger_collect()
+            result = await trigger_collect(self._make_request())
 
         assert result == {"ok": True, "message": "Collection triggered"}
 
@@ -66,9 +77,9 @@ class TestTriggerCollect:
 
         with patch("src.jobs.rss_collector.collect_feeds", new_callable=AsyncMock):
             for _ in range(3):
-                await trigger_collect()
+                await trigger_collect(self._make_request())
             with pytest.raises(HTTPException) as exc:
-                await trigger_collect()
+                await trigger_collect(self._make_request())
 
         assert exc.value.status_code == 429
 
@@ -77,11 +88,31 @@ class TestTriggerCollect:
 
         with patch("src.jobs.rss_collector.collect_feeds", new_callable=AsyncMock):
             for _ in range(3):
-                await trigger_collect()
+                await trigger_collect(self._make_request())
             with pytest.raises(HTTPException) as exc:
-                await trigger_collect()
+                await trigger_collect(self._make_request())
 
         assert "Rate limit" in exc.value.detail
+
+    async def test_rejects_request_without_auth_when_token_configured(self, monkeypatch):
+        import src.main as m
+        monkeypatch.setattr(m.settings, "fly_trigger_token", "supersecret")
+        from src.main import trigger_collect
+
+        with pytest.raises(HTTPException) as exc:
+            await trigger_collect(self._make_request(auth_header=""))
+
+        assert exc.value.status_code == 401
+
+    async def test_accepts_valid_bearer_token(self, monkeypatch):
+        import src.main as m
+        monkeypatch.setattr(m.settings, "fly_trigger_token", "supersecret")
+        from src.main import trigger_collect
+
+        with patch("src.jobs.rss_collector.collect_feeds", new_callable=AsyncMock):
+            result = await trigger_collect(self._make_request(auth_header="Bearer supersecret"))
+
+        assert result == {"ok": True, "message": "Collection triggered"}
 
 
 class TestHealthEndpoint:
