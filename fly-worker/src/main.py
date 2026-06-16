@@ -53,6 +53,9 @@ _trigger_limiter = _SlidingWindow(max_calls=3, window=60.0)
 async def lifespan(app: FastAPI):
     global _scheduler
 
+    if settings.environment == "production" and not settings.fly_trigger_token:
+        raise RuntimeError("FLY_TRIGGER_TOKEN must be set in production to protect /trigger/collect")
+
     print("[PIPELINE] Connecting to MongoDB...")
     mongo_ok = await ping_mongodb()
     if mongo_ok:
