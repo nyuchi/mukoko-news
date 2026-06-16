@@ -84,7 +84,8 @@ export async function getArticles(params: {
     moderationStatus: { $ne: 'removed' },
   }
   if (categories?.length) {
-    filter.articleSection = { $in: categories.map(c => new RegExp(`^${c}$`, 'i')) } as never
+    const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    filter.articleSection = { $in: categories.map(c => new RegExp(`^${escapeRegex(c)}$`, 'i')) } as never
   } else if (category) {
     filter.articleSection = category
   }

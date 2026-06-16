@@ -16,7 +16,9 @@ export async function GET(request: NextRequest) {
     const countries = countriesRaw ? countriesRaw.split(',').filter(Boolean) : undefined
 
     const categoriesRaw = searchParams.get('categories')
-    const categories = categoriesRaw ? categoriesRaw.split(',').filter(Boolean) : undefined
+    const categories = categoriesRaw
+      ? categoriesRaw.split(',').filter(Boolean).slice(0, 10).map(c => c.slice(0, 50))
+      : undefined
 
     const [topResult, latestResult, categoryResult] = await Promise.all([
       getArticles({ limit: 5, page: 1, countries, sort: 'popular' }),
