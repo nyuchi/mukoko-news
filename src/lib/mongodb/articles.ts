@@ -72,17 +72,22 @@ export async function getArticles(params: {
   limit?: number
   page?: number
   category?: string
+  categories?: string[]
   countries?: string[]
   sort?: 'latest' | 'trending' | 'popular'
 } = {}): Promise<{ articles: Article[]; total: number }> {
   const db = await getDb()
-  const { limit = 20, page = 1, category, countries, sort = 'latest' } = params
+  const { limit = 20, page = 1, category, categories, countries, sort = 'latest' } = params
 
   const filter: Filter<MongoArticle> = {
     status: { $ne: 'rejected' },
     moderationStatus: { $ne: 'removed' },
   }
-  if (category) filter.articleSection = category
+  if (categories?.length) {
+    filter.articleSection = { $in: categories.map(c => new RegExp(`^${c}$`, 'i')) } as never
+  } else if (category) {
+    filter.articleSection = category
+  }
   if (countries?.length) {
     const sources = await db.collection<MongoFeedSource>('feedSources')
       .find({ countryCode: { $in: countries } }, { projection: { _id: 1 } })

@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getArticles } from '@/lib/mongodb/articles'
-import { getTrendingCategories } from '@/lib/mongodb/categories'
 import { checkRateLimit, getRequestIp } from '@/lib/rate-limit'
 
 export const runtime = 'nodejs'
@@ -16,10 +15,15 @@ export async function GET(request: NextRequest) {
     const countriesRaw = searchParams.get('countries')
     const countries = countriesRaw ? countriesRaw.split(',').filter(Boolean) : undefined
 
-    const [topResult, latestResult, trending] = await Promise.all([
+    const categoriesRaw = searchParams.get('categories')
+    const categories = categoriesRaw ? categoriesRaw.split(',').filter(Boolean) : undefined
+
+    const [topResult, latestResult, categoryResult] = await Promise.all([
       getArticles({ limit: 5, page: 1, countries, sort: 'popular' }),
       getArticles({ limit: 20, page: 1, countries, sort: 'latest' }),
-      getTrendingCategories(5),
+      categories?.length
+        ? getArticles({ limit: 10, page: 1, countries, categories, sort: 'latest' })
+        : Promise.resolve(null),
     ])
 
     // Top stories as simple clusters (single-article clusters)
@@ -30,8 +34,8 @@ export async function GET(request: NextRequest) {
       articleCount: 1,
     }))
 
-    // Your news: latest articles
-    const yourNews = latestResult.articles.slice(0, 10)
+    // Your news: category-filtered if categories were supplied, else latest
+    const yourNews = categoryResult?.articles ?? latestResult.articles.slice(0, 10)
 
     // By category: group remaining by section
     const byCategoryMap = new Map<string, typeof latestResult.articles>()
