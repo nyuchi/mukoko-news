@@ -1,4 +1,4 @@
-app = "mukoko-news"
+app = "mukoko-news-api"
 primary_region = "jnb"
 
 # Custom domain: news-ingestion.fly-worker.nyuchi.dev
