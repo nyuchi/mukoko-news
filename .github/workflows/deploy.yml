@@ -247,7 +247,7 @@ jobs:
       uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
 
     - name: Install flyctl
-      uses: superfly/flyctl-actions/setup-flyctl@fc81e29fd4e64e6f02f29e69a0d4f09dc8e84af0  # v1.5
+      run: curl -L https://fly.io/install.sh | sh && echo "$HOME/.fly/bin" >> "$GITHUB_PATH"
 
     - name: Deploy to Fly.io
       run: flyctl deploy --remote-only
