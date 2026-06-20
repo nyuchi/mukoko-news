@@ -1,471 +1,3404 @@
 openapi: 3.0.3
 info:
-  title: Harare Metro News API
+  title: Mukoko News API
   description: |
-    Zimbabwe News Aggregation API that fetches and categorizes news from multiple local sources.
+    Pan-African digital news aggregation platform. "Mukoko" means "Beehive" in Shona.
+    Primary market is Zimbabwe with expansion across 16 African countries.
 
-    Features:
-    - Real-time RSS feed aggregation
-    - Enhanced categorization with Zimbabwe-specific keywords
-    - Priority detection for Zimbabwe-relevant content
-    - Multiple news sources from Herald, NewsDay, Chronicle, ZBC, and more
-  version: 2.0.0
+    ## Services
+
+    This schema covers three separate backend services:
+
+    - **Gateway (Cloudflare Worker)** — `news.mukoko.com` — public + user API
+    - **Fly.io Pipeline Worker** — `news-ingestion.fly-worker.nyuchi.dev` — data pipeline
+    - **Fundi Enrichment Worker** — `news-enrichment.fundi.nyuchi.dev` — AI enrichment
+
+    ## Auth
+
+    Most public read endpoints require no authentication. User-mutation endpoints
+    require a WorkOS OIDC JWT as `Authorization: Bearer <token>`.
+    The OIDC issuer is `https://identity.nyuchi.com`.
+
+    Admin endpoints (`/api/admin/*`) require the `admin` or `platform-team` role.
+    Moderator endpoints (`/api/moderator/*`) require `moderator` role or above.
+
+    The Fly.io `/trigger/collect` endpoint uses a shared bearer token (`FLY_TRIGGER_TOKEN`).
+    The Fundi enrichment endpoints use `ENRICHMENT_API_TOKEN`.
+
+  version: 4.0.0
   contact:
     name: Nyuchi Web Services
     url: https://www.nyuchi.com
-  license:
-    name: MIT
-    url: https://opensource.org/licenses/MIT
 
 servers:
-  - url: https://www.hararemetro.co.zw/api
-    description: Production server
-  - url: https://staging.hararemetro.co.zw/api
-    description: Staging server
-  - url: http://localhost:8787/api
-    description: Development server
+  - url: https://news.mukoko.com
+    description: Gateway — Cloudflare Worker (production)
+  - url: http://localhost:8787
+    description: Gateway — local wrangler dev
+  - url: https://news-ingestion.fly-worker.nyuchi.dev
+    description: Fly.io Pipeline Worker (production)
+  - url: https://news-enrichment.fundi.nyuchi.dev
+    description: Fundi AI Enrichment Worker (production)
 
-paths:
-  /health:
-    get:
-      summary: Health check endpoint
-      description: Returns API health status and configuration information
-      operationId: getHealth
-      tags:
-        - System
-      responses:
-        '200':
-          description: API is healthy
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HealthResponse'
-
-  /feeds:
-    get:
-      summary: Get all news feeds
-      description: |
-        Fetches and aggregates news from all enabled RSS sources.
-        Articles are automatically categorized and prioritized based on Zimbabwe relevance.
-      operationId: getAllFeeds
-      tags:
-        - News
-      parameters:
-        - name: category
-          in: query
-          description: Filter by category
-          required: false
-          schema:
-            type: string
-            enum:
-              - politics
-              - economy
-              - business
-              - sports
-              - harare
-              - agriculture
-              - technology
-              - health
-              - education
-              - entertainment
-              - environment
-              - crime
-              - international
-              - lifestyle
-              - finance
-              - general
-        - name: limit
-          in: query
-          description: Maximum number of articles to return
-          required: false
-          schema:
-            type: integer
-            minimum: 1
-            maximum: 100
-            default: 50
-        - name: priority
-          in: query
-          description: Filter by priority status
-          required: false
-          schema:
-            type: boolean
-      responses:
-        '200':
-          description: Successfully retrieved news feeds
-          headers:
-            Cache-Control:
-              description: Cache directive
-              schema:
-                type: string
-                example: "public, max-age=600"
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Article'
-        '400':
-          description: Invalid request parameters
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '500':
-          description: Server error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-
-  /feeds/cached:
-    get:
-      summary: Get cached news feeds
-      description: Returns cached news feeds with metadata about cache status
-      operationId: getCachedFeeds
-      tags:
-        - News
-      responses:
-        '200':
-          description: Successfully retrieved cached feeds
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CachedFeedsResponse'
-
-  /feeds/sources:
-    get:
-      summary: Get RSS sources configuration
-      description: Returns list of all configured RSS sources and their status
-      operationId: getRssSources
-      tags:
-        - Configuration
-      responses:
-        '200':
-          description: Successfully retrieved RSS sources
-          headers:
-            Cache-Control:
-              description: Cache directive
-              schema:
-                type: string
-                example: "public, max-age=3600"
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/RssSource'
-
-  /categories:
-    get:
-      summary: Get categorization configuration
-      description: Returns available categories, keywords, and priority terms used for article classification
-      operationId: getCategories
-      tags:
-        - Configuration
-      responses:
-        '200':
-          description: Successfully retrieved categorization data
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CategoriesResponse'
-
-  /schema:
-    get:
-      summary: Get OpenAPI schema
-      description: Returns the OpenAPI 3.0 schema for this API
-      operationId: getSchema
-      tags:
-        - Documentation
-      responses:
-        '200':
-          description: Successfully retrieved API schema
-          content:
-            application/yaml:
-              schema:
-                type: string
-            application/json:
-              schema:
-                type: object
+# ─── Security schemes ──────────────────────────────────────────────────────────
 
 components:
+  securitySchemes:
+    WorkOSJWT:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        WorkOS OIDC JWT issued by `https://identity.nyuchi.com`.
+        Required for user-mutation and user-preference endpoints.
+    FlyTriggerToken:
+      type: http
+      scheme: bearer
+      description: Shared secret (`FLY_TRIGGER_TOKEN`) for Fly.io pipeline trigger.
+    FundiToken:
+      type: http
+      scheme: bearer
+      description: Shared secret (`ENRICHMENT_API_TOKEN`) for Fundi enrichment worker.
+
+# ─── Shared schemas ────────────────────────────────────────────────────────────
+
   schemas:
+
+    # ── Article (D1 / Gateway representation) ──────────────────────────────────
     Article:
       type: object
-      required:
-        - title
-        - link
-        - pubDate
-        - source
-        - category
-        - priority
-        - guid
       properties:
+        id:
+          type: string
         title:
           type: string
-          description: Article headline
-          example: "Zimbabwe Economy Shows Signs of Recovery"
-          minLength: 1
-          maxLength: 500
+        slug:
+          type: string
         description:
           type: string
           nullable: true
-          description: Article summary or excerpt
-          example: "Latest economic indicators suggest Zimbabwe's economy is stabilizing..."
-          maxLength: 1000
-        link:
+        content_snippet:
           type: string
-          format: uri
-          description: URL to the full article
-          example: "https://www.herald.co.zw/economy-recovery-signs/"
-        pubDate:
+          nullable: true
+        author:
           type: string
-          format: date-time
-          description: Publication date in ISO 8601 format
-          example: "2024-01-15T10:30:00Z"
+          nullable: true
         source:
           type: string
-          description: News source name
-          example: "Herald Zimbabwe"
-          minLength: 1
-          maxLength: 100
-        category:
+          description: News outlet display name
+        source_id:
           type: string
-          enum:
-            - politics
-            - economy
-            - business
-            - sports
-            - harare
-            - agriculture
-            - technology
-            - health
-            - education
-            - entertainment
-            - environment
-            - crime
-            - international
-            - lifestyle
-            - finance
-            - general
-          description: Auto-detected article category
-          example: "economy"
-        priority:
-          type: boolean
-          description: Whether article contains Zimbabwe-priority keywords
-          example: true
-        relevanceScore:
-          type: number
-          description: Relevance score for Zimbabwe content (higher = more relevant)
-          example: 5
-          minimum: 0
-        guid:
-          type: string
-          description: Unique identifier for the article
-          example: "herald-zimbabwe-2024-01-15-economy"
-          minLength: 1
-          maxLength: 200
-
-    RssSource:
-      type: object
-      required:
-        - name
-        - url
-        - category
-        - enabled
-      properties:
-        name:
-          type: string
-          description: Display name of the news source
-          example: "Herald Zimbabwe"
-          minLength: 1
-          maxLength: 100
-        url:
-          type: string
-          format: uri
-          description: RSS feed URL
-          example: "https://www.herald.co.zw/feed/"
-        category:
-          type: string
-          description: Default category for this source
-          example: "general"
-          minLength: 1
-          maxLength: 50
-        enabled:
-          type: boolean
-          description: Whether this source is currently active
-          example: true
-
-    HealthResponse:
-      type: object
-      required:
-        - status
-        - timestamp
-        - sources
-        - totalSources
-        - categories
-        - message
-        - features
-      properties:
-        status:
-          type: string
-          enum: [ok, error]
-          example: "ok"
-        timestamp:
+        published_at:
           type: string
           format: date-time
-          example: "2024-01-15T10:30:00Z"
-        sources:
-          type: integer
-          description: Number of enabled RSS sources
-          example: 8
-          minimum: 0
-        totalSources:
-          type: integer
-          description: Total number of configured RSS sources
-          example: 10
-          minimum: 0
-        categories:
-          type: integer
-          description: Number of available categories
-          example: 16
-          minimum: 0
-        message:
+        image_url:
           type: string
-          example: "Harare Metro API is healthy!"
-          minLength: 1
-        features:
+          format: uri
+          nullable: true
+        original_url:
+          type: string
+          format: uri
+        category_id:
+          type: string
+        country_id:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          nullable: true
+        view_count:
+          type: integer
+        like_count:
+          type: integer
+        bookmark_count:
+          type: integer
+        keywords:
           type: array
           items:
-            type: string
-          example: ["enhanced-categorization", "priority-detection", "zimbabwe-focus", "global-categories"]
+            $ref: '#/components/schemas/Keyword'
 
-    CachedFeedsResponse:
+    ArticleFull:
+      allOf:
+        - $ref: '#/components/schemas/Article'
+        - type: object
+          properties:
+            content:
+              type: string
+              nullable: true
+            word_count:
+              type: integer
+              nullable: true
+            reading_time:
+              type: integer
+              nullable: true
+              description: Estimated reading time in seconds
+
+    # ── Keyword ─────────────────────────────────────────────────────────────────
+    Keyword:
       type: object
-      required:
-        - feeds
-        - cached
       properties:
-        feeds:
+        id:
+          type: string
+        name:
+          type: string
+        slug:
+          type: string
+
+    # ── Pagination envelope ─────────────────────────────────────────────────────
+    PaginatedArticles:
+      type: object
+      properties:
+        articles:
           type: array
           items:
             $ref: '#/components/schemas/Article'
-        lastUpdated:
-          type: string
-          format: date-time
-          nullable: true
-          description: When feeds were last updated
-          example: "2024-01-15T10:30:00Z"
-        cached:
-          type: boolean
-          description: Whether this response came from cache
-          example: true
-
-    CategoriesResponse:
-      type: object
-      required:
-        - categories
-        - keywords
-        - priority
-        - totalCategories
-      properties:
-        categories:
-          type: array
-          items:
-            type: string
-          description: List of available category names
-          example: ["politics", "economy", "business", "sports"]
-        keywords:
-          type: object
-          additionalProperties:
-            type: array
-            items:
-              type: string
-          description: Keywords used for each category detection
-          example:
-            politics: ["parliament", "government", "election"]
-            economy: ["economy", "inflation", "currency"]
-        priority:
-          type: array
-          items:
-            type: string
-          description: Keywords that mark articles as high priority
-          example: ["harare", "zimbabwe", "parliament", "mnangagwa"]
-        totalCategories:
+        total:
           type: integer
-          description: Total number of categories
-          example: 16
-          minimum: 0
+        limit:
+          type: integer
+        offset:
+          type: integer
+        hasMore:
+          type: boolean
+        countries:
+          type: array
+          items:
+            type: string
+          nullable: true
 
-    ErrorResponse:
+    # ── Error ───────────────────────────────────────────────────────────────────
+    Error:
       type: object
       required:
         - error
       properties:
         error:
           type: string
-          description: Error message
-          example: "Internal server error"
-          minLength: 1
         message:
           type: string
-          description: Detailed error message
-          example: "Failed to fetch RSS feeds"
-        available:
+          nullable: true
+        timestamp:
+          type: string
+          format: date-time
+          nullable: true
+
+    # ── Success (generic) ────────────────────────────────────────────────────────
+    Success:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+
+    # ── Comment ─────────────────────────────────────────────────────────────────
+    Comment:
+      type: object
+      properties:
+        id:
+          type: integer
+        article_id:
+          type: string
+        user_id:
+          type: string
+        parent_comment_id:
+          type: integer
+          nullable: true
+        content:
+          type: string
+        like_count:
+          type: integer
+        reply_count:
+          type: integer
+        status:
+          type: string
+          enum: [published, hidden, deleted]
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        replies:
           type: array
           items:
-            type: string
-          description: Available endpoints (for 404 errors)
-          example: ["/health", "/feeds", "/feeds/sources"]
-        validationErrors:
+            $ref: '#/components/schemas/Comment'
+          nullable: true
+
+    # ── Category ────────────────────────────────────────────────────────────────
+    Category:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        emoji:
+          type: string
+          nullable: true
+        color:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        enabled:
+          type: boolean
+        article_count:
+          type: integer
+
+    # ── Country ─────────────────────────────────────────────────────────────────
+    Country:
+      type: object
+      properties:
+        id:
+          type: string
+          description: ISO 3166-1 alpha-2 code (e.g. "ZW")
+        name:
+          type: string
+        flag_emoji:
+          type: string
+          nullable: true
+        enabled:
+          type: boolean
+
+    # ── Source (RSS source) ──────────────────────────────────────────────────────
+    Source:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        url:
+          type: string
+          format: uri
+        category:
+          type: string
+        country_id:
+          type: string
+          nullable: true
+        priority:
+          type: integer
+        article_count:
+          type: integer
+        latest_article_at:
+          type: string
+          format: date-time
+          nullable: true
+        last_fetched_at:
+          type: string
+          format: date-time
+          nullable: true
+        fetch_count:
+          type: integer
+        error_count:
+          type: integer
+
+    # ── Author ───────────────────────────────────────────────────────────────────
+    Author:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        slug:
+          type: string
+        normalized_name:
+          type: string
+        bio:
+          type: string
+          nullable: true
+        profile_image_url:
+          type: string
+          format: uri
+          nullable: true
+        follower_count:
+          type: integer
+        article_count:
+          type: integer
+        is_verified:
+          type: boolean
+
+    # ── Story cluster ─────────────────────────────────────────────────────────────
+    StoryCluster:
+      type: object
+      properties:
+        id:
+          type: string
+        primaryArticle:
+          $ref: '#/components/schemas/Article'
+        relatedArticles:
+          type: array
+          items:
+            $ref: '#/components/schemas/Article'
+        articleCount:
+          type: integer
+
+    # ── Sectioned feed ────────────────────────────────────────────────────────────
+    SectionedFeed:
+      type: object
+      properties:
+        topStories:
+          type: array
+          items:
+            $ref: '#/components/schemas/StoryCluster'
+        yourNews:
+          type: array
+          items:
+            $ref: '#/components/schemas/Article'
+        byCategory:
           type: array
           items:
             type: object
             properties:
-              field:
+              id:
                 type: string
-                description: Field that failed validation
-              message:
+              name:
                 type: string
-                description: Validation error message
-              value:
-                description: Invalid value provided
-          description: Detailed validation errors (for 400 errors)
+              articles:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Article'
+        latest:
+          type: array
+          items:
+            $ref: '#/components/schemas/Article'
+        countries:
+          type: array
+          items:
+            type: string
+          nullable: true
+        timestamp:
+          type: string
+          format: date-time
 
+    # ── User profile ──────────────────────────────────────────────────────────────
+    UserProfile:
+      type: object
+      properties:
+        id:
+          type: string
+        username:
+          type: string
+          nullable: true
+        name:
+          type: string
+          nullable: true
+        picture:
+          type: string
+          format: uri
+          nullable: true
+        bio:
+          type: string
+          nullable: true
+        role:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    # ── Gateway health ────────────────────────────────────────────────────────────
+    GatewayHealth:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded, unhealthy]
+        timestamp:
+          type: string
+          format: date-time
+        services:
+          type: object
+          properties:
+            database:
+              type: string
+            processing_api:
+              type: string
+            analytics:
+              type: boolean
+            cache:
+              type: string
+        environment:
+          type: string
+        security:
+          type: object
+          additionalProperties: true
+
+    # ── Fly health ───────────────────────────────────────────────────────────────
+    FlyHealth:
+      type: object
+      required: [status, mongodb, uptime_seconds, jobs]
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded]
+        mongodb:
+          type: string
+          enum: [connected, disconnected]
+        uptime_seconds:
+          type: integer
+        jobs:
+          type: object
+          description: Map of job ID to job metadata
+          additionalProperties:
+            type: object
+            properties:
+              name:
+                type: string
+              next_run:
+                type: string
+                format: date-time
+                nullable: true
+
+    # ── Fundi enrichment response ─────────────────────────────────────────────────
+    EnrichResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        processed:
+          type: integer
+        errors:
+          type: integer
+        total:
+          type: integer
+
+    # ── Analytics (public) ────────────────────────────────────────────────────────
+    PublicAnalytics:
+      type: object
+      description: Open-data engagement analytics for the /analytics page
+
+    # ── OAuth metadata ────────────────────────────────────────────────────────────
+    OAuthMetadata:
+      type: object
+      properties:
+        issuer:
+          type: string
+          format: uri
+        authorization_endpoint:
+          type: string
+          format: uri
+        token_endpoint:
+          type: string
+          format: uri
+        jwks_uri:
+          type: string
+          format: uri
+        response_types_supported:
+          type: array
+          items:
+            type: string
+        grant_types_supported:
+          type: array
+          items:
+            type: string
+        code_challenge_methods_supported:
+          type: array
+          items:
+            type: string
+        token_endpoint_auth_methods_supported:
+          type: array
+          items:
+            type: string
+        client_id:
+          type: string
+
+  # ── Reusable parameters ───────────────────────────────────────────────────────
+  parameters:
+    Limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        default: 20
+        minimum: 1
+        maximum: 200
+    Offset:
+      name: offset
+      in: query
+      schema:
+        type: integer
+        default: 0
+        minimum: 0
+    Countries:
+      name: countries
+      in: query
+      description: Comma-separated ISO 3166-1 alpha-2 country codes (e.g. `ZW,KE,NG`)
+      schema:
+        type: string
+
+  # ── Reusable responses ────────────────────────────────────────────────────────
   responses:
     BadRequest:
       description: Invalid request parameters
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/ErrorResponse'
-
-    NotFound:
-      description: Endpoint not found
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Missing or invalid authentication
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/ErrorResponse'
-
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: Authenticated but insufficient role
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    TooManyRequests:
+      description: Rate limit exceeded
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
     ServerError:
       description: Internal server error
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/ErrorResponse'
+            $ref: '#/components/schemas/Error'
+
+# ─── Tags ──────────────────────────────────────────────────────────────────────
 
 tags:
-  - name: News
-    description: News aggregation and retrieval endpoints
-  - name: Configuration
-    description: API configuration and metadata endpoints
   - name: System
-    description: System health and status endpoints
-  - name: Documentation
-    description: API documentation endpoints
+    description: Health and metadata endpoints
+  - name: Feeds
+    description: Article feed endpoints (public)
+  - name: Articles
+    description: Single-article retrieval and engagement
+  - name: Stories
+    description: Cross-source story clustering
+  - name: Search
+    description: Full-text and semantic article search
+  - name: Sources
+    description: News source discovery
+  - name: Categories
+    description: Category management
+  - name: Countries
+    description: Pan-African country support
+  - name: Keywords
+    description: Tag cloud and keyword browsing
+  - name: Authors
+    description: Author profiles and discovery
+  - name: User
+    description: Authenticated user preferences and history
+  - name: Auth
+    description: Authentication metadata
+  - name: SEO
+    description: Sitemap and metadata endpoints
+  - name: MCP
+    description: Model Context Protocol server
+  - name: Pipeline
+    description: Fly.io ingestion pipeline (fly-worker service)
+  - name: Enrichment
+    description: Fundi AI enrichment worker
+
+# ─── Paths ─────────────────────────────────────────────────────────────────────
+# Paths are for the Gateway (news.mukoko.com) unless annotated otherwise.
+# Fly.io and Fundi paths are tagged Pipeline / Enrichment and served from their
+# respective servers listed above.
+
+paths:
+
+  # ─── System ───────────────────────────────────────────────────────────────────
+
+  /api/health:
+    get:
+      operationId: getHealth
+      summary: Gateway health check
+      description: Returns service status for the Cloudflare Worker gateway and its dependencies.
+      tags: [System]
+      security: []
+      responses:
+        '200':
+          description: Health status (check `status` field — may be degraded even on 200)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GatewayHealth'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/stats:
+    get:
+      operationId: getPublicStats
+      summary: Public platform statistics
+      description: |
+        Aggregate article/source/category counts. Tries MongoDB (Python Worker) first,
+        falls back to D1.
+      tags: [System]
+      security: []
+      responses:
+        '200':
+          description: Platform statistics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  database:
+                    type: object
+                    properties:
+                      total_articles:
+                        type: integer
+                      active_sources:
+                        type: integer
+                      categories:
+                        type: integer
+                      today_articles:
+                        type: integer
+                  source:
+                    type: string
+                    description: Which data store served the response
+                  timestamp:
+                    type: string
+                    format: date-time
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/analytics:
+    get:
+      operationId: getPublicAnalytics
+      summary: Open-data engagement analytics
+      description: |
+        MongoDB-backed analytics aggregation powering the `/analytics` page.
+        Returns aggregate engagement data; no personally identifiable data.
+      tags: [System]
+      security: []
+      responses:
+        '200':
+          description: Engagement analytics data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicAnalytics'
+
+  /api/manifest.json:
+    get:
+      operationId: getPwaManifest
+      summary: Dynamic PWA manifest
+      description: Returns a Web App Manifest with category-based shortcuts.
+      tags: [System]
+      security: []
+      responses:
+        '200':
+          description: PWA manifest
+          content:
+            application/manifest+json:
+              schema:
+                type: object
+
+  /.well-known/oauth-authorization-server:
+    get:
+      operationId: getOAuthMetadata
+      summary: OAuth 2.0 Authorization Server Metadata (RFC 8414)
+      description: |
+        Used by MCP clients (Claude Desktop etc.) to discover the WorkOS PKCE
+        authorization server at `https://identity.nyuchi.com`.
+      tags: [Auth]
+      security: []
+      responses:
+        '200':
+          description: OAuth server metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuthMetadata'
+
+  # ─── Feeds ────────────────────────────────────────────────────────────────────
+
+  /api/feeds:
+    get:
+      operationId: getFeeds
+      summary: List articles
+      description: |
+        Returns paginated published articles from D1. Supports filtering by category,
+        country, and sort order.
+      tags: [Feeds]
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+        - $ref: '#/components/parameters/Countries'
+        - name: category
+          in: query
+          description: Filter by category ID
+          schema:
+            type: string
+        - name: sort
+          in: query
+          description: Sort order
+          schema:
+            type: string
+            enum: [latest, trending, popular]
+            default: latest
+      responses:
+        '200':
+          description: Paginated article list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedArticles'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/feeds/personalized:
+    get:
+      operationId: getPersonalizedFeed
+      summary: Personalized feed
+      description: |
+        Returns articles ranked by the user's reading history, follows, and preferences.
+        Falls back to recency if no user context is available.
+      tags: [Feeds]
+      security:
+        - WorkOSJWT: []
+        - {}
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+        - $ref: '#/components/parameters/Countries'
+        - name: excludeRead
+          in: query
+          schema:
+            type: boolean
+            default: true
+        - name: diversity
+          in: query
+          description: Diversity factor 0–1 (higher = more category variety)
+          schema:
+            type: number
+            minimum: 0
+            maximum: 1
+            default: 0.3
+      responses:
+        '200':
+          description: Personalized paginated feed
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PaginatedArticles'
+                  - type: object
+                    properties:
+                      isPersonalized:
+                        type: boolean
+                      countries:
+                        type: array
+                        items:
+                          type: string
+                        nullable: true
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/feeds/personalized/explain:
+    get:
+      operationId: explainPersonalizedFeed
+      summary: Feed explanation
+      description: Returns why articles are recommended to the current user.
+      tags: [Feeds]
+      security:
+        - WorkOSJWT: []
+        - {}
+      responses:
+        '200':
+          description: Feed explanation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  isPersonalized:
+                    type: boolean
+                  message:
+                    type: string
+                    nullable: true
+                  sources:
+                    type: array
+                    items: {}
+                  authors:
+                    type: array
+                    items: {}
+                  categories:
+                    type: array
+                    items: {}
+                  topInterests:
+                    type: array
+                    items: {}
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/feeds/sectioned:
+    get:
+      operationId: getSectionedFeed
+      summary: Sectioned feed (Google News-style)
+      description: |
+        Returns three sections in a single response:
+        - `topStories` — clustered by topic (Jaccard or Python Worker similarity)
+        - `yourNews` — filtered by preferred categories
+        - `byCategory` — up to 5 category sections
+        - `latest` — most recent articles
+      tags: [Feeds]
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/Countries'
+        - name: categories
+          in: query
+          description: Comma-separated preferred category IDs
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Sectioned feed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SectionedFeed'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/news-bytes:
+    get:
+      operationId: getNewsBytes
+      summary: News Bytes (image-only feed)
+      description: TikTok-style feed returning only articles that have a cover image.
+      tags: [Feeds]
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+        - name: category
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Image-rich article feed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedArticles'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/refresh:
+    post:
+      operationId: triggerUserRefresh
+      summary: User-initiated feed refresh
+      description: |
+        Triggers an RSS collection run via the Python Worker (ProcessingClient).
+        Rate limited to once per 5 minutes per user or IP. Returns counts of new articles.
+      tags: [Feeds]
+      security:
+        - WorkOSJWT: []
+        - {}
+      responses:
+        '200':
+          description: Refresh result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  newArticles:
+                    type: integer
+                  timestamp:
+                    type: string
+                    format: date-time
+        '429':
+          description: Rate limit — wait before retrying
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  retryAfter:
+                    type: integer
+                    description: Seconds to wait before next refresh
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/feed/collect:
+    post:
+      operationId: collectFeed
+      summary: Collect feeds (user-initiated, 5-min cooldown)
+      description: |
+        Delegates RSS collection to the Python Worker. Per-IP rate limit of one request
+        per 5 minutes. Returns new article count and processing time.
+      tags: [Feeds]
+      security: []
+      responses:
+        '200':
+          description: Collection result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  newArticles:
+                    type: integer
+                  errors:
+                    type: integer
+                  processing_time_ms:
+                    type: integer
+                  timestamp:
+                    type: string
+                    format: date-time
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/feed/initialize-sources:
+    post:
+      operationId: initializeSources
+      summary: Seed Pan-African RSS sources
+      description: |
+        Idempotent — seeds all 16 African country sources. Skips already-existing records.
+        Intended for initial setup. No auth required.
+      tags: [Sources]
+      security: []
+      responses:
+        '200':
+          description: Initialization result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  added:
+                    type: integer
+                  failed:
+                    type: integer
+                  details:
+                    type: array
+                    items:
+                      type: string
+                  timestamp:
+                    type: string
+                    format: date-time
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  # ─── Articles ──────────────────────────────────────────────────────────────────
+
+  /api/article/{id}:
+    get:
+      operationId: getArticleById
+      summary: Get article by ID
+      description: Returns full article including content, keywords, and reading metadata. Increments view count.
+      tags: [Articles]
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Article detail
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  article:
+                    $ref: '#/components/schemas/ArticleFull'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/article/by-source-slug:
+    get:
+      operationId: getArticleBySourceSlug
+      summary: Get article by source + slug
+      description: Looks up an article using its `source` name and `slug` URL segment.
+      tags: [Articles]
+      security: []
+      parameters:
+        - name: source
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: slug
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Article detail
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  article:
+                    $ref: '#/components/schemas/ArticleFull'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/article/{id}/related:
+    get:
+      operationId: getRelatedArticles
+      summary: Get related articles
+      description: |
+        Returns up to `limit` articles scored by shared keywords, same category,
+        and cross-source coverage within a 30-day window.
+      tags: [Articles]
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 6
+            maximum: 20
+      responses:
+        '200':
+          description: Related articles
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  related:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Article'
+                  source_article_id:
+                    type: string
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/articles/{id}/like:
+    post:
+      operationId: likeArticle
+      summary: Like / unlike an article
+      description: Toggles like status for the authenticated user. Returns new liked state.
+      tags: [Articles]
+      security:
+        - WorkOSJWT: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Like toggled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  liked:
+                    type: boolean
+                  message:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/articles/{id}/save:
+    post:
+      operationId: saveArticle
+      summary: Save / unsave (bookmark) an article
+      description: Toggles bookmark status for the authenticated user.
+      tags: [Articles]
+      security:
+        - WorkOSJWT: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Bookmark toggled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  saved:
+                    type: boolean
+                  message:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/articles/{id}/view:
+    post:
+      operationId: trackArticleView
+      summary: Track article view
+      description: |
+        Records reading time and scroll depth. Anonymous views are counted; JWT
+        attaches the view to a user account.
+      tags: [Articles]
+      security:
+        - WorkOSJWT: []
+        - {}
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reading_time:
+                  type: integer
+                  description: Seconds spent reading
+                  default: 0
+                scroll_depth:
+                  type: integer
+                  description: Scroll percentage 0–100
+                  default: 0
+      responses:
+        '200':
+          description: View tracked
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+
+  /api/articles/{id}/comment:
+    post:
+      operationId: postComment
+      summary: Post a comment on an article
+      description: Requires authentication. Comments max 1000 characters. Supports threaded replies.
+      tags: [Articles]
+      security:
+        - WorkOSJWT: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                content:
+                  type: string
+                  maxLength: 1000
+                parent_comment_id:
+                  type: integer
+                  nullable: true
+      responses:
+        '200':
+          description: Comment posted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  commentId:
+                    type: integer
+                  message:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/articles/{id}/comments:
+    get:
+      operationId: getArticleComments
+      summary: Get comments for an article
+      description: Returns top-level comments and up to 10 replies each.
+      tags: [Articles]
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Comment list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  comments:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Comment'
+                  total:
+                    type: integer
+                  limit:
+                    type: integer
+                  offset:
+                    type: integer
+
+  # ─── Stories ──────────────────────────────────────────────────────────────────
+
+  /api/stories/cluster/{articleId}:
+    get:
+      operationId: getStoryCluster
+      summary: Get cross-source story cluster
+      description: |
+        Finds articles about the same story (matching content hash, shared keywords,
+        same category within ±3 days). Groups results by source.
+      tags: [Stories]
+      security: []
+      parameters:
+        - name: articleId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Story cluster
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cluster:
+                    type: object
+                    properties:
+                      source_article:
+                        $ref: '#/components/schemas/Article'
+                      related_coverage:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Article'
+                      by_source:
+                        type: object
+                        additionalProperties:
+                          type: array
+                          items:
+                            $ref: '#/components/schemas/Article'
+                      source_count:
+                        type: integer
+                      total_articles:
+                        type: integer
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/stories/trending:
+    get:
+      operationId: getTrendingStories
+      summary: Trending cross-source stories
+      description: |
+        Returns keyword-based story clusters where the same topic is covered by
+        multiple outlets within the specified time window.
+      tags: [Stories]
+      security: []
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+            maximum: 50
+        - name: hours
+          in: query
+          description: Look-back window in hours
+          schema:
+            type: integer
+            default: 24
+            maximum: 168
+      responses:
+        '200':
+          description: Trending story clusters
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  trending:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        topic:
+                          type: string
+                        source_count:
+                          type: integer
+                        article_count:
+                          type: integer
+                        total_views:
+                          type: integer
+                        articles:
+                          type: array
+                          items:
+                            $ref: '#/components/schemas/Article'
+                  period_hours:
+                    type: integer
+
+  # ─── Search ───────────────────────────────────────────────────────────────────
+
+  /api/search:
+    get:
+      operationId: searchArticles
+      summary: Search articles (semantic + keyword fallback)
+      description: |
+        Tries semantic search via the Python Worker first; falls back to SQL `LIKE`
+        keyword matching. Returns search method used (`semantic` or `keyword`).
+      tags: [Search]
+      security: []
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: Search query
+          schema:
+            type: string
+        - name: category
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            maximum: 200
+        - name: ai
+          in: query
+          description: Set to `false` to skip semantic search
+          schema:
+            type: boolean
+            default: true
+      responses:
+        '200':
+          description: Search results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Article'
+                  query:
+                    type: string
+                  count:
+                    type: integer
+                  category:
+                    type: string
+                  searchMethod:
+                    type: string
+                    enum: [semantic, keyword]
+                  insights:
+                    type: array
+                    items: {}
+                    nullable: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/search/authors:
+    get:
+      operationId: searchAuthors
+      summary: Search authors across outlets
+      tags: [Search]
+      security: []
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Matching authors
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  authors:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Author'
+                  query:
+                    type: string
+                  total:
+                    type: integer
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/search/by-keyword/{keyword}:
+    get:
+      operationId: searchByKeyword
+      summary: Search articles by keyword slug
+      tags: [Search]
+      security: []
+      parameters:
+        - name: keyword
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Articles tagged with keyword
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  keyword:
+                    type: string
+                  articles:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Article'
+                  total:
+                    type: integer
+                  limit:
+                    type: integer
+                  offset:
+                    type: integer
+
+  /api/search/by-author:
+    get:
+      operationId: searchByAuthor
+      summary: Search articles by author name
+      tags: [Search]
+      security: []
+      parameters:
+        - name: author
+          in: query
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Articles by author
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  author:
+                    type: string
+                  articles:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Article'
+                  total:
+                    type: integer
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  # ─── Sources ──────────────────────────────────────────────────────────────────
+
+  /api/sources:
+    get:
+      operationId: getSources
+      summary: List active news sources
+      description: Returns active RSS sources with article counts, sorted by volume.
+      tags: [Sources]
+      security: []
+      responses:
+        '200':
+          description: Source list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sources:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Source'
+                  total:
+                    type: integer
+
+  # ─── Categories ───────────────────────────────────────────────────────────────
+
+  /api/categories:
+    get:
+      operationId: getCategories
+      summary: List categories with article counts
+      tags: [Categories]
+      security: []
+      responses:
+        '200':
+          description: Category list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  categories:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Category'
+
+  /api/trending-categories:
+    get:
+      operationId: getTrendingCategories
+      summary: Trending categories
+      description: Returns categories with growth rates. Tries MongoDB, falls back to D1.
+      tags: [Categories]
+      security: []
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 8
+      responses:
+        '200':
+          description: Trending categories
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  trending:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Category'
+                  source:
+                    type: string
+
+  # ─── Countries ────────────────────────────────────────────────────────────────
+
+  /api/countries:
+    get:
+      operationId: getCountries
+      summary: List supported African countries
+      tags: [Countries]
+      security: []
+      parameters:
+        - name: withStats
+          in: query
+          description: Include article counts per country
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: Country list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  countries:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Country'
+
+  /api/countries/stats/articles:
+    get:
+      operationId: getCountryArticleStats
+      summary: Article counts by country
+      tags: [Countries]
+      security: []
+      parameters:
+        - name: since
+          in: query
+          description: ISO 8601 datetime lower bound
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Per-country article stats
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  stats:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+
+  /api/countries/{countryId}:
+    get:
+      operationId: getCountry
+      summary: Get country details
+      tags: [Countries]
+      security: []
+      parameters:
+        - name: countryId
+          in: path
+          required: true
+          description: ISO 3166-1 alpha-2 code
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Country with details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  country:
+                    $ref: '#/components/schemas/Country'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ─── Keywords ─────────────────────────────────────────────────────────────────
+
+  /api/keywords:
+    get:
+      operationId: getKeywords
+      summary: Top keywords / tag cloud
+      description: Returns most-used keywords sorted by article count.
+      tags: [Keywords]
+      security: []
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 32
+            maximum: 200
+      responses:
+        '200':
+          description: Keyword list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  keywords:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        name:
+                          type: string
+                        slug:
+                          type: string
+                        type:
+                          type: string
+                        article_count:
+                          type: integer
+                  total:
+                    type: integer
+
+  # ─── Authors ──────────────────────────────────────────────────────────────────
+
+  /api/authors:
+    get:
+      operationId: getAuthors
+      summary: List authors
+      tags: [Authors]
+      security: []
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: outlet
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Author list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  authors:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Author'
+                  total:
+                    type: integer
+                  limit:
+                    type: integer
+
+  /api/author/{slug}:
+    get:
+      operationId: getAuthorProfile
+      summary: Author profile page
+      description: Returns full author profile including recent articles and engagement metrics.
+      tags: [Authors]
+      security: []
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Author profile
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  author:
+                    $ref: '#/components/schemas/Author'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/author/{authorId}/follow:
+    post:
+      operationId: toggleAuthorFollow
+      summary: Follow / unfollow an author
+      tags: [Authors]
+      security:
+        - WorkOSJWT: []
+      parameters:
+        - name: authorId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Follow status toggled
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/featured-authors:
+    get:
+      operationId: getFeaturedAuthors
+      summary: Featured authors
+      tags: [Authors]
+      security: []
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+      responses:
+        '200':
+          description: Featured author list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  featured_authors:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Author'
+                  message:
+                    type: string
+
+  /api/trending-authors:
+    get:
+      operationId: getTrendingAuthors
+      summary: Trending authors
+      description: Authors trending based on recent articles and reader engagement.
+      tags: [Authors]
+      security: []
+      parameters:
+        - name: days
+          in: query
+          schema:
+            type: integer
+            default: 7
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+      responses:
+        '200':
+          description: Trending author list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  trending_authors:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Author'
+                  timeframe:
+                    type: string
+
+  /api/source/{sourceId}/follow:
+    post:
+      operationId: toggleSourceFollow
+      summary: Follow / unfollow a news source
+      tags: [Sources]
+      security:
+        - WorkOSJWT: []
+      parameters:
+        - name: sourceId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Follow status toggled
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ─── User ─────────────────────────────────────────────────────────────────────
+
+  /api/user/{username}:
+    get:
+      operationId: getUserProfile
+      summary: Get public user profile by username
+      tags: [User]
+      security: []
+      parameters:
+        - name: username
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Public user profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/user/{username}/bookmarks:
+    get:
+      operationId: getUserBookmarks
+      summary: Get user's bookmarked articles
+      description: Requires the requester to be the same user (WorkOS JWT).
+      tags: [User]
+      security:
+        - WorkOSJWT: []
+      parameters:
+        - name: username
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Bookmark list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  bookmarks:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Article'
+                  total:
+                    type: integer
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/user/{username}/likes:
+    get:
+      operationId: getUserLikes
+      summary: Get user's liked articles
+      description: Requires the requester to be the same user (WorkOS JWT).
+      tags: [User]
+      security:
+        - WorkOSJWT: []
+      parameters:
+        - name: username
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Liked article list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  likes:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Article'
+                  total:
+                    type: integer
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/user/{username}/history:
+    get:
+      operationId: getUserHistory
+      summary: Get user's reading history
+      description: Requires the requester to be the same user (WorkOS JWT).
+      tags: [User]
+      security:
+        - WorkOSJWT: []
+      parameters:
+        - name: username
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Reading history
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  history:
+                    type: array
+                    items:
+                      allOf:
+                        - $ref: '#/components/schemas/Article'
+                        - type: object
+                          properties:
+                            reading_time:
+                              type: integer
+                            scroll_depth:
+                              type: number
+                            last_position_at:
+                              type: string
+                              format: date-time
+                  total:
+                    type: integer
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/user/{username}/stats:
+    get:
+      operationId: getUserStats
+      summary: Get user's reading statistics
+      tags: [User]
+      security: []
+      parameters:
+        - name: username
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: User activity stats
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  bookmarks:
+                    type: integer
+                  likes:
+                    type: integer
+                  articles_read:
+                    type: integer
+                  total_reading_time:
+                    type: integer
+                  member_since:
+                    type: string
+                    format: date-time
+
+  /api/user/me/preferences:
+    get:
+      operationId: getMyPreferences
+      summary: Get current user's preferences
+      description: Returns key/value preferences, followed sources/authors, and reading stats.
+      tags: [User]
+      security:
+        - WorkOSJWT: []
+      responses:
+        '200':
+          description: User preferences
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  preferences:
+                    type: object
+                    additionalProperties: true
+                  followed_sources:
+                    type: array
+                    items:
+                      type: object
+                  followed_authors:
+                    type: array
+                    items:
+                      type: object
+                  reading_stats:
+                    type: object
+    post:
+      operationId: updateMyPreferences
+      summary: Update current user's preferences
+      tags: [User]
+      security:
+        - WorkOSJWT: []
+      requestBody:
+        description: Key/value preference map
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Preferences updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Success'
+
+  /api/user/me/follows:
+    get:
+      operationId: getAllFollows
+      summary: Get all follows (authors, sources, categories)
+      tags: [User]
+      security:
+        - WorkOSJWT: []
+      responses:
+        '200':
+          description: Combined follows
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  follows:
+                    type: object
+                    properties:
+                      authors:
+                        type: array
+                        items:
+                          type: string
+                      sources:
+                        type: array
+                        items:
+                          type: string
+                      categories:
+                        type: array
+                        items:
+                          type: string
+    post:
+      operationId: addFollow
+      summary: Follow a source, author, or category
+      tags: [User]
+      security:
+        - WorkOSJWT: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [follow_type, follow_id]
+              properties:
+                follow_type:
+                  type: string
+                  enum: [source, author, category]
+                follow_id:
+                  type: string
+      responses:
+        '200':
+          description: Now following
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Success'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/user/me/follows/{type}/{id}:
+    delete:
+      operationId: removeFollow
+      summary: Unfollow a source, author, or category
+      tags: [User]
+      security:
+        - WorkOSJWT: []
+      parameters:
+        - name: type
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [source, author, category]
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Unfollowed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Success'
+
+  /api/user/me/follows/authors:
+    get:
+      operationId: getFollowedAuthors
+      summary: Get followed authors
+      tags: [User]
+      security:
+        - WorkOSJWT: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Followed authors
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  authors:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Author'
+                  total:
+                    type: integer
+
+  /api/user/me/follows/sources:
+    get:
+      operationId: getFollowedSources
+      summary: Get followed sources
+      tags: [User]
+      security:
+        - WorkOSJWT: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Followed sources
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sources:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Source'
+                  total:
+                    type: integer
+
+  /api/user/me/follows/categories:
+    get:
+      operationId: getFollowedCategories
+      summary: Get followed categories
+      tags: [User]
+      security:
+        - WorkOSJWT: []
+      responses:
+        '200':
+          description: Followed categories
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  categories:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Category'
+
+  /api/user/me/countries:
+    get:
+      operationId: getMyCountries
+      summary: Get user's country preferences
+      tags: [User]
+      security:
+        - WorkOSJWT: []
+      responses:
+        '200':
+          description: Country preferences
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  countries:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Country'
+                  primaryCountry:
+                    type: string
+                    nullable: true
+    post:
+      operationId: addMyCountry
+      summary: Add a country to user's preferences
+      tags: [User]
+      security:
+        - WorkOSJWT: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [countryId]
+              properties:
+                countryId:
+                  type: string
+                isPrimary:
+                  type: boolean
+                notifyBreaking:
+                  type: boolean
+      responses:
+        '200':
+          description: Country added
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Success'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    put:
+      operationId: setMyCountries
+      summary: Replace all user country preferences
+      tags: [User]
+      security:
+        - WorkOSJWT: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [countries]
+              properties:
+                countries:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      countryId:
+                        type: string
+                      isPrimary:
+                        type: boolean
+      responses:
+        '200':
+          description: Preferences updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Success'
+
+  /api/user/me/countries/{countryId}:
+    delete:
+      operationId: removeMyCountry
+      summary: Remove a country from user preferences
+      tags: [User]
+      security:
+        - WorkOSJWT: []
+      parameters:
+        - name: countryId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Country removed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Success'
+
+  /api/user/me/countries/{countryId}/primary:
+    put:
+      operationId: setMyPrimaryCountry
+      summary: Set primary country
+      tags: [User]
+      security:
+        - WorkOSJWT: []
+      parameters:
+        - name: countryId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Primary country set
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Success'
+
+  /api/user/me/profile:
+    patch:
+      operationId: patchMyProfile
+      summary: Update user profile (partial — username, displayName, bio, avatarUrl)
+      description: Used during onboarding. Checks username uniqueness before updating.
+      tags: [User]
+      security:
+        - WorkOSJWT: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                username:
+                  type: string
+                  pattern: '^[a-zA-Z0-9_]{3,30}$'
+                displayName:
+                  type: string
+                bio:
+                  type: string
+                avatarUrl:
+                  type: string
+                  format: uri
+      responses:
+        '200':
+          description: Profile updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  user:
+                    $ref: '#/components/schemas/UserProfile'
+        '409':
+          description: Username already taken
+    put:
+      operationId: putMyProfile
+      summary: Replace user profile fields (name, bio, picture)
+      tags: [User]
+      security:
+        - WorkOSJWT: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                bio:
+                  type: string
+                picture:
+                  type: string
+                  format: uri
+      responses:
+        '200':
+          description: Profile updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Success'
+
+  /api/user/me/username:
+    put:
+      operationId: updateMyUsername
+      summary: Change username
+      tags: [User]
+      security:
+        - WorkOSJWT: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username]
+              properties:
+                username:
+                  type: string
+                  pattern: '^[a-zA-Z0-9_]{3,30}$'
+      responses:
+        '200':
+          description: Username updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  username:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/user/me/identity:
+    get:
+      operationId: getMyIdentity
+      summary: Get user identity summary
+      description: Combines profile, auth providers, and identity completeness score.
+      tags: [User]
+      security:
+        - WorkOSJWT: []
+      responses:
+        '200':
+          description: Identity summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: '#/components/schemas/UserProfile'
+                  providers:
+                    type: array
+                    items:
+                      type: object
+                  completeness:
+                    type: object
+                    properties:
+                      has_email:
+                        type: boolean
+                      has_phone:
+                        type: boolean
+                      has_username:
+                        type: boolean
+                      has_name:
+                        type: boolean
+                      has_picture:
+                        type: boolean
+                      provider_count:
+                        type: integer
+                      score:
+                        type: integer
+
+  /api/user/me/identity/sync-from-oidc:
+    post:
+      operationId: syncFromOidc
+      summary: Sync profile from OIDC claims
+      description: "Updates profile fields from WorkOS JWT claims. Existing non-null values are preserved unless `overwrite: true`."
+      tags: [User]
+      security:
+        - WorkOSJWT: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [claims]
+              properties:
+                claims:
+                  type: object
+                  additionalProperties: true
+                overwrite:
+                  type: boolean
+                  default: false
+      responses:
+        '200':
+          description: Profile synced
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  fields_updated:
+                    type: integer
+
+  /api/user/me/auth-providers:
+    get:
+      operationId: getMyAuthProviders
+      summary: Get linked authentication providers
+      tags: [Auth]
+      security:
+        - WorkOSJWT: []
+      responses:
+        '200':
+          description: Provider list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  providers:
+                    type: array
+                    items:
+                      type: object
+                  count:
+                    type: integer
+
+  /api/user/me/auth-providers/oidc:
+    post:
+      operationId: linkOidcProvider
+      summary: Link an OIDC authentication provider
+      tags: [Auth]
+      security:
+        - WorkOSJWT: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [provider_name, oidc_subject, oidc_issuer]
+              properties:
+                provider_name:
+                  type: string
+                oidc_subject:
+                  type: string
+                oidc_issuer:
+                  type: string
+                  format: uri
+                claims:
+                  type: object
+                  additionalProperties: true
+      responses:
+        '200':
+          description: Provider linked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Success'
+        '409':
+          description: Identity already linked to another account
+
+  /api/user/me/auth-providers/mobile:
+    post:
+      operationId: linkMobileProvider
+      summary: Link a mobile number
+      tags: [Auth]
+      security:
+        - WorkOSJWT: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [mobile_number]
+              properties:
+                mobile_number:
+                  type: string
+                country_code:
+                  type: string
+                  default: ZW
+      responses:
+        '200':
+          description: Mobile linked (requires OTP verification)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  requires_verification:
+                    type: boolean
+
+  /api/user/me/auth-providers/wallet:
+    post:
+      operationId: linkWalletProvider
+      summary: Link a Web3 wallet
+      tags: [Auth]
+      security:
+        - WorkOSJWT: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [wallet_address]
+              properties:
+                wallet_address:
+                  type: string
+                chain_id:
+                  type: integer
+                  default: 1
+                ens_name:
+                  type: string
+                  nullable: true
+      responses:
+        '200':
+          description: Wallet linked
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  requires_verification:
+                    type: boolean
+
+  /api/user/me/auth-providers/{providerId}/primary:
+    put:
+      operationId: setPrimaryProvider
+      summary: Set primary authentication provider
+      tags: [Auth]
+      security:
+        - WorkOSJWT: []
+      parameters:
+        - name: providerId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Primary provider updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Success'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/user/me/auth-providers/{providerId}:
+    delete:
+      operationId: unlinkAuthProvider
+      summary: Unlink an authentication provider
+      tags: [Auth]
+      security:
+        - WorkOSJWT: []
+      parameters:
+        - name: providerId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Provider unlinked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Success'
+        '400':
+          description: Cannot remove last auth method
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/user/personalized-categories:
+    get:
+      operationId: getPersonalizedCategories
+      summary: Personalized category recommendations
+      tags: [Categories]
+      security: []
+      parameters:
+        - name: userId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Category recommendations
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  categories:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Category'
+
+  /api/user/bookmarks:
+    get:
+      operationId: getBookmarks
+      summary: Get bookmarks (userId query param)
+      tags: [User]
+      security: []
+      parameters:
+        - name: userId
+          in: query
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Bookmarks
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  bookmarks:
+                    type: array
+                    items:
+                      type: object
+                  count:
+                    type: integer
+
+  /api/user/history:
+    get:
+      operationId: getHistory
+      summary: Get reading history (userId query param)
+      tags: [User]
+      security: []
+      parameters:
+        - name: userId
+          in: query
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Reading history
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  history:
+                    type: array
+                    items:
+                      type: object
+                  count:
+                    type: integer
+
+  /api/user/stats:
+    get:
+      operationId: getUserStatsById
+      summary: Get user stats (userId query param)
+      tags: [User]
+      security: []
+      parameters:
+        - name: userId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: User stats
+          content:
+            application/json:
+              schema:
+                type: object
+
+  # ─── Auth (misc) ──────────────────────────────────────────────────────────────
+
+  /api/auth/providers:
+    get:
+      operationId: getAuthProviders
+      summary: List available authentication providers
+      description: Returns providers grouped by type (oidc, mobile, web3). Optionally filtered by country.
+      tags: [Auth]
+      security: []
+      parameters:
+        - name: country
+          in: query
+          description: ISO 3166-1 alpha-2 country code to filter available methods
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Auth provider list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  providers:
+                    type: object
+                    properties:
+                      oidc:
+                        type: array
+                        items:
+                          type: object
+                      mobile:
+                        type: array
+                        items:
+                          type: object
+                      web3:
+                        type: array
+                        items:
+                          type: object
+
+  /api/auth/check-username:
+    get:
+      operationId: checkUsername
+      summary: Check username availability
+      tags: [Auth]
+      security: []
+      parameters:
+        - name: username
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Availability result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  available:
+                    type: boolean
+                  username:
+                    type: string
+                  error:
+                    type: string
+                    nullable: true
+
+  # ─── SEO ──────────────────────────────────────────────────────────────────────
+
+  /sitemap.xml:
+    get:
+      operationId: getSitemapIndex
+      summary: Sitemap index
+      tags: [SEO]
+      security: []
+      responses:
+        '200':
+          description: XML sitemap index
+          content:
+            application/xml:
+              schema:
+                type: string
+
+  /sitemap-articles.xml:
+    get:
+      operationId: getArticlesSitemap
+      summary: Articles sitemap (up to 5000 entries)
+      tags: [SEO]
+      security: []
+      responses:
+        '200':
+          description: XML sitemap
+          content:
+            application/xml:
+              schema:
+                type: string
+
+  /sitemap-news.xml:
+    get:
+      operationId: getNewsSitemap
+      summary: Google News sitemap (last 2 days)
+      tags: [SEO]
+      security: []
+      responses:
+        '200':
+          description: XML sitemap (15-min cache)
+          content:
+            application/xml:
+              schema:
+                type: string
+
+  /api/seo/article/{slug}:
+    get:
+      operationId: getArticleSEO
+      summary: SEO metadata for an article
+      tags: [SEO]
+      security: []
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: SEO metadata and Open Graph tags
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  seo:
+                    type: object
+                  metaTags:
+                    type: array
+                    items:
+                      type: object
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/seo/homepage:
+    get:
+      operationId: getHomepageSEO
+      summary: SEO metadata for the homepage
+      tags: [SEO]
+      security: []
+      responses:
+        '200':
+          description: SEO metadata
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /api/seo/category/{category}:
+    get:
+      operationId: getCategorySEO
+      summary: SEO metadata for a category page
+      tags: [SEO]
+      security: []
+      parameters:
+        - name: category
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: SEO metadata
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /robots.txt:
+    get:
+      operationId: getRobotsTxt
+      summary: robots.txt
+      tags: [SEO]
+      security: []
+      responses:
+        '200':
+          description: robots.txt content
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  # ─── Error reporting ──────────────────────────────────────────────────────────
+
+  /api/errors:
+    post:
+      operationId: reportError
+      summary: Report a frontend error
+      description: |
+        Used by React error boundaries. Rate limited to 10 per minute per IP.
+        Logs to ObservabilityService and Cloudflare Analytics Engine.
+      tags: [System]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [error]
+              properties:
+                error:
+                  type: string
+                  description: Error message
+                stack:
+                  type: string
+                  nullable: true
+                componentStack:
+                  type: string
+                  nullable: true
+                url:
+                  type: string
+                userAgent:
+                  type: string
+                timestamp:
+                  type: string
+                  format: date-time
+      responses:
+        '200':
+          description: Error logged
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  timestamp:
+                    type: string
+                    format: date-time
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  # ─── MCP ──────────────────────────────────────────────────────────────────────
+
+  /mcp:
+    get:
+      operationId: mcpGet
+      summary: MCP Streamable HTTP endpoint (GET)
+      description: |
+        Model Context Protocol server. Uses WorkOS PKCE OAuth.
+        Serves JSON-RPC 2.0 over HTTP streaming.
+        Auth discovery: `/.well-known/oauth-authorization-server`
+      tags: [MCP]
+      security:
+        - WorkOSJWT: []
+      responses:
+        '200':
+          description: MCP JSON-RPC stream
+    post:
+      operationId: mcpPost
+      summary: MCP Streamable HTTP endpoint (POST)
+      tags: [MCP]
+      security:
+        - WorkOSJWT: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: JSON-RPC 2.0 request
+      responses:
+        '200':
+          description: MCP JSON-RPC response
+
+  # ─── Fly.io Pipeline Worker ────────────────────────────────────────────────────
+  # Base URL: https://news-ingestion.fly-worker.nyuchi.dev
+  # Note: paths below are served from the Fly.io server, not the gateway.
+  # The x-server-url extension clarifies the base URL for each path.
+
+  /pipeline/health:
+    get:
+      operationId: flyHealth
+      summary: Fly.io pipeline health check
+      description: |
+        **Actual path**: `GET /health`
+        **Server**: `https://news-ingestion.fly-worker.nyuchi.dev`
+
+        Returns MongoDB connectivity, uptime, and APScheduler job next-run times.
+      tags: [Pipeline]
+      security: []
+      servers:
+        - url: https://news-ingestion.fly-worker.nyuchi.dev
+          description: Fly.io Pipeline Worker (production)
+      responses:
+        '200':
+          description: Pipeline health (status may be `degraded` even on 200)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FlyHealth'
+
+  /trigger/collect:
+    post:
+      operationId: triggerCollect
+      summary: On-demand RSS collection (pipeline)
+      description: |
+        **Server**: `https://news-ingestion.fly-worker.nyuchi.dev`
+
+        Triggers an immediate RSS collection run in the background.
+        Responds with HTTP 202 immediately — the collection runs asynchronously.
+
+        **Rate limit**: 3 triggers per minute globally (sliding window).
+        **Auth**: `Authorization: Bearer <FLY_TRIGGER_TOKEN>`
+      tags: [Pipeline]
+      security:
+        - FlyTriggerToken: []
+      servers:
+        - url: https://news-ingestion.fly-worker.nyuchi.dev
+          description: Fly.io Pipeline Worker (production)
+      responses:
+        '202':
+          description: Collection accepted and running in background
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, message]
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: Collection triggered
+        '401':
+          description: Missing or invalid bearer token
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+                    example: Unauthorized
+        '429':
+          description: Rate limit exceeded (3/min)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+                    example: Rate limit exceeded — 3 triggers/min
+
+  # ─── Fundi Enrichment Worker ───────────────────────────────────────────────────
+  # Base URL: https://news-enrichment.fundi.nyuchi.dev
+
+  /enrichment/health:
+    get:
+      operationId: fundiHealth
+      summary: Fundi enrichment health check
+      description: |
+        **Actual path**: `GET /health`
+        **Server**: `https://news-enrichment.fundi.nyuchi.dev`
+
+        Simple liveness check.
+      tags: [Enrichment]
+      security: []
+      servers:
+        - url: https://news-enrichment.fundi.nyuchi.dev
+          description: Fundi AI Enrichment Worker (production)
+      responses:
+        '200':
+          description: Service is up
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  service:
+                    type: string
+                    example: fundi-news-enrichment
+
+  /api/enrich:
+    post:
+      operationId: enrichArticles
+      summary: AI-enrich a batch of articles
+      description: |
+        **Server**: `https://news-enrichment.fundi.nyuchi.dev`
+
+        Accepts up to 50 article IDs from MongoDB `news.articles` where
+        `aiProcessed != true`. For each article runs:
+        - Claude AI NLP (summary, sentiment, keywords, named entities, categories, quality score)
+        - BGE-M3 vector embedding (stored as `embedding` field)
+
+        Updates each article in-place in MongoDB. Idempotent — already-processed
+        articles are skipped.
+
+        **Auth**: `Authorization: Bearer <ENRICHMENT_API_TOKEN>`
+      tags: [Enrichment]
+      security:
+        - FundiToken: []
+      servers:
+        - url: https://news-enrichment.fundi.nyuchi.dev
+          description: Fundi AI Enrichment Worker (production)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [articleIds]
+              properties:
+                articleIds:
+                  type: array
+                  items:
+                    type: string
+                  description: MongoDB article `_id` values to enrich
+                  maxItems: 50
+                source:
+                  type: string
+                  enum: [rss, newsdata_api, manual]
+                  nullable: true
+                priority:
+                  type: string
+                  enum: [high, normal, low]
+                  default: normal
+      responses:
+        '200':
+          description: Enrichment summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnrichResponse'
+        '400':
+          description: No articleIds provided
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/enrich/org:
+    post:
+      operationId: enrichOrganization
+      summary: Enrich a media organization / entity
+      description: |
+        **Server**: `https://news-enrichment.fundi.nyuchi.dev`
+
+        Proxies to `fundi-ingestion.nyuchi.dev/api/enrich/entity` for place and
+        entity enrichment. Returns the upstream response wrapped in `{ ok, result }`.
+
+        **Auth**: `Authorization: Bearer <ENRICHMENT_API_TOKEN>`
+      tags: [Enrichment]
+      security:
+        - FundiToken: []
+      servers:
+        - url: https://news-enrichment.fundi.nyuchi.dev
+          description: Fundi AI Enrichment Worker (production)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [entityId, mediaOrgId, name, countryCode, schemaOrgType]
+              properties:
+                entityId:
+                  type: string
+                mediaOrgId:
+                  type: string
+                name:
+                  type: string
+                url:
+                  type: string
+                  format: uri
+                  nullable: true
+                countryCode:
+                  type: string
+                  description: ISO 3166-1 alpha-2
+                schemaOrgType:
+                  type: string
+                  description: Schema.org `@type` (e.g. `NewsMediaOrganization`)
+      responses:
+        '200':
+          description: Upstream enrichment result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  result:
+                    type: object
+                    additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          description: Fundi ingestion service unavailable or not configured
 
 security: []
 
 externalDocs:
-  description: Harare Metro GitHub Repository
-  url: https://github.com/nyuchitech/harare-metro
+  description: Mukoko News GitHub
+  url: https://github.com/nyuchitech/mukoko-news

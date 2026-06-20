@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getArticles } from '@/lib/mongodb/articles'
+import { checkRateLimit, getRequestIp } from '@/lib/rate-limit'
 
 export const runtime = 'nodejs'
 
 export async function GET(request: NextRequest) {
+  const ip = getRequestIp(request)
+  if (!checkRateLimit(`feeds:${ip}`)) {
+    return NextResponse.json({ error: 'Too many requests' }, { status: 429 })
+  }
+
   try {
     const { searchParams } = request.nextUrl
     const limit = Math.min(parseInt(searchParams.get('limit') || '20'), 100)

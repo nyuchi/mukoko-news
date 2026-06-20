@@ -12,13 +12,19 @@ import {
   HelpCircle,
   FileText,
   Shield,
+  Loader2,
+  LogOut,
 } from "lucide-react";
 import { useTheme } from "@/components/theme-provider";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
+import { useAuth } from "@workos-inc/authkit-nextjs/components";
+import { InlineSignIn } from "@/components/auth/inline-sign-in";
 
 function ProfileContent() {
   const { theme, setTheme, cycleTheme } = useTheme();
-  const [isLoggedIn] = useState(false);
+  const { user, loading, signOut } = useAuth();
+  const isLoggedIn = !!user;
+  const [showSignIn, setShowSignIn] = useState(false);
 
   const getThemeIcon = () => {
     switch (theme) {
@@ -42,28 +48,54 @@ function ProfileContent() {
     }
   };
 
+  if (loading) {
+    return (
+      <div className="min-h-[60vh] flex items-center justify-center">
+        <Loader2 className="w-8 h-8 text-primary animate-spin" />
+      </div>
+    );
+  }
+
   if (!isLoggedIn) {
     return (
       <div className="max-w-[600px] mx-auto px-6 py-12">
-        {/* Sign In Prompt */}
-        <div className="text-center mb-12">
-          <div className="w-24 h-24 bg-gradient-to-br from-primary to-secondary rounded-full flex items-center justify-center mx-auto mb-6">
-            <User className="w-12 h-12 text-white" />
-          </div>
-          <h1 className="font-serif text-2xl font-bold mb-2">Welcome to Mukoko</h1>
-          <p className="text-text-secondary mb-6">
-            Sign in to save articles, personalize your feed, and sync across
-            devices.
-          </p>
-          <div className="flex gap-3 justify-center">
-            <button className="px-6 py-3 bg-primary text-white font-medium rounded-xl hover:opacity-90 transition-opacity">
-              Sign In
-            </button>
-            <button className="px-6 py-3 bg-surface border border-elevated text-foreground font-medium rounded-xl hover:bg-elevated transition-colors">
-              Create Account
+        {/* Sign In Prompt — inline AuthKit (no hosted redirect) */}
+        {showSignIn ? (
+          <div className="mb-12 rounded-2xl border border-elevated bg-surface p-8">
+            <InlineSignIn />
+            <button
+              onClick={() => setShowSignIn(false)}
+              className="mt-4 w-full text-center text-sm text-text-secondary hover:text-foreground transition-colors"
+            >
+              Cancel
             </button>
           </div>
-        </div>
+        ) : (
+          <div className="text-center mb-12">
+            <div className="w-24 h-24 bg-gradient-to-br from-primary to-secondary rounded-full flex items-center justify-center mx-auto mb-6">
+              <User className="w-12 h-12 text-white" />
+            </div>
+            <h1 className="font-serif text-2xl font-bold mb-2">Welcome to Mukoko</h1>
+            <p className="text-text-secondary mb-6">
+              Sign in to save articles, personalize your feed, and sync across
+              devices.
+            </p>
+            <div className="flex gap-3 justify-center">
+              <button
+                onClick={() => setShowSignIn(true)}
+                className="px-6 py-3 bg-primary text-white font-medium rounded-xl hover:opacity-90 transition-opacity"
+              >
+                Sign In
+              </button>
+              <button
+                onClick={() => setShowSignIn(true)}
+                className="px-6 py-3 bg-surface border border-elevated text-foreground font-medium rounded-xl hover:bg-elevated transition-colors"
+              >
+                Create Account
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Settings */}
         <div className="bg-surface border border-elevated rounded-2xl overflow-hidden">
@@ -145,8 +177,65 @@ function ProfileContent() {
     );
   }
 
-  // Logged in state would show user profile here
-  return null;
+  // Signed-in view
+  const displayName =
+    [user.firstName, user.lastName].filter(Boolean).join(" ") || user.email;
+
+  return (
+    <div className="max-w-[600px] mx-auto px-6 py-12">
+      <div className="text-center mb-10">
+        <div className="w-24 h-24 bg-gradient-to-br from-primary to-secondary rounded-full flex items-center justify-center mx-auto mb-6">
+          <User className="w-12 h-12 text-white" />
+        </div>
+        <h1 className="font-serif text-2xl font-bold mb-1">{displayName}</h1>
+        <p className="text-text-secondary">{user.email}</p>
+      </div>
+
+      <div className="bg-surface border border-elevated rounded-2xl overflow-hidden">
+        <h2 className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-text-tertiary border-b border-elevated">
+          Settings
+        </h2>
+
+        <button
+          onClick={cycleTheme}
+          className="w-full flex items-center justify-between px-4 py-4 hover:bg-elevated transition-colors border-b border-elevated"
+        >
+          <div className="flex items-center gap-3">
+            {getThemeIcon()}
+            <span className="font-medium">Appearance</span>
+          </div>
+          <div className="flex items-center gap-2 text-text-secondary">
+            <span>{getThemeLabel()}</span>
+            <ChevronRight className="w-4 h-4" />
+          </div>
+        </button>
+
+        <Link
+          href="/saved"
+          className="w-full flex items-center justify-between px-4 py-4 hover:bg-elevated transition-colors"
+        >
+          <div className="flex items-center gap-3">
+            <Bell className="w-5 h-5" />
+            <span className="font-medium">Saved Articles</span>
+          </div>
+          <ChevronRight className="w-4 h-4 text-text-tertiary" />
+        </Link>
+      </div>
+
+      <button
+        onClick={() => signOut({ returnTo: "/" })}
+        className="mt-6 w-full flex items-center justify-center gap-2 px-6 py-3 bg-surface border border-elevated text-foreground font-medium rounded-xl hover:bg-elevated transition-colors"
+      >
+        <LogOut className="w-4 h-4" />
+        Sign out
+      </button>
+
+      <div className="text-center mt-8 text-sm text-text-tertiary">
+        <p>Mukoko News v1.0.0</p>
+        <p className="mt-1">A Mukoko Product by Nyuchi Africa</p>
+      </div>
+    </div>
+  );
 }
 
 export default function ProfilePage() {

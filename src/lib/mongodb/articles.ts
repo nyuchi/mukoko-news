@@ -18,6 +18,7 @@ interface MongoArticle {
   slug: string
   inLanguage: string
   status: string
+  moderationStatus?: string
   isApproved: boolean
   scrapedAt: Date
   createdAt: Date
@@ -34,6 +35,9 @@ interface MongoArticle {
   tagIds?: string[]
   qualityScore?: number
   aiProcessed?: boolean
+  embedding?: number[]
+  searchScore?: number
+  vectorSearchScore?: number
 }
 
 interface MongoFeedSource {
@@ -68,16 +72,23 @@ export async function getArticles(params: {
   limit?: number
   page?: number
   category?: string
+  categories?: string[]
   countries?: string[]
   sort?: 'latest' | 'trending' | 'popular'
 } = {}): Promise<{ articles: Article[]; total: number }> {
   const db = await getDb()
-  const { limit = 20, page = 1, category, countries, sort = 'latest' } = params
+  const { limit = 20, page = 1, category, categories, countries, sort = 'latest' } = params
 
   const filter: Filter<MongoArticle> = {
-    status: { $in: ['approved', 'published'] },
+    status: { $ne: 'rejected' },
+    moderationStatus: { $ne: 'removed' },
   }
-  if (category) filter.articleSection = category
+  if (categories?.length) {
+    const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    filter.articleSection = { $in: categories.map(c => new RegExp(`^${escapeRegex(c)}$`, 'i')) } as never
+  } else if (category) {
+    filter.articleSection = category
+  }
   if (countries?.length) {
     const sources = await db.collection<MongoFeedSource>('feedSources')
       .find({ countryCode: { $in: countries } }, { projection: { _id: 1 } })
@@ -130,18 +141,41 @@ export async function getRelatedArticles(articleId: string, limit = 5): Promise<
   const article = await db.collection<MongoArticle>('articles').findOne({ _id: articleId })
   if (!article) return []
 
-  const filter: Filter<MongoArticle> = {
-    _id: { $ne: articleId },
-    status: { $in: ['approved', 'published'] },
-    feedSourceId: article.feedSourceId,
-  }
-  if (article.articleSection) filter.articleSection = article.articleSection
+  let docs: MongoArticle[]
 
-  const docs = await db.collection<MongoArticle>('articles')
-    .find(filter)
-    .sort({ datePublished: -1 })
-    .limit(limit)
-    .toArray()
+  if (article.embedding?.length) {
+    // Semantic similarity via Atlas Vector Search
+    const pipeline = [
+      {
+        $vectorSearch: {
+          index: 'articles_vector_search',
+          path: 'embedding',
+          queryVector: article.embedding,
+          numCandidates: limit * 15,
+          limit: limit + 1,
+          filter: { status: { $ne: 'rejected' }, moderationStatus: { $ne: 'removed' } },
+        },
+      },
+      { $match: { _id: { $ne: articleId } } },
+      { $limit: limit },
+      { $project: { embedding: 0 } },
+    ]
+    docs = await db.collection<MongoArticle>('articles').aggregate<MongoArticle>(pipeline).toArray()
+  } else {
+    // Fallback: same section, same source, recent
+    const filter: Filter<MongoArticle> = {
+      _id: { $ne: articleId },
+      status: { $ne: 'rejected' },
+      moderationStatus: { $ne: 'removed' },
+      feedSourceId: article.feedSourceId,
+    }
+    if (article.articleSection) filter.articleSection = article.articleSection
+    docs = await db.collection<MongoArticle>('articles')
+      .find(filter)
+      .sort({ datePublished: -1 })
+      .limit(limit)
+      .toArray()
+  }
 
   const sourceIds = [...new Set(docs.map(d => d.feedSourceId))]
   const sources = await db.collection<MongoFeedSource>('feedSources')
@@ -156,7 +190,8 @@ export async function getNewsByteArticles(limit = 10): Promise<Article[]> {
   const db = await getDb()
   const docs = await db.collection<MongoArticle>('articles')
     .find({
-      status: { $in: ['approved', 'published'] },
+      status: { $ne: 'rejected' },
+      moderationStatus: { $ne: 'removed' },
       wordCount: { $lte: 300 },
       'image.0': { $exists: true },
     })
@@ -173,21 +208,50 @@ export async function getNewsByteArticles(limit = 10): Promise<Article[]> {
   return docs.map(d => toArticle(d, sourceMap.get(d.feedSourceId)))
 }
 
-export async function searchArticles(query: string, limit = 20): Promise<Article[]> {
+export async function searchArticles(
+  query: string,
+  limit = 20,
+  filters: { category?: string; countryCode?: string } = {},
+): Promise<Article[]> {
   const db = await getDb()
-  const col = db.collection<MongoArticle>('articles')
 
-  // Text index search if available, otherwise regex on headline+description
+  const searchFilters: unknown[] = [{ in: { path: 'status', value: ['approved', 'published'] } }]
+  if (filters.category) {
+    searchFilters.push({ equals: { path: 'articleSection', value: filters.category } })
+  }
+
+  // Atlas Full-Text Search — English stemming + fuzzy matching
+  const pipeline = [
+    {
+      $search: {
+        index: 'articles_text_search',
+        compound: {
+          must: [
+            {
+              text: {
+                query,
+                path: ['headline', 'description', 'articleBodyProcessed'],
+                fuzzy: { maxEdits: 1, prefixLength: 3 },
+              },
+            },
+          ],
+          filter: searchFilters,
+        },
+      },
+    },
+    { $addFields: { searchScore: { $meta: 'searchScore' } } },
+    { $project: { embedding: 0 } },
+    { $limit: limit },
+  ]
+
   let docs: MongoArticle[]
   try {
-    docs = await col
-      .find({ $text: { $search: query }, status: { $in: ['approved', 'published'] } })
-      .sort({ score: { $meta: 'textScore' } } as never)
-      .limit(limit)
-      .toArray()
+    docs = await db.collection<MongoArticle>('articles').aggregate<MongoArticle>(pipeline).toArray()
   } catch {
+    // Fall back to regex if Atlas Search index is not yet active
     const re = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')
-    docs = await col
+    docs = await db
+      .collection<MongoArticle>('articles')
       .find({
         status: { $in: ['approved', 'published'] },
         $or: [{ headline: re }, { description: re }],
@@ -197,11 +261,24 @@ export async function searchArticles(query: string, limit = 20): Promise<Article
       .toArray()
   }
 
-  const sourceIds = [...new Set(docs.map(d => d.feedSourceId))]
-  const sources = await db.collection<MongoFeedSource>('feedSources')
+  // Post-filter by country if requested
+  let filtered = docs
+  if (filters.countryCode && docs.length) {
+    const sourceIds = [...new Set(docs.map(d => d.feedSourceId))]
+    const countrySources = await db
+      .collection<MongoFeedSource>('feedSources')
+      .find({ _id: { $in: sourceIds }, countryCode: filters.countryCode })
+      .toArray()
+    const allowed = new Set(countrySources.map(s => s._id))
+    filtered = docs.filter(d => allowed.has(d.feedSourceId))
+  }
+
+  const sourceIds = [...new Set(filtered.map(d => d.feedSourceId))]
+  const sources = await db
+    .collection<MongoFeedSource>('feedSources')
     .find({ _id: { $in: sourceIds } })
     .toArray()
   const sourceMap = new Map(sources.map(s => [s._id, s]))
 
-  return docs.map(d => toArticle(d, sourceMap.get(d.feedSourceId)))
+  return filtered.map(d => toArticle(d, sourceMap.get(d.feedSourceId)))
 }

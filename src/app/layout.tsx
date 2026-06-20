@@ -7,6 +7,7 @@ import { Footer } from '@/components/layout/footer';
 import { BottomNav } from '@/components/layout/bottom-nav';
 import { OnboardingModal } from '@/components/onboarding-modal';
 import { OrganizationJsonLd, WebSiteJsonLd } from '@/components/ui/json-ld';
+import { AuthKitProvider } from '@workos-inc/authkit-nextjs/components';
 
 // Fonts are loaded via CSS @import in globals.css for better reliability
 // This avoids build failures when Google Fonts API is unreachable
@@ -114,6 +115,7 @@ export default function RootLayout({
         <WebSiteJsonLd />
       </head>
       <body className="font-sans antialiased min-h-screen flex flex-col">
+        <AuthKitProvider>
         <ThemeProvider defaultTheme="system" storageKey="mukoko-news-theme">
           <PreferencesProvider>
             {/* Five African Minerals vertical stripe */}
@@ -128,6 +130,7 @@ export default function RootLayout({
             <OnboardingModal />
           </PreferencesProvider>
         </ThemeProvider>
+        </AuthKitProvider>
       </body>
     </html>
   );

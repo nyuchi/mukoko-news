@@ -8,6 +8,8 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "mukoko-news-gateway",
   "compatibility_date": "2025-10-01",
+  // nodejs_compat — required for the native MongoDB driver in the MCP/public API
+  "compatibility_flags": ["nodejs_compat"],
   "main": "./index.ts",
   "account_id": "125a2dfbc21f76a25c980609609e8218",
 
@@ -17,24 +19,16 @@
    */
   "routes": [
     { "pattern": "news.mukoko.com/mcp*", "zone_name": "mukoko.com" },
-    { "pattern": "news.mukoko.com/api/*", "zone_name": "mukoko.com" }
+    { "pattern": "news.mukoko.com/api/*", "zone_name": "mukoko.com" },
+    { "pattern": "news.mukoko.com/.well-known/oauth-authorization-server", "zone_name": "mukoko.com" }
   ],
   "vars": {
     "NODE_ENV": "production",
     "USE_FALLBACK_CONFIG": "false",
     "LOG_LEVEL": "info",
-    "ROLES_ENABLED": "true",
-    "DEFAULT_ROLE": "user",
-    "ADMIN_ROLES": "admin",
-    "MODERATOR_ROLES": "admin,moderator",
-    "AUTHOR_ROLES": "admin,moderator,author",
-    // TODO: expand CREATOR_ROLES when the creator/publisher tier diverges from AUTHOR_ROLES
-    // (e.g. to add a "creator" role with content-submission but no moderation rights).
-    "CREATOR_ROLES": "admin,moderator,author",
     "CLOUDFLARE_ACCOUNT_ID": "125a2dfbc21f76a25c980609609e8218",
     "AI_INSIGHTS_ENABLED": "true",
-    "AI_SEARCH_ENABLED": "true",
-    "AUTH_ISSUER_URL": "https://id.mukoko.com"
+    "AI_SEARCH_ENABLED": "true"
   },
 
   /**

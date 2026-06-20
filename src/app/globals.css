@@ -33,6 +33,8 @@
   /* Semantic */
   --primary: var(--tanzanite);
   --secondary: var(--cobalt);
+  --success: #2E8B57;
+  --warning: #E07A4D;
   --accent: var(--gold);
 
   /* UI Elements */
@@ -67,6 +69,8 @@
 
   --primary: var(--tanzanite);
   --secondary: var(--cobalt);
+  --success: #2E8B57;
+  --warning: #E07A4D;
   --accent: var(--gold);
 
   /* UI Elements */
@@ -100,6 +104,8 @@
 
   --primary: var(--tanzanite);
   --secondary: var(--cobalt);
+  --success: #2E8B57;
+  --warning: #E07A4D;
   --accent: var(--gold);
 
   /* UI Elements */
@@ -122,6 +128,8 @@
   --color-elevated: var(--elevated);
   --color-primary: var(--primary);
   --color-secondary: var(--secondary);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
   --color-accent: var(--accent);
   --color-text-secondary: var(--text-secondary);
   --color-text-tertiary: var(--text-tertiary);

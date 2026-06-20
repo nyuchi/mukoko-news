@@ -1,5 +1,9 @@
-app = "mukoko-news"
+app = "mukoko-news-api"
 primary_region = "jnb"
+
+# Custom domain: news-ingestion.fly-worker.nyuchi.dev
+# Set up: flyctl certs add news-ingestion.fly-worker.nyuchi.dev
+# DNS: CNAME news-ingestion.fly-worker.nyuchi.dev → mukoko-news-api.fly.dev
 
 [build]
 

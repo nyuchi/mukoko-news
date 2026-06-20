@@ -30,7 +30,11 @@ mukoko-news/
 │   │   └── layout/   # Layout components (header, footer, bottom-nav)
 │   ├── contexts/     # React contexts (preferences, theme)
 │   └── lib/          # Utilities, API client, constants
-├── backend/          # Cloudflare Workers API (Hono framework)
+├── backend/          # Cloudflare Workers API (Hono framework, mukoko-news-gateway)
+├── fly-worker/       # Fly.io Python pipeline (RSS ingest, AI enrichment, MongoDB writes)
+├── processing/       # Cloudflare Python edge processor (service binding from backend)
+├── image-worker/     # Cloudflare image optimisation worker (assets.mukoko.com)
+├── mcp-package/      # @nyuchi/mukoko-news-mcp — published to npm + MCP Registry
 ├── database/         # D1 schema and migrations
 ├── public/           # Static assets
 └── CLAUDE.md         # AI assistant instructions
@@ -40,9 +44,10 @@ mukoko-news/
 
 ### Prerequisites
 
-- Node.js 20+
-- npm
-- Cloudflare account (for backend)
+- Node.js 20+, pnpm 10+
+- Python 3.12+, [uv](https://docs.astral.sh/uv/) (Python package manager)
+- Cloudflare account (for backend/processing workers)
+- [flyctl](https://fly.io/docs/hands-on/install-flyctl/) (for fly-worker pipeline)
 
 ### Frontend Setup (Next.js)
 
@@ -104,12 +109,21 @@ EXPO_PUBLIC_API_SECRET=your_api_secret_here
 
 - **Runtime**: Cloudflare Workers (edge computing)
 - **Framework**: Hono (lightweight, ~12KB)
-- **Database**: D1 (SQLite at edge)
+- **Database**: D1 (SQLite at edge) + MongoDB Atlas (primary data store)
 - **Cache**: KV Namespaces
 - **Real-time**: Durable Objects (4 classes)
 - **AI**: Workers AI for content processing
 - **Search**: Vectorize for semantic search
 - **Auth**: OIDC via id.mukoko.com
+
+### Pipeline Worker Stack (`fly-worker/`)
+
+- **Runtime**: Fly.io (`mukoko-news-api`, Johannesburg JNB) — persistent FastAPI + APScheduler process
+- **Database**: MongoDB Atlas via Motor async driver (`news`, `engagement`, `entity`, `platform` databases)
+- **AI**: Anthropic Claude for NLP enrichment + Cloudflare Workers AI for BGE-M3 embeddings
+- **Jobs**: RSS ingestion (every 15 min), newsdata.io ingestion (every 6 h), AI enrichment, engagement aggregation, source health monitoring, trending, embedding backfill
+- **Endpoints**: `GET /health` (Fly.io health check), `POST /trigger/collect` (on-demand RSS trigger, rate-limited 3/min)
+- **No auth on trigger endpoint** — it's rate-limited only; callers are trusted internal services
 
 ### Design System (Nyuchi Brand v6)
 
@@ -126,39 +140,117 @@ EXPO_PUBLIC_API_SECRET=your_api_secret_here
 }
 ```
 
+## MCP Server
+
+Mukoko News exposes a **Model Context Protocol (MCP) server** so LLMs can search and browse Pan-African news directly.
+
+**Remote endpoint** (no install needed): `https://news.mukoko.com/mcp`
+
+**npm package**: `@nyuchi/mukoko-news-mcp`
+
+### Quick setup
+
+**Claude Desktop / Cursor / any stdio MCP client:**
+
+```json
+{
+  "mcpServers": {
+    "mukoko-news": {
+      "command": "npx",
+      "args": ["@nyuchi/mukoko-news-mcp"]
+    }
+  }
+}
+```
+
+**Streamable HTTP (direct):**
+
+```json
+{
+  "mcpServers": {
+    "mukoko-news": {
+      "type": "http",
+      "url": "https://news.mukoko.com/mcp"
+    }
+  }
+}
+```
+
+### Available tools
+
+| Tool | Description |
+|---|---|
+| `search_news` | Keyword search with optional `category` and `country` (ISO 3166-1, e.g. `ZW`) filters |
+| `get_article` | Full article details by numeric ID or slug |
+| `get_trending` | Most-viewed/liked articles; sort by `views`, `likes`, `trending_score`, or `recent` |
+| `get_similar_stories` | Articles similar to a given article by shared keywords and category |
+| `browse_by_tag` | Browse articles by tag |
+| `browse_by_author` | Articles by a specific author |
+| `browse_by_source` | Articles from a specific news source |
+| `list_categories` | All available categories |
+| `list_sources` | All active news sources |
+| `get_stats` | Platform stats (article count, source count, countries covered) |
+
+No authentication is required — all tools return public content.
+
 ## API
 
-**Base URL**: `https://mukoko-news-backend.nyuchi.workers.dev`
+**Base URL**: `https://news.mukoko.com/api`
 
-### Public Endpoints (Require API Key)
+All public endpoints are unauthenticated. Server-to-server callers send an `Authorization: Bearer <API_SECRET>` header. The full OpenAPI spec is in [`api-schema.yml`](api-schema.yml).
+
+### Public endpoints
 
 ```bash
-# Get articles feed
-GET /api/feeds?limit=20&category=politics&countries=ZW,SA
+# News feed — supports ?limit, ?category, ?countries (comma-separated ISO codes)
+GET /api/feeds
 
-# Get article by ID
+# Feed sections (featured + latest + trending, one request)
+GET /api/feeds/sectioned
+
+# Single article
 GET /api/article/:id
 
-# Get categories
+# Related articles
+GET /api/article/:id/related
+
+# Full-text + semantic search — ?q=query&category=politics&country=ZW
+GET /api/search
+
+# NewsBytes (short-form vertical feed)
+GET /api/news-bytes
+
+# Metadata
 GET /api/categories
+GET /api/sources
+GET /api/keywords
+GET /api/authors
 
-# Get countries
-GET /api/countries
-
-# Health check (no auth required)
+# Health check
 GET /api/health
 ```
 
-### Admin Endpoints (Require Admin Role)
+### Authenticated endpoints (OIDC JWT required)
+
+```bash
+POST /api/articles/:id/like
+POST /api/articles/:id/save
+POST /api/articles/:id/view
+POST /api/articles/:id/comment
+GET  /api/articles/:id/comments
+
+GET  /api/user/me/preferences
+POST /api/user/me/preferences
+POST /api/user/me/follows
+```
+
+### Admin endpoints (admin role required)
 
 ```bash
 GET /api/admin/stats
-GET /api/admin/users
 GET /api/admin/sources
-GET /api/admin/analytics
+GET /api/admin/sources/:id
 ```
-
-Full API documentation: [api-schema.yml](api-schema.yml)
 
 ## Common Commands
 
@@ -225,9 +317,11 @@ npm run test:watch   # Watch mode
 npm run test:coverage # With coverage
 ```
 
-**Test Files** (131 tests total):
+**Test Files** (frontend):
 - `src/lib/__tests__/utils.test.ts` - Utility functions + CSS injection & XSS attack vector tests
 - `src/lib/__tests__/constants.test.ts` - Constants, URL helpers, path traversal & injection tests
+- `src/lib/__tests__/rate-limit.test.ts` - Rate limiter + IP extraction tests
+- `src/lib/__tests__/refresh.test.ts` - Feed refresh server action tests
 - `src/components/__tests__/json-ld.test.tsx` - JSON-LD XSS prevention + expanded injection payloads
 - `src/components/__tests__/breadcrumb.test.tsx` - Breadcrumb navigation tests
 - `src/components/__tests__/bottom-nav.test.tsx` - Mobile bottom navigation + routing tests
@@ -258,11 +352,21 @@ The Next.js frontend auto-deploys to Vercel on push to main.
 
 ### Backend (Cloudflare Workers)
 
+Deployed automatically by the Cloudflare GitHub App on push to main. Manual:
+
 ```bash
 cd backend && npm run deploy
 ```
 
-**Note**: Backend deployment is manual only (not CI/CD).
+### Pipeline Worker (Fly.io — `mukoko-news-api`)
+
+Deployed automatically by CI on push to main (`deploy-fly-worker` job, requires `FLY_API_TOKEN` secret). Manual:
+
+```bash
+cd fly-worker && flyctl deploy --remote-only
+```
+
+Smoke tests run after every deploy and check `/health` (MongoDB connected + all jobs scheduled).
 
 ## Contributing
 
@@ -306,10 +410,12 @@ Mukoko ("Beehive" in Shona) represents the collective knowledge and community of
 |------|--------------|
 | Frontend (`src/`) | ~15,000 |
 | Backend (`backend/`) | ~38,200 |
+| Pipeline Worker (`fly-worker/`) | ~2,500 |
+| Processing Worker (`processing/`) | ~3,200 |
 | Database (`database/`) | ~6,900 |
-| **Total** | **~61,300** |
+| **Total** | **~65,800** |
 
-Tests: 985 total (437 frontend + 548 backend)
+Tests: 985+ total (437 frontend + 548 backend + fly-worker pytest)
 
 ---
 

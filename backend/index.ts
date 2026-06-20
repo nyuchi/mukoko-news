@@ -16,9 +16,7 @@ import { NewsSourceManager } from "./services/NewsSourceManager.js";
 import { RateLimitService } from "./services/RateLimitService.js";
 import { CSRFService } from "./services/CSRFService.js";
 // OIDC Auth - using id.mukoko.com for authentication
-import { oidcAuth, requireAuth, requireAdmin as requireAdminRole, getCurrentUser, getCurrentUserId, isAuthenticated } from "./middleware/oidcAuth.js";
-// API Key Auth - for frontend (Vercel) to backend authentication
-import { apiAuth, requireApiKey, optionalApiKey } from "./middleware/apiAuth.js";
+import { oidcAuth, requireAuth, requireAdmin as requireAdminRole, requireModerator, getCurrentUser, getCurrentUserId, isAuthenticated } from "./middleware/workosAuth.js";
 // Additional enhancement services
 import { CategoryManager } from "./services/CategoryManager.js";
 import { ObservabilityService } from "./services/ObservabilityService.js";
@@ -31,15 +29,13 @@ import { RealtimeAnalyticsDO } from "./services/RealtimeAnalyticsDO.js";
 import { ArticleInteractionsDO } from "./services/ArticleInteractionsDO.js";
 import { UserBehaviorDO } from "./services/UserBehaviorDO.js";
 import { RealtimeCountersDO } from "./services/RealtimeCountersDO.js";
-// Unified Auth Provider Service (Single Auth Wrapper with RBAC)
-import { AuthProviderService, UserRole } from "./services/AuthProviderService.js";
 // Story clustering for feed sections
 import { normalizeTitle, titleSimilarity, clusterArticles, STOP_WORDS } from "./services/StoryClusteringService.js";
 
-// Import admin interface
-import { getAdminHTML, getLoginHTML } from "./admin/index.js";
 // MCP server
 import { handleMcp } from "./mcp/server.js";
+import { getMongoDb } from "./services/MongoService.js";
+import { getPublicAnalytics } from "./services/PublicAnalytics.js";
 
 // Types for Cloudflare bindings
 type Bindings = {
@@ -62,19 +58,19 @@ type Bindings = {
   STORAGE?: R2Bucket; // R2 object storage for feeds, backups, uploads
   NODE_ENV: string;
   LOG_LEVEL: string;
-  ROLES_ENABLED: string;
-  DEFAULT_ROLE: string;
-  ADMIN_ROLES: string;
-  CREATOR_ROLES: string;
   CLOUDFLARE_ACCOUNT_ID?: string;
-  ADMIN_SESSION_SECRET: string; // Set via wrangler secret
-  API_SECRET?: string; // Set via wrangler secret - bearer token for frontend API authentication
+  MONGODB_URI: string; // Set via wrangler secret - MongoDB Atlas connection string (MCP + public API)
+  WORKOS_MCP_CLIENT_ID?: string; // WorkOS public PKCE client id for MCP OAuth discovery
+  WORKOS_PLATFORM_ORG_ID?: string; // WorkOS org id for `platform-team` → admin/staff access
   AI_INSIGHTS_ENABLED: string;
   AI_SEARCH_ENABLED: string;
-  AUTH_ISSUER_URL: string; // OIDC issuer URL (id.mukoko.com)
+  // NOTE: legacy auth env (ADMIN_SESSION_SECRET, API_SECRET, AUTH_ISSUER_URL,
+  // ROLES_ENABLED, DEFAULT_ROLE, ADMIN_ROLES, MODERATOR_ROLES, AUTHOR_ROLES,
+  // CREATOR_ROLES) removed — authentication is handled exclusively by WorkOS.
   RESEND_API_KEY?: string; // Set via wrangler secret for email
   EMAIL_FROM?: string; // Default sender email address
   DATA_PROCESSOR: Fetcher; // Service Binding to mukoko-news-api Python Worker
+  API_SECRET?: string; // Shared secret for fundi-news-enrichment → Gateway authenticated calls
 };
 
 // Export Durable Object classes for Cloudflare
@@ -113,20 +109,8 @@ app.use("/api/*", async (c, next) => {
 // User-specific routes always require a valid OIDC JWT.
 app.use("/api/user/*", requireAuth());
 
-// Protect all admin API routes (except login and backfill)
-app.use("/api/admin/*", async (c, next) => {
-  // Only login bypasses admin auth (requires session cookie validation internally)
-  const bypassPaths = [
-    '/api/admin/login',
-  ];
-
-  if (bypassPaths.includes(c.req.path)) {
-    return await next();
-  }
-
-  // All other admin routes require authentication
-  return await requireAdmin(c, next);
-});
+// Protect all admin API routes — WorkOS admin guard (platform-team / superadmin).
+app.use("/api/admin/*", requireAdminRole());
 
 // Initialize all business services
 function initializeServices(env: Bindings) {
@@ -177,386 +161,11 @@ function initializeServices(env: Bindings) {
   };
 }
 
-// Session-based authentication using environment secret
-// ADMIN_SESSION_SECRET must be set via: wrangler secret put ADMIN_SESSION_SECRET
-
-// Helper function to get session secret from environment
-function getSessionSecret(env: Bindings): string {
-  const secret = env.ADMIN_SESSION_SECRET;
-  if (!secret) {
-    console.error('[AUTH] ADMIN_SESSION_SECRET not configured! Set via: wrangler secret put ADMIN_SESSION_SECRET');
-    throw new Error('Server configuration error: missing session secret');
-  }
-  return secret;
-}
-
-// Legacy password functions removed - authentication now handled by OIDC (id.mukoko.com)
-
-// Helper function to create session token
-async function createSessionToken(email: string, env: Bindings): Promise<string> {
-  const secret = getSessionSecret(env);
-  const timestamp = Date.now();
-  const data = `${email}:${timestamp}:${secret}`;
-  const encoder = new TextEncoder();
-  const hashBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(data));
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-}
-
-// Helper function to get cookie value
-function getCookie(cookieHeader: string | null, name: string): string | null {
-  if (!cookieHeader) return null;
-  const cookies = cookieHeader.split(';').map(c => c.trim());
-  const cookie = cookies.find(c => c.startsWith(`${name}=`));
-  return cookie ? cookie.substring(name.length + 1) : null;
-}
-
-// Authentication middleware - protect admin routes
-// Uses AuthProviderService with RBAC - Admin auth is ALWAYS required (locked)
-const requireAdmin = async (c: any, next: any) => {
-  const cookieHeader = c.req.header('cookie');
-  const sessionToken = getCookie(cookieHeader, 'auth_token') ||
-                       c.req.header('authorization')?.replace('Bearer ', '') ||
-                       c.req.header('x-session-token');
-  const isApiRequest = c.req.path.startsWith('/api/');
-
-  // Use AuthProviderService for admin access validation
-  try {
-    const authService = new AuthProviderService({ DB: c.env.DB, AUTH_STORAGE: c.env.AUTH_STORAGE as any });
-    const result = await authService.validateAdminAccess(sessionToken);
-
-    if (!result.allowed) {
-      console.log('[AUTH] Admin access denied:', result.reason);
-      if (isApiRequest) {
-        const status = !sessionToken ? 401 : 403;
-        return c.json({ error: result.reason || 'Admin access required' }, status);
-      }
-      return c.redirect('https://news.mukoko.com/auth/login', 302);
-    }
-
-    // Session valid and user is admin, continue
-    c.set('user', {
-      userId: result.user!.id,
-      email: result.user!.email,
-      username: result.user!.username,
-      role: result.user!.role
-    });
-    await next();
-  } catch (error) {
-    console.error('[AUTH] Admin validation error:', error);
-    if (isApiRequest) {
-      return c.json({ error: 'Authentication error' }, 401);
-    }
-    return c.redirect('https://news.mukoko.com/auth/login', 302);
-  }
-};
-
-// RBAC Middleware for role-based access
-// Use for routes that need specific role levels but may not require admin
-const requireRole = (requiredRole: 'admin' | 'moderator' | 'support' | 'author' | 'user') => {
-  return async (c: any, next: any) => {
-    const cookieHeader = c.req.header('cookie');
-    const sessionToken = getCookie(cookieHeader, 'auth_token') ||
-                         c.req.header('authorization')?.replace('Bearer ', '') ||
-                         c.req.header('x-session-token');
-    const isApiRequest = c.req.path.startsWith('/api/');
-
-    try {
-      const authService = new AuthProviderService({ DB: c.env.DB, AUTH_STORAGE: c.env.AUTH_STORAGE as any });
-      const result = await authService.validateAccess(sessionToken, requiredRole);
-
-      if (!result.allowed) {
-        console.log(`[AUTH] ${requiredRole} access denied:`, result.reason);
-        if (isApiRequest) {
-          const status = !sessionToken ? 401 : 403;
-          return c.json({ error: result.reason || `${requiredRole} access required` }, status);
-        }
-        return c.redirect('https://news.mukoko.com/auth/login', 302);
-      }
-
-      // Set user context if available
-      if (result.user) {
-        c.set('user', {
-          userId: result.user.id,
-          email: result.user.email,
-          username: result.user.username,
-          role: result.user.role
-        });
-      }
-      await next();
-    } catch (error) {
-      console.error(`[AUTH] ${requiredRole} validation error:`, error);
-      if (isApiRequest) {
-        return c.json({ error: 'Authentication error' }, 401);
-      }
-      return c.redirect('https://news.mukoko.com/auth/login', 302);
-    }
-  };
-};
-
-// Optional auth middleware - doesn't require auth but sets user context if available
-const optionalAuth = async (c: any, next: any) => {
-  const cookieHeader = c.req.header('cookie');
-  const sessionToken = getCookie(cookieHeader, 'auth_token') ||
-                       c.req.header('authorization')?.replace('Bearer ', '') ||
-                       c.req.header('x-session-token');
-
-  if (sessionToken) {
-    try {
-      const authService = new AuthProviderService({ DB: c.env.DB, AUTH_STORAGE: c.env.AUTH_STORAGE as any });
-      const user = await authService.getUserFromHeaders(c.req.raw.headers);
-      if (user) {
-        c.set('user', {
-          userId: user.id,
-          email: user.email,
-          username: user.username,
-          role: user.role
-        });
-      }
-    } catch (error) {
-      // Ignore errors - auth is optional
-      console.log('[AUTH] Optional auth failed:', error);
-    }
-  }
-  await next();
-};
-
-// Login page - redirect to frontend
-app.get("/login", (c) => {
-  return c.redirect("https://news.mukoko.com/auth/login", 302);
-});
-
-// Admin login - validates OIDC session and checks admin role
-// The actual authentication happens via OIDC (/api/auth/oidc/callback)
-// This endpoint validates the existing session has admin privileges
-app.post("/api/admin/login", async (c) => {
-  try {
-    // Rate limit login attempts by IP
-    if (c.env.AUTH_STORAGE) {
-      const rateLimiter = new RateLimitService(c.env.AUTH_STORAGE);
-      const clientIp = c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for') || 'unknown';
-      const rateCheck = await rateLimiter.checkRateLimit(`login:${clientIp}`, RateLimitService.getLoginConfig());
-      if (!rateCheck.allowed) {
-        return c.json({
-          error: 'Too many login attempts. Please try again later.',
-          retryAfter: rateCheck.retryAfter,
-        }, 429);
-      }
-    }
-
-    // Check for existing session token
-    const cookieHeader = c.req.header('cookie');
-    const sessionToken = getCookie(cookieHeader, 'auth_token');
-
-    if (!sessionToken) {
-      // Return OIDC login URL for redirect
-      const issuerUrl = c.env.AUTH_ISSUER_URL || 'https://id.mukoko.com';
-      return c.json({
-        error: "No session found",
-        oidc_url: `${issuerUrl}/oauth/authorize`,
-        requires_auth: true
-      }, 401);
-    }
-
-    // Validate session
-    const authService = new AuthProviderService({
-      DB: c.env.DB,
-      AUTH_STORAGE: c.env.AUTH_STORAGE as any
-    });
-
-    const session = await authService.validateSession(sessionToken);
-    if (!session) {
-      return c.json({
-        error: "Invalid or expired session",
-        requires_auth: true
-      }, 401);
-    }
-
-    // Check if user has admin role
-    const adminRoles = c.env.ADMIN_ROLES?.split(',') || ['admin'];
-    if (!adminRoles.includes(session.role)) {
-      console.log('[AUTH] Admin login denied - user lacks admin role:', {
-        email: session.email,
-        role: session.role,
-        requiredRoles: adminRoles
-      });
-      return c.json({ error: "Insufficient permissions - admin access required" }, 403);
-    }
-
-    // Get full user data
-    const user = await authService.getUserById(session.user_id);
-    if (!user) {
-      return c.json({ error: "User not found" }, 404);
-    }
-
-    console.log('[AUTH] Admin session validated:', { email: session.email, role: session.role });
-
-    return c.json({
-      success: true,
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        username: user.username,
-        role: user.role,
-        picture: user.picture
-      }
-    });
-  } catch (error: any) {
-    console.error('[AUTH] Admin login error:', error);
-    return c.json({ error: "Login failed" }, 500);
-  }
-});
-
-// Logout API endpoint
-app.post("/api/admin/logout", async (c) => {
-  const cookieHeader = c.req.header('cookie');
-  const sessionToken = getCookie(cookieHeader, 'auth_token'); // Changed from admin_session
-
-  if (sessionToken) {
-    // Delete session from shared KV
-    await c.env.AUTH_STORAGE.delete(`session:${sessionToken}`);
-  }
-
-  return c.json({ success: true });
-});
-
-// =============================================================================
-// AUTH SETTINGS API - Manage role-based authentication requirements
-// =============================================================================
-
-// Get current auth settings for all roles
-app.get("/api/admin/auth-settings", async (c) => {
-  try {
-    const authService = new AuthProviderService({
-      DB: c.env.DB,
-      AUTH_STORAGE: c.env.AUTH_STORAGE as any
-    });
-
-    const settings = await authService.getAuthSettings();
-    const history = await authService.getAuthSettingsHistory(10);
-
-    return c.json({
-      success: true,
-      settings,
-      recent_changes: history,
-      note: "Admin authentication is locked and cannot be disabled"
-    });
-  } catch (error) {
-    console.error('[AUTH-SETTINGS] Error fetching settings:', error);
-    return c.json({ error: "Failed to fetch auth settings" }, 500);
-  }
-});
-
-// Update auth setting for a specific role
-app.put("/api/admin/auth-settings/:role", async (c) => {
-  try {
-    const role = c.req.param('role') as UserRole;
-    const validRoles = ['admin', 'moderator', 'support', 'author', 'user'];
-
-    if (!validRoles.includes(role)) {
-      return c.json({ error: "Invalid role" }, 400);
-    }
-
-    const body = await c.req.json();
-    const { auth_required, reason } = body;
-
-    if (typeof auth_required !== 'boolean') {
-      return c.json({ error: "auth_required must be a boolean" }, 400);
-    }
-
-    // Get admin user from session
-    const cookieHeader = c.req.header('cookie');
-    const sessionToken = getCookie(cookieHeader, 'auth_token');
-
-    if (!sessionToken) {
-      return c.json({ error: "Authentication required" }, 401);
-    }
-
-    const authService = new AuthProviderService({
-      DB: c.env.DB,
-      AUTH_STORAGE: c.env.AUTH_STORAGE as any
-    });
-
-    const session = await authService.validateSession(sessionToken);
-    if (!session || session.role !== 'admin') {
-      return c.json({ error: "Admin access required" }, 403);
-    }
-
-    const result = await authService.updateAuthSetting(
-      role,
-      auth_required,
-      session.user_id,
-      reason
-    );
-
-    if (!result.success) {
-      return c.json({ error: result.error }, 400);
-    }
-
-    // Fetch updated settings
-    const settings = await authService.getAuthSettings();
-
-    return c.json({
-      success: true,
-      message: `Auth setting for ${role} updated to ${auth_required ? 'enabled' : 'disabled'}`,
-      settings
-    });
-  } catch (error) {
-    console.error('[AUTH-SETTINGS] Error updating setting:', error);
-    return c.json({ error: "Failed to update auth setting" }, 500);
-  }
-});
-
-// Get auth settings change history
-app.get("/api/admin/auth-settings/history", async (c) => {
-  try {
-    const limit = parseInt(c.req.query('limit') || '50');
-
-    const authService = new AuthProviderService({
-      DB: c.env.DB,
-      AUTH_STORAGE: c.env.AUTH_STORAGE as any
-    });
-
-    const history = await authService.getAuthSettingsHistory(limit);
-
-    return c.json({
-      success: true,
-      history
-    });
-  } catch (error) {
-    console.error('[AUTH-SETTINGS] Error fetching history:', error);
-    return c.json({ error: "Failed to fetch auth settings history" }, 500);
-  }
-});
-
-// User management redirects - all redirect to frontend
-app.get("/register", (c) => {
-  return c.redirect("https://news.mukoko.com/auth/register", 302);
-});
-
-app.get("/onboarding", (c) => {
-  return c.redirect("https://news.mukoko.com/onboarding", 302);
-});
-
-app.get("/profile", (c) => {
-  return c.redirect("https://news.mukoko.com/settings/profile", 302);
-});
-
-app.get("/settings/*", (c) => {
-  return c.redirect("https://news.mukoko.com/settings/profile", 302);
-});
-
-// API Documentation - PUBLIC (no auth required)
-app.get("/", (c) => {
-  c.header("Content-Type", "text/html");
-  return c.html(getAdminHTML());
-});
-
-app.get("/admin", (c) => {
-  c.header("Content-Type", "text/html");
-  return c.html(getAdminHTML());
-});
+// Authentication is handled exclusively by WorkOS (identity.nyuchi.com).
+// Legacy session/cookie helpers, role-env middleware, the cookie-based admin
+// login/logout/auth-settings routes, and the admin HTML interface have been
+// removed. Admin API routes are gated by the WorkOS `requireAdminRole()` guard
+// registered above (`app.use("/api/admin/*", requireAdminRole())`).
 
 // Image proxy — /i/<original-url>?w=800&fmt=webp
 import { handleImageProxy } from "./services/ImageProxyService.js";
@@ -1419,7 +1028,7 @@ app.post("/api/refresh-rss", async (c) => {
  * Public endpoint for initial setup - can be called once to populate sources
  * Subsequent calls will skip existing sources
  */
-app.post("/api/feed/initialize-sources", async (c) => {
+app.post("/api/feed/initialize-sources", requireAdminRole(), async (c) => {
   try {
     console.log("[API] Initializing Pan-African RSS sources...");
 
@@ -3003,8 +2612,8 @@ app.post("/api/articles/:id/view", async (c) => {
     const userId = getCurrentUserId(c) || 'anonymous';
 
     const body = await c.req.json();
-    const readingTime = body.reading_time || 0; // seconds
-    const scrollDepth = body.scroll_depth || 0; // percentage 0-100
+    const readingTime = Math.min(Math.max(parseInt(body.reading_time) || 0, 0), 3600); // seconds, capped 0–3600
+    const scrollDepth = Math.min(Math.max(parseInt(body.scroll_depth) || 0, 0), 100);  // percentage, capped 0–100
 
     // Insert or update reading history
     await c.env.DB.prepare(`
@@ -4411,7 +4020,7 @@ app.get("/api/trending-categories", async (c) => {
 app.get("/api/user/personalized-categories", async (c) => {
   try {
     const services = initializeServices(c.env);
-    const userId = c.req.query('userId');
+    const userId = getCurrentUserId(c);
 
     if (!userId) {
       return c.json({ error: 'User ID required' }, 400);
@@ -4630,7 +4239,7 @@ app.post("/api/admin/sources/health/:sourceId/reset", async (c) => {
 app.get("/api/user/bookmarks", async (c) => {
   try {
     const services = initializeServices(c.env);
-    const userId = c.req.query('userId');
+    const userId = getCurrentUserId(c);
     const limit = parseInt(c.req.query('limit') || '100');
     const offset = parseInt(c.req.query('offset') || '0');
 
@@ -4656,7 +4265,7 @@ app.get("/api/user/bookmarks", async (c) => {
 app.get("/api/user/history", async (c) => {
   try {
     const services = initializeServices(c.env);
-    const userId = c.req.query('userId');
+    const userId = getCurrentUserId(c);
     const limit = parseInt(c.req.query('limit') || '50');
     const offset = parseInt(c.req.query('offset') || '0');
 
@@ -4682,7 +4291,7 @@ app.get("/api/user/history", async (c) => {
 app.get("/api/user/stats", async (c) => {
   try {
     const services = initializeServices(c.env);
-    const userId = c.req.query('userId');
+    const userId = getCurrentUserId(c);
 
     if (!userId) {
       return c.json({ error: 'User ID required' }, 400);
@@ -4700,361 +4309,22 @@ app.get("/api/user/stats", async (c) => {
     return c.json({ error: error.message }, 500);
   }
 });
-
 // ===== AUTHENTICATION ENDPOINTS =====
-// D1-FIRST AUTHENTICATION ARCHITECTURE
-//
-// All authentication data stored in D1 database:
-// - Passwords: users.password_hash (salted SHA-256)
-// - Sessions: user_sessions table
-// - User data: users table
-//
-// KV namespace (AUTH_STORAGE) only used for:
-// - Temporary verification codes (10-minute TTL)
-// - Rate limiting (future enhancement)
-//
-// Why D1-first?
-// - Scales better for thousands of users
-// - Lower cost than KV for core auth data
-// - Persistent, reliable storage
-// - Single source of truth for all user data
-
-// Register - Redirects to OIDC provider
-// Authentication is handled by id.mukoko.com
-app.post("/api/auth/register", async (c) => {
-  return c.json({
-    error: "Direct registration is disabled",
-    message: "Please use Mukoko ID to create an account",
-    oidc: {
-      issuer: "https://id.mukoko.com",
-      authorize_endpoint: "https://id.mukoko.com/authorize",
-      client_id: "mukoko-news",
-      action: "register"
-    }
-  }, 400);
-});
-
-// Login - Redirects to OIDC provider
-// Authentication is handled by id.mukoko.com
-app.post("/api/auth/login", async (c) => {
-  return c.json({
-    error: "Direct login is disabled",
-    message: "Please use Mukoko ID to sign in",
-    oidc: {
-      issuer: "https://id.mukoko.com",
-      authorize_endpoint: "https://id.mukoko.com/authorize",
-      client_id: "mukoko-news",
-      action: "login"
-    }
-  }, 400);
-});
-
-// OIDC Callback - Exchange authorization code for tokens
-// Called by mobile/web after redirect from id.mukoko.com
-// Rate limited to prevent brute-force attacks
-app.post("/api/auth/oidc/callback", async (c) => {
-  try {
-    const services = initializeServices(c.env);
-    const clientIP = c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for') || 'unknown';
-
-    // Rate limit: 10 attempts per 15 minutes per IP
-    const rateLimit = await services.rateLimitService.checkRateLimit(`oidc:${clientIP}`, {
-      maxAttempts: 10,
-      windowMs: 15 * 60 * 1000, // 15 minutes
-      blockDurationMs: 30 * 60 * 1000 // 30 minute block
-    });
-
-    if (!rateLimit.allowed) {
-      console.warn(`[AUTH] Rate limit exceeded for IP: ${clientIP}`);
-      return c.json({
-        error: "Too many authentication attempts",
-        retryAfter: rateLimit.retryAfter
-      }, 429);
-    }
-
-    const { code, redirect_uri } = await c.req.json();
-
-    if (!code || !redirect_uri) {
-      // Record failed attempt
-      await services.rateLimitService.recordAttempt(`oidc:${clientIP}`, {
-        maxAttempts: 10,
-        windowMs: 15 * 60 * 1000,
-        blockDurationMs: 30 * 60 * 1000
-      });
-      return c.json({ error: "Missing code or redirect_uri" }, 400);
-    }
-
-    // Exchange code for tokens with id.mukoko.com
-    const tokenResponse = await fetch("https://id.mukoko.com/oauth/token", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: new URLSearchParams({
-        grant_type: "authorization_code",
-        code,
-        redirect_uri,
-        client_id: "mukoko-news",
-        // client_secret would be added in production
-      }).toString(),
-    });
-
-    if (!tokenResponse.ok) {
-      const errorData = await tokenResponse.text();
-      console.error("[OIDC] Token exchange failed:", errorData);
-      return c.json({ error: "Token exchange failed" }, 401);
-    }
-
-    const tokens = await tokenResponse.json() as {
-      access_token: string;
-      id_token?: string;
-      refresh_token?: string;
-      expires_in?: number;
-      token_type?: string;
-    };
-
-    // Decode ID token to get claims (JWT payload is base64url encoded)
-    let claims: any = {};
-    if (tokens.id_token) {
-      try {
-        const [, payload] = tokens.id_token.split('.');
-        const decoded = atob(payload.replace(/-/g, '+').replace(/_/g, '/'));
-        claims = JSON.parse(decoded);
-      } catch (e) {
-        console.error("[OIDC] Failed to decode ID token:", e);
-      }
-    }
-
-    // If no ID token, fetch userinfo
-    if (!claims.sub && tokens.access_token) {
-      const userInfoResponse = await fetch("https://id.mukoko.com/oauth/userinfo", {
-        headers: {
-          Authorization: `Bearer ${tokens.access_token}`,
-        },
-      });
-      if (userInfoResponse.ok) {
-        claims = await userInfoResponse.json();
-      }
-    }
-
-    if (!claims.sub) {
-      return c.json({ error: "Could not get user identity from OIDC provider" }, 401);
-    }
-
-    // Authenticate with our service
-    const authService = new AuthProviderService({
-      DB: c.env.DB,
-      AUTH_STORAGE: c.env.AUTH_STORAGE as any
-    });
-
-    const result = await authService.authenticateWithOIDC(claims, "mukoko");
-
-    if (!result.success) {
-      return c.json({ error: result.error || "Authentication failed" }, 401);
-    }
-
-    // Set cookie and return session
-    const cookieValue = `auth_token=${result.session_token}; Domain=.mukoko.com; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${7 * 24 * 60 * 60}`;
-
-    return new Response(JSON.stringify({
-      access_token: result.session_token,
-      user: result.user,
-      is_new_user: result.is_new_user,
-      refresh_token: tokens.refresh_token || null
-    }), {
-      headers: {
-        'Content-Type': 'application/json',
-        'Set-Cookie': cookieValue
-      }
-    });
-  } catch (error: any) {
-    console.error("[OIDC] Callback error:", error);
-    return c.json({ error: "Authentication failed" }, 500);
-  }
-});
-
-// Refresh access token
-// Called when the current token is about to expire
-app.post("/api/auth/refresh", async (c) => {
-  try {
-    const { refresh_token } = await c.req.json();
-
-    if (!refresh_token) {
-      return c.json({ error: "Missing refresh_token" }, 400);
-    }
-
-    // Exchange refresh token with id.mukoko.com
-    const tokenResponse = await fetch("https://id.mukoko.com/oauth/token", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: new URLSearchParams({
-        grant_type: "refresh_token",
-        refresh_token,
-        client_id: "mukoko-news",
-      }).toString(),
-    });
-
-    if (!tokenResponse.ok) {
-      const errorData = await tokenResponse.text();
-      console.error("[OIDC] Token refresh failed:", errorData);
-      return c.json({ error: "Token refresh failed" }, 401);
-    }
-
-    const tokens = await tokenResponse.json() as {
-      access_token: string;
-      id_token?: string;
-      refresh_token?: string;
-      expires_in?: number;
-    };
-
-    // Decode ID token to get claims
-    let claims: any = {};
-    if (tokens.id_token) {
-      try {
-        const [, payload] = tokens.id_token.split('.');
-        const decoded = atob(payload.replace(/-/g, '+').replace(/_/g, '/'));
-        claims = JSON.parse(decoded);
-      } catch (e) {
-        console.error("[OIDC] Failed to decode ID token:", e);
-      }
-    }
-
-    if (!claims.sub) {
-      return c.json({ error: "Could not get user identity from refreshed token" }, 401);
-    }
-
-    // Re-authenticate to create new session
-    const authService = new AuthProviderService({
-      DB: c.env.DB,
-      AUTH_STORAGE: c.env.AUTH_STORAGE as any
-    });
-
-    const result = await authService.authenticateWithOIDC(claims, "mukoko");
-
-    if (!result.success) {
-      return c.json({ error: result.error || "Session refresh failed" }, 401);
-    }
-
-    // Set cookie and return new session
-    const cookieValue = `auth_token=${result.session_token}; Domain=.mukoko.com; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${7 * 24 * 60 * 60}`;
-
-    return new Response(JSON.stringify({
-      access_token: result.session_token,
-      user: result.user,
-      refresh_token: tokens.refresh_token || refresh_token
-    }), {
-      headers: {
-        'Content-Type': 'application/json',
-        'Set-Cookie': cookieValue
-      }
-    });
-  } catch (error: any) {
-    console.error("[OIDC] Refresh error:", error);
-    return c.json({ error: "Token refresh failed" }, 500);
-  }
-});
-
-// Get current session - uses AuthProviderService
-app.get("/api/auth/session", async (c) => {
-  try {
-    // Try to get token from cookie first, then Authorization header
-    const cookieHeader = c.req.header('cookie');
-    let token = getCookie(cookieHeader, 'auth_token');
-
-    if (!token) {
-      const authHeader = c.req.header('Authorization');
-      if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return c.json({ session: null, user: null });
-      }
-      token = authHeader.substring(7);
-    }
-
-    const authService = new AuthProviderService({
-      DB: c.env.DB,
-      AUTH_STORAGE: c.env.AUTH_STORAGE as any // Type compatibility workaround
-    });
-
-    const session = await authService.validateSession(token);
-    if (!session) {
-      return c.json({ session: null, user: null });
-    }
-
-    // Fetch full user data if needed
-    const user = await authService.getUserById(session.user_id);
-
-    return c.json({
-      session: { access_token: token },
-      user: user || {
-        id: session.user_id,
-        email: session.email,
-        username: session.username,
-        role: session.role
-      }
-    });
-  } catch (error: any) {
-    console.error("[AUTH] Session check error:", error);
-    return c.json({ session: null, user: null });
-  }
-});
-
-// Logout - uses AuthProviderService
-app.post("/api/auth/logout", async (c) => {
-  try {
-    // Try to get token from cookie first, then Authorization header
-    const cookieHeader = c.req.header('cookie');
-    let token = getCookie(cookieHeader, 'auth_token');
-
-    if (!token) {
-      const authHeader = c.req.header('Authorization');
-      if (authHeader && authHeader.startsWith('Bearer ')) {
-        token = authHeader.substring(7);
-      }
-    }
-
-    if (token) {
-      const authService = new AuthProviderService({
-        DB: c.env.DB,
-        AUTH_STORAGE: c.env.AUTH_STORAGE as any // Type compatibility workaround
-      });
-      await authService.invalidateSession(token);
-    }
-
-    // Clear the cookie by setting it with Max-Age=0
-    return new Response(JSON.stringify({ success: true }), {
-      headers: {
-        'Content-Type': 'application/json',
-        'Set-Cookie': 'auth_token=; Domain=.mukoko.com; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0'
-      }
-    });
-  } catch (error: any) {
-    console.error("[AUTH] Logout error:", error);
-    return c.json({ error: "Logout failed" }, 500);
-  }
-});
+// Authentication is handled exclusively by WorkOS (identity.nyuchi.com).
+// The legacy id.mukoko.com OIDC flow (register/login/callback/refresh/session/
+// logout) and its AuthProviderService session store have been removed. User
+// identity now arrives as a verified WorkOS JWT (see middleware/workosAuth.ts).
 
 // Update user profile (including username during onboarding)
 app.patch("/api/user/me/profile", async (c) => {
   try {
-    const authHeader = c.req.header('Authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    // Authenticated via WorkOS (`/api/user/*` requires a valid JWT).
+    const userId = getCurrentUserId(c);
+    if (!userId) {
       return c.json({ error: 'Unauthorized' }, 401);
     }
 
-    const token = authHeader.substring(7);
     const { username, displayName, bio, avatarUrl } = await c.req.json();
-
-    // Get user ID from session
-    const sessionResult = await c.env.DB.prepare(`
-      SELECT user_id FROM user_sessions WHERE token_hash = ? AND expires_at > datetime('now')
-    `).bind(token).first() as any;
-
-    if (!sessionResult) {
-      return c.json({ error: 'Invalid or expired token' }, 401);
-    }
-
-    const userId = sessionResult.user_id;
 
     // If username is being updated, check uniqueness
     if (username) {
@@ -5622,20 +4892,8 @@ app.get("/api/auth/providers", async (c) => {
 
 // Get all users (admin only)
 app.get("/api/admin/users", async (c) => {
+  // Admin access enforced by WorkOS guard: app.use("/api/admin/*", requireAdminRole())
   try {
-    const authHeader = c.req.header('Authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return c.json({ error: "Authentication required" }, 401);
-    }
-
-    const token = authHeader.substring(7);
-    const authService = new AuthProviderService({ DB: c.env.DB, AUTH_STORAGE: c.env.AUTH_STORAGE as any });
-    const session = await authService.validateSession(token);
-
-    if (!session || session.role !== 'admin') {
-      return c.json({ error: "Admin access required" }, 403);
-    }
-
     const limit = parseInt(c.req.query("limit") || "50");
     const offset = parseInt(c.req.query("offset") || "0");
     const search = c.req.query("search") || "";
@@ -5677,20 +4935,8 @@ app.get("/api/admin/users", async (c) => {
 
 // Get user stats (admin only)
 app.get("/api/admin/user-stats", async (c) => {
+  // Admin access enforced by WorkOS guard: app.use("/api/admin/*", requireAdminRole())
   try {
-    const authHeader = c.req.header('Authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return c.json({ error: "Authentication required" }, 401);
-    }
-
-    const token = authHeader.substring(7);
-    const authService = new AuthProviderService({ DB: c.env.DB, AUTH_STORAGE: c.env.AUTH_STORAGE as any });
-    const session = await authService.validateSession(token);
-
-    if (!session || session.role !== 'admin') {
-      return c.json({ error: "Admin access required" }, 403);
-    }
-
     // Get user statistics directly from DB
     const totalResult = await c.env.DB.prepare('SELECT COUNT(*) as count FROM users').first<{ count: number }>();
     const activeResult = await c.env.DB.prepare("SELECT COUNT(*) as count FROM users WHERE status = 'active'").first<{ count: number }>();
@@ -5715,20 +4961,8 @@ app.get("/api/admin/user-stats", async (c) => {
 
 // Update user role (admin only)
 app.put("/api/admin/users/:userId/role", async (c) => {
+  // Admin access enforced by WorkOS guard: app.use("/api/admin/*", requireAdminRole())
   try {
-    const authHeader = c.req.header('Authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return c.json({ error: "Authentication required" }, 401);
-    }
-
-    const token = authHeader.substring(7);
-    const authService = new AuthProviderService({ DB: c.env.DB, AUTH_STORAGE: c.env.AUTH_STORAGE as any });
-    const session = await authService.validateSession(token);
-
-    if (!session || session.role !== 'admin') {
-      return c.json({ error: "Admin access required" }, 403);
-    }
-
     const userId = c.req.param("userId");
     const { role } = await c.req.json();
 
@@ -5737,7 +4971,9 @@ app.put("/api/admin/users/:userId/role", async (c) => {
       return c.json({ error: "Invalid role. Valid roles: admin, moderator, support, author, user" }, 400);
     }
 
-    await authService.updateUserRole(userId, role, session.user_id);
+    await c.env.DB.prepare(
+      'UPDATE users SET role = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
+    ).bind(role, userId).run();
 
     return c.json({ message: "User role updated successfully" });
   } catch (error: any) {
@@ -5748,20 +4984,8 @@ app.put("/api/admin/users/:userId/role", async (c) => {
 
 // Suspend/activate user (admin only)
 app.put("/api/admin/users/:userId/status", async (c) => {
+  // Admin access enforced by WorkOS guard: app.use("/api/admin/*", requireAdminRole())
   try {
-    const authHeader = c.req.header('Authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return c.json({ error: "Authentication required" }, 401);
-    }
-
-    const token = authHeader.substring(7);
-    const authService = new AuthProviderService({ DB: c.env.DB, AUTH_STORAGE: c.env.AUTH_STORAGE as any });
-    const session = await authService.validateSession(token);
-
-    if (!session || session.role !== 'admin') {
-      return c.json({ error: "Admin access required" }, 403);
-    }
-
     const userId = c.req.param("userId");
     const { status } = await c.req.json();
 
@@ -5787,20 +5011,8 @@ app.put("/api/admin/users/:userId/status", async (c) => {
 
 // Delete user (admin only)
 app.delete("/api/admin/users/:userId", async (c) => {
+  // Admin access enforced by WorkOS guard: app.use("/api/admin/*", requireAdminRole())
   try {
-    const authHeader = c.req.header('Authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return c.json({ error: "Authentication required" }, 401);
-    }
-
-    const token = authHeader.substring(7);
-    const authService = new AuthProviderService({ DB: c.env.DB, AUTH_STORAGE: c.env.AUTH_STORAGE as any });
-    const session = await authService.validateSession(token);
-
-    if (!session || session.role !== 'admin') {
-      return c.json({ error: "Admin access required" }, 403);
-    }
-
     const userId = c.req.param("userId");
 
     // Soft delete - set status to 'deleted'
@@ -5861,13 +5073,21 @@ app.post("/api/auth/change-password", async (c) => {
 
 // ===== USER PROFILE ENDPOINTS =====
 
+// Look up a user row by username (replaces AuthProviderService.getUserByUsername).
+async function getUserByUsername(db: D1Database, username: string): Promise<Record<string, any> | null> {
+  const user = await db.prepare(`
+    SELECT id, email, username, name, picture, bio, role, status, created_at
+    FROM users WHERE username = ?
+  `).bind(username.toLowerCase()).first();
+  return (user as Record<string, any>) || null;
+}
+
 // Get user profile by username
 app.get("/api/user/:username", async (c) => {
   try {
     const username = c.req.param("username");
-    const authService = new AuthProviderService({ DB: c.env.DB, AUTH_STORAGE: c.env.AUTH_STORAGE as any });
 
-    const user = await authService.getUserByUsername(username);
+    const user = await getUserByUsername(c.env.DB, username);
     if (!user) {
       return c.json({ error: "User not found" }, 404);
     }
@@ -5891,17 +5111,10 @@ app.get("/api/user/:username", async (c) => {
 // Update username (authenticated)
 app.put("/api/user/me/username", async (c) => {
   try {
-    const authHeader = c.req.header('Authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    // Authenticated via WorkOS (`/api/user/*` requires a valid JWT).
+    const userId = getCurrentUserId(c);
+    if (!userId) {
       return c.json({ error: "Authentication required" }, 401);
-    }
-
-    const token = authHeader.substring(7);
-    const authService = new AuthProviderService({ DB: c.env.DB, AUTH_STORAGE: c.env.AUTH_STORAGE as any });
-    const session = await authService.validateSession(token);
-
-    if (!session) {
-      return c.json({ error: "Invalid session" }, 401);
     }
 
     const { username } = await c.req.json();
@@ -5918,7 +5131,7 @@ app.put("/api/user/me/username", async (c) => {
     // Check if username is taken
     const existing = await c.env.DB.prepare(
       'SELECT id FROM users WHERE username = ? AND id != ?'
-    ).bind(username.toLowerCase(), session.user_id).first();
+    ).bind(username.toLowerCase(), userId).first();
 
     if (existing) {
       return c.json({ error: "Username is already taken" }, 400);
@@ -5927,7 +5140,7 @@ app.put("/api/user/me/username", async (c) => {
     // Update username
     await c.env.DB.prepare(
       'UPDATE users SET username = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
-    ).bind(username.toLowerCase(), session.user_id).run();
+    ).bind(username.toLowerCase(), userId).run();
 
     return c.json({ message: "Username updated successfully", username: username.toLowerCase() });
   } catch (error: any) {
@@ -5939,17 +5152,10 @@ app.put("/api/user/me/username", async (c) => {
 // Update user profile (authenticated)
 app.put("/api/user/me/profile", async (c) => {
   try {
-    const authHeader = c.req.header('Authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    // Authenticated via WorkOS (`/api/user/*` requires a valid JWT).
+    const userId = getCurrentUserId(c);
+    if (!userId) {
       return c.json({ error: "Authentication required" }, 401);
-    }
-
-    const token = authHeader.substring(7);
-    const authService = new AuthProviderService({ DB: c.env.DB, AUTH_STORAGE: c.env.AUTH_STORAGE as any });
-    const session = await authService.validateSession(token);
-
-    if (!session) {
-      return c.json({ error: "Invalid session" }, 401);
     }
 
     const { name, bio, picture } = await c.req.json();
@@ -5958,7 +5164,7 @@ app.put("/api/user/me/profile", async (c) => {
       UPDATE users
       SET name = ?, bio = ?, picture = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `).bind(name || null, bio || null, picture || null, session.user_id).run();
+    `).bind(name || null, bio || null, picture || null, userId).run();
 
     return c.json({ message: "Profile updated successfully" });
   } catch (error: any) {
@@ -5974,24 +5180,14 @@ app.get("/api/user/:username/bookmarks", async (c) => {
     const limit = parseInt(c.req.query("limit") || "20");
     const offset = parseInt(c.req.query("offset") || "0");
 
-    const authService = new AuthProviderService({ DB: c.env.DB, AUTH_STORAGE: c.env.AUTH_STORAGE as any });
-    const user = await authService.getUserByUsername(username);
+    const user = await getUserByUsername(c.env.DB, username);
 
     if (!user) {
       return c.json({ error: "User not found" }, 404);
     }
 
-    // Check if requesting user has permission to view (own bookmarks only for now)
-    const authHeader = c.req.header('Authorization');
-    let canView = false;
-
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      const token = authHeader.substring(7);
-      const session = await authService.validateSession(token);
-      canView = session && (session.user_id === user.id);
-    }
-
-    if (!canView) {
+    // Own bookmarks only — compare against the authenticated WorkOS user.
+    if (getCurrentUserId(c) !== user.id) {
       return c.json({ error: "Access denied" }, 403);
     }
 
@@ -6029,24 +5225,14 @@ app.get("/api/user/:username/likes", async (c) => {
     const limit = parseInt(c.req.query("limit") || "20");
     const offset = parseInt(c.req.query("offset") || "0");
 
-    const authService = new AuthProviderService({ DB: c.env.DB, AUTH_STORAGE: c.env.AUTH_STORAGE as any });
-    const user = await authService.getUserByUsername(username);
+    const user = await getUserByUsername(c.env.DB, username);
 
     if (!user) {
       return c.json({ error: "User not found" }, 404);
     }
 
-    // Check if requesting user has permission to view (own likes only for now)
-    const authHeader = c.req.header('Authorization');
-    let canView = false;
-
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      const token = authHeader.substring(7);
-      const session = await authService.validateSession(token);
-      canView = session && (session.user_id === user.id);
-    }
-
-    if (!canView) {
+    // Own likes only — compare against the authenticated WorkOS user.
+    if (getCurrentUserId(c) !== user.id) {
       return c.json({ error: "Access denied" }, 403);
     }
 
@@ -6084,24 +5270,14 @@ app.get("/api/user/:username/history", async (c) => {
     const limit = parseInt(c.req.query("limit") || "20");
     const offset = parseInt(c.req.query("offset") || "0");
 
-    const authService = new AuthProviderService({ DB: c.env.DB, AUTH_STORAGE: c.env.AUTH_STORAGE as any });
-    const user = await authService.getUserByUsername(username);
+    const user = await getUserByUsername(c.env.DB, username);
 
     if (!user) {
       return c.json({ error: "User not found" }, 404);
     }
 
-    // Check if requesting user has permission to view (own history only)
-    const authHeader = c.req.header('Authorization');
-    let canView = false;
-
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      const token = authHeader.substring(7);
-      const session = await authService.validateSession(token);
-      canView = session && (session.user_id === user.id);
-    }
-
-    if (!canView) {
+    // Own history only — compare against the authenticated WorkOS user.
+    if (getCurrentUserId(c) !== user.id) {
       return c.json({ error: "Access denied" }, 403);
     }
 
@@ -6137,8 +5313,7 @@ app.get("/api/user/:username/history", async (c) => {
 app.get("/api/user/:username/stats", async (c) => {
   try {
     const username = c.req.param("username");
-    const authService = new AuthProviderService({ DB: c.env.DB, AUTH_STORAGE: c.env.AUTH_STORAGE as any });
-    const user = await authService.getUserByUsername(username);
+    const user = await getUserByUsername(c.env.DB, username);
 
     if (!user) {
       return c.json({ error: "User not found" }, 404);
@@ -6486,12 +5661,40 @@ Crawl-delay: 1
 });
 
 // ── MCP server endpoint ──────────────────────────────────────────────────
-// POST /mcp — Streamable HTTP (JSON-RPC 2.0) for LLM tool use.
-// Tools: search_news, get_article, get_trending, get_similar_stories,
-//        browse_by_tag, browse_by_author, browse_by_source,
-//        list_categories, list_sources, get_stats
+// Public, task-oriented MCP at news.mukoko.com/mcp — MongoDB-backed, WorkOS
+// OAuth (public PKCE client at identity.nyuchi.com). Streamable HTTP JSON-RPC.
 app.all('/mcp', async (c) => {
-  return handleMcp(c.req.raw, c.env.DB);
+  const db = await getMongoDb(c.env.MONGODB_URI);
+  return handleMcp(c.req.raw, db);
+});
+
+// ── Open-data analytics — powers the Vercel /analytics page ───────────────
+app.get('/api/analytics', async (c) => {
+  const db = await getMongoDb(c.env.MONGODB_URI);
+  const data = await getPublicAnalytics(db);
+  return c.json(data, 200, { 'Access-Control-Allow-Origin': '*' });
+});
+
+// OAuth 2.0 Authorization Server Metadata (RFC 8414) — MCP client discovery.
+// Points to the WorkOS AuthKit custom domain (identity.nyuchi.com) public PKCE client.
+app.get('/.well-known/oauth-authorization-server', (c) => {
+  const auth = 'https://identity.nyuchi.com';
+  const clientId = c.env.WORKOS_MCP_CLIENT_ID ?? 'client_01KV2GGE5A7WRSFPWZ5HQJ3FNZ';
+  return c.json(
+    {
+      issuer: auth,
+      authorization_endpoint: `${auth}/oauth/authorize`,
+      token_endpoint: `${auth}/oauth/token`,
+      jwks_uri: `${auth}/.well-known/jwks.json`,
+      response_types_supported: ['code'],
+      grant_types_supported: ['authorization_code', 'refresh_token'],
+      code_challenge_methods_supported: ['S256'],
+      token_endpoint_auth_methods_supported: ['none'],
+      client_id: clientId,
+    },
+    200,
+    { 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'public, max-age=3600' },
+  );
 });
 
 // Scheduled handler for cron jobs with rotating batch processing
@@ -6563,6 +5766,112 @@ const scheduledHandler = async (
     `).bind('scheduled_task', 'failed', error.message).run();
   }
 };
+
+// ── Moderator routes ──────────────────────────────────────────────────────────
+// Gated by requireModerator() — platform-team moderators and above.
+
+app.use("/api/moderator/*", requireModerator());
+
+// Content moderation: set moderationStatus on an article.
+// moderationStatus: 'active' | 'flagged' | 'removed'
+app.patch("/api/moderator/articles/:id", async (c) => {
+  const id = c.req.param("id");
+
+  let body: { moderationStatus?: string; reason?: string };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Invalid JSON body" }, 400);
+  }
+
+  const { moderationStatus, reason } = body;
+  const valid = ["active", "flagged", "removed"];
+  if (!moderationStatus || !valid.includes(moderationStatus)) {
+    return c.json({ error: "moderationStatus must be one of: active, flagged, removed" }, 400);
+  }
+
+  const mongoUri = (c.env as any).MONGODB_URI as string | undefined;
+  if (!mongoUri) {
+    return c.json({ error: "Database configuration error" }, 500);
+  }
+
+  try {
+    const db = await getMongoDb(mongoUri, "news");
+    const now = new Date();
+    const update: Record<string, unknown> = {
+      moderationStatus,
+      moderatedAt: now,
+      moderatedBy: getCurrentUserId(c),
+      updatedAt: now,
+    };
+    if (reason !== undefined) update.moderationReason = reason;
+
+    const result = await db.collection("articles").updateOne(
+      { _id: id as any },
+      { $set: update }
+    );
+
+    if (result.matchedCount === 0) return c.json({ error: "Article not found" }, 404);
+
+    return c.json({ ok: true, id, moderationStatus });
+  } catch (err: any) {
+    console.error("[MODERATOR] Failed to update article:", err);
+    return c.json({ error: "Failed to update moderation status" }, 500);
+  }
+});
+
+// ── Admin source mutation ────────────────────────────────────────────────────
+// Toggle isActive or update entity verification status on a feedSource.
+
+app.patch("/api/admin/sources/:id", async (c) => {
+  const id = c.req.param("id");
+
+  let body: { isActive?: boolean; status?: string };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Invalid JSON body" }, 400);
+  }
+
+  const { isActive, status } = body;
+  if (isActive === undefined && status === undefined) {
+    return c.json({ error: "Provide isActive or status" }, 400);
+  }
+
+  const validStatuses = ["pending", "claimed", "approved", "verified", "rejected"];
+  if (status !== undefined && !validStatuses.includes(status)) {
+    return c.json({ error: "status must be one of: pending, claimed, approved, verified, rejected" }, 400);
+  }
+
+  const mongoUri = (c.env as any).MONGODB_URI as string | undefined;
+  if (!mongoUri) {
+    return c.json({ error: "Database configuration error" }, 500);
+  }
+
+  try {
+    const db = await getMongoDb(mongoUri, "news");
+    const now = new Date();
+    const update: Record<string, unknown> = { updatedAt: now };
+    if (isActive !== undefined) update.isActive = isActive;
+    if (status !== undefined) update.status = status;
+
+    const result = await db.collection("feedSources").updateOne(
+      { _id: id as any },
+      { $set: update }
+    );
+
+    if (result.matchedCount === 0) return c.json({ error: "Source not found" }, 404);
+
+    const updated: Record<string, unknown> = {};
+    if (isActive !== undefined) updated.isActive = isActive;
+    if (status !== undefined) updated.status = status;
+
+    return c.json({ ok: true, id, updated });
+  } catch (err: any) {
+    console.error("[ADMIN] Failed to update source:", err);
+    return c.json({ error: "Failed to update source" }, 500);
+  }
+});
 
 // Type for scheduled controller
 interface ScheduledController {
