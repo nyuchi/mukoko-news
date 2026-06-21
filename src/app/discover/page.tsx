@@ -7,7 +7,8 @@ import { Search, ArrowRight, Newspaper } from "lucide-react";
 import { ArticleCard } from "@/components/article-card";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { DiscoverPageSkeleton } from "@/components/ui/discover-skeleton";
-import { api, type Article, type Category } from "@/lib/api";
+import { type Article, type Category } from "@/lib/api";
+import { getArticlesAction, getCategoriesAction, getSourcesAction } from "@/lib/actions/feed";
 import { COUNTRIES, CATEGORY_META, getFullUrl } from "@/lib/constants";
 import { WebPageJsonLd } from "@/components/ui/json-ld";
 
@@ -52,19 +53,18 @@ export default function DiscoverPage() {
       setLoading(true);
       try {
         const promises: Promise<unknown>[] = [
-          api.getArticles({
+          getArticlesAction({
             limit: 50,
             category: activeCategory || undefined,
-            country: activeCountry || undefined,
+            countries: activeCountry ? [activeCountry] : undefined,
           }),
         ];
 
         // Fetch metadata only on first load
         if (!metadataLoaded) {
           promises.push(
-            api.getCategories(),
-            api.getSources(),
-            api.getKeywords(32),
+            getCategoriesAction(),
+            getSourcesAction(),
           );
         }
 
@@ -74,12 +74,11 @@ export default function DiscoverPage() {
         setArticles(articlesRes.articles || []);
 
         if (!metadataLoaded) {
-          const categoriesRes = results[1] as { categories?: Category[] };
-          const sourcesRes = results[2] as { sources?: Source[] };
-          const keywordsRes = results[3] as { keywords?: Keyword[] };
-          setCategories(categoriesRes.categories?.filter((c) => c.id !== "all") || []);
-          setSources(sourcesRes.sources || []);
-          setKeywords(keywordsRes.keywords || []);
+          const categoriesRes = results[1] as Category[];
+          const sourcesRes = results[2] as Source[];
+          setCategories((categoriesRes || []).filter((c) => c.id !== "all"));
+          setSources(sourcesRes || []);
+          setKeywords([]);
           setMetadataLoaded(true);
         }
       } catch (error) {

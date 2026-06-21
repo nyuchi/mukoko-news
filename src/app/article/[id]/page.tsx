@@ -1,6 +1,6 @@
 import { cache } from "react";
 import type { Metadata } from "next";
-import { api } from "@/lib/api";
+import { getArticleById } from "@/lib/mongodb/articles";
 import { getArticleUrl, BASE_URL } from "@/lib/constants";
 import { isValidImageUrl } from "@/lib/utils";
 import ArticleDetailClient from "./article-detail-client";
@@ -11,8 +11,7 @@ interface Props {
 
 const fetchArticle = cache(async (id: string) => {
   try {
-    const data = await api.getArticle(id);
-    return data.article || null;
+    return await getArticleById(id);
   } catch (error) {
     console.error("[ArticlePage] Failed to fetch article:", id, error);
     return null;

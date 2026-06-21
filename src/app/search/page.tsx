@@ -6,7 +6,8 @@ import { Search, Loader2, TrendingUp, BarChart3, X } from "lucide-react";
 import { ArticleCard } from "@/components/article-card";
 import { CategoryChip } from "@/components/ui/category-chip";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
-import { api, type Article, type Category } from "@/lib/api";
+import { type Article, type Category } from "@/lib/api";
+import { getCategoriesAction, getTrendingCategoriesAction, getStatsAction, searchArticlesAction } from "@/lib/actions/feed";
 
 export default function SearchPage() {
   const [query, setQuery] = useState("");
@@ -35,36 +36,25 @@ export default function SearchPage() {
   const loadInitialData = async () => {
     setInsightsLoading(true);
     try {
-      // Load categories, stats, and trending in parallel
-      const [categoriesData, statsData, trendingData] = await Promise.all([
-        api.getCategories().catch(() => ({ categories: [] })),
-        api.getStats().catch(() => ({ database: { total_articles: 0, active_sources: 0, categories: 0 } })),
-        api.getTrendingCategories(6).catch(() => ({ trending: [] })),
+      const [cats, statsData, trending] = await Promise.all([
+        getCategoriesAction().catch(() => [] as Category[]),
+        getStatsAction().catch(() => ({ database: { total_articles: 0, active_sources: 0, categories: 0, today_articles: 0 } })),
+        getTrendingCategoriesAction(6).catch(() => [] as Array<{ id: string; name: string; slug: string; article_count: number }>),
       ]);
 
-      setCategories(categoriesData.categories || []);
+      setCategories(cats);
 
-      // Set real stats from API
-      if (statsData.database) {
-        setStats({
-          totalArticles: statsData.database.total_articles || 0,
-          activeSources: statsData.database.active_sources || 0,
-          categories: statsData.database.categories || 0,
-        });
-      }
+      const db = statsData.database;
+      setStats({
+        totalArticles: db.total_articles || 0,
+        activeSources: db.active_sources || 0,
+        categories: db.categories || 0,
+      });
 
-      // Set trending topics from API
-      if (trendingData.trending && trendingData.trending.length > 0) {
-        setTrendingTopics(trendingData.trending.map((t) => ({
-          name: t.name,
-          count: t.article_count || 0,
-        })));
+      if (trending.length > 0) {
+        setTrendingTopics(trending.map((t) => ({ name: t.name, count: t.article_count || 0 })));
       } else {
-        // Fallback to categories if no trending data
-        setTrendingTopics(categoriesData.categories?.slice(0, 6).map((c) => ({
-          name: c.name,
-          count: c.article_count || 0,
-        })) || []);
+        setTrendingTopics(cats.slice(0, 6).map((c) => ({ name: c.name, count: c.article_count || 0 })));
       }
     } catch (error) {
       console.error("Failed to load initial data:", error);
@@ -85,15 +75,9 @@ export default function SearchPage() {
     setActiveQuery(searchQuery);
 
     try {
-      // Use enhanced search with AI semantic search
-      const data = await api.searchWithAI(searchQuery, {
-        limit: 50,
-        category: category || undefined,
-        useAI: true, // Enable semantic search
-      });
-
-      setResults(data.results || []);
-      setSearchMethod(data.searchMethod || 'keyword');
+      const articles = await searchArticlesAction(searchQuery, 50, { category: category || undefined });
+      setResults(articles);
+      setSearchMethod('keyword');
     } catch (error) {
       console.error("Search error:", error);
       setResults([]);
