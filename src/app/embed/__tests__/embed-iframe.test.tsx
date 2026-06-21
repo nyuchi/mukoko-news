@@ -30,12 +30,10 @@ vi.mock('@/components/ui/source-icon', () => ({
   ),
 }));
 
-// Mock API
+// Mock server action
 const mockGetArticles = vi.fn();
-vi.mock('@/lib/api', () => ({
-  api: {
-    getArticles: (...args: unknown[]) => mockGetArticles(...args),
-  },
+vi.mock('@/lib/actions/feed', () => ({
+  getArticlesAction: (...args: unknown[]) => mockGetArticles(...args),
 }));
 
 type Article = {
@@ -127,13 +125,13 @@ describe('EmbedIframePage', () => {
       });
     });
 
-    it('should parse feed type "top" with trending sort', async () => {
+    it('should parse feed type "top" with popular sort', async () => {
       setParams({ type: 'top' });
       render(<EmbedIframePage />);
 
       await waitFor(() => {
         expect(mockGetArticles).toHaveBeenCalledWith(
-          expect.objectContaining({ sort: 'trending' })
+          expect.objectContaining({ sort: 'popular' })
         );
       });
     });

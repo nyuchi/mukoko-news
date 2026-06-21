@@ -1,7 +1,7 @@
 {
   "name": "mukoko-news",
   "version": "4.0.0",
-  "description": "Mukoko News - Pan-African Digital News Platform. Next.js frontend with Cloudflare Workers backend",
+  "description": "Mukoko News - Pan-African Digital News Platform. Next.js frontend on Vercel.",
   "private": true,
   "type": "module",
   "scripts": {
@@ -13,16 +13,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "dev:backend": "cd backend && npm run dev",
-    "build:backend": "cd backend && npm run build",
-    "deploy:backend": "cd backend && npm run deploy",
-    "test:backend": "cd backend && npm run test",
-    "dev:api": "cd processing && uv run pywrangler dev",
-    "deploy:api": "cd processing && uv run pywrangler deploy",
-    "test:api": "cd processing && uv run pytest",
-    "typecheck:api": "cd processing && uv run pyright",
     "typecheck": "tsc --noEmit",
-    "clean": "rm -rf .next out backend/.wrangler backend/node_modules/.cache"
+    "clean": "rm -rf .next out"
   },
   "dependencies": {
     "@radix-ui/react-avatar": "^1.1.2",
