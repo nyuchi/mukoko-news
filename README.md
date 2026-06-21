@@ -2,168 +2,185 @@
 
 > **Africa's Digital News Aggregation Platform**
 
-"Mukoko" means "Beehive" in Shona - where community gathers and stores knowledge. A modern Pan-African news platform built with Next.js and Cloudflare Workers.
+"Mukoko" means "Beehive" in Shona — where community gathers and stores knowledge. A Pan-African news platform built with Next.js 15, serving news from 54 African Union member states.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
 ## Overview
 
-Mukoko News aggregates news from 56+ Pan-African sources across 16 countries, providing a unified platform for staying informed about African affairs. Features include:
+Mukoko News aggregates news from 100+ Pan-African sources, providing a unified platform for staying informed about African affairs. Features include:
 
+- **Pan-African Coverage**: 54 AU member states, 100+ news sources
 - **TikTok-Style NewsBytes**: Vertical scroll feed for quick news consumption
-- **Pan-African Coverage**: News from Zimbabwe, South Africa, Kenya, Nigeria, Ghana, and 11 more countries
-- **AI-Powered**: Workers AI for content processing and semantic search
-- **Real-Time Analytics**: Durable Objects for live engagement tracking
-- **Dark Mode Support**: Full theme support with system preference detection
+- **AI-Powered Search**: Semantic search backed by MongoDB Atlas
+- **Dark Mode**: Full theme support with system preference detection
 - **Schema.org SEO**: JSON-LD structured data for NewsArticle, Organization, BreadcrumbList
-- **Mobile Bottom Navigation**: Easy access to key sections on mobile devices
+- **Embeddable Widgets**: Drop-in news widgets for sister apps
+- **MCP Integration**: LLMs can browse Pan-African news at `news.mukoko.com/mcp`
 
-## Project Structure
+## Three-Repo Architecture
 
-```text
-mukoko-news/
-├── src/              # Next.js frontend
-│   ├── app/          # App Router pages
-│   ├── components/   # React components
-│   │   ├── ui/       # Reusable UI (json-ld, breadcrumb, skeleton)
-│   │   └── layout/   # Layout components (header, footer, bottom-nav)
-│   ├── contexts/     # React contexts (preferences, theme)
-│   └── lib/          # Utilities, API client, constants
-├── backend/          # Cloudflare Workers API (Hono framework, mukoko-news-gateway)
-├── fly-worker/       # Fly.io Python pipeline (RSS ingest, AI enrichment, MongoDB writes)
-├── processing/       # Cloudflare Python edge processor (service binding from backend)
-├── image-worker/     # Cloudflare image optimisation worker (assets.mukoko.com)
-├── mcp-package/      # @nyuchi/mukoko-news-mcp — published to npm + MCP Registry
-├── database/         # D1 schema and migrations
-├── public/           # Static assets
-└── CLAUDE.md         # AI assistant instructions
-```
+This repository is the **Next.js frontend only**.
+
+| Repo | Contents | Deploys to |
+|---|---|---|
+| [`nyuchi/mukoko-news`](https://github.com/nyuchi/mukoko-news) | Next.js 15 frontend | Vercel |
+| [`nyuchi/mukoko-news-gateway`](https://github.com/nyuchi/mukoko-news-gateway) | Cloudflare Workers API + MCP | Cloudflare Workers |
+| [`nyuchi/mukoko-news-pipeline`](https://github.com/nyuchi/mukoko-news-pipeline) | Fly.io pipeline + Cloudflare processing | Fly.io + Cloudflare |
+
+The frontend reads and writes directly to MongoDB Atlas via Next.js Server Actions. It does not call the gateway Worker except for admin mutations.
 
 ## Quick Start
 
 ### Prerequisites
 
 - Node.js 20+, pnpm 10+
-- Python 3.12+, [uv](https://docs.astral.sh/uv/) (Python package manager)
-- Cloudflare account (for backend/processing workers)
-- [flyctl](https://fly.io/docs/hands-on/install-flyctl/) (for fly-worker pipeline)
+- MongoDB Atlas connection string (for local development with live data)
 
-### Frontend Setup (Next.js)
+### Setup
 
 ```bash
-# Install dependencies
-npm install
+# Clone and install
+git clone https://github.com/nyuchi/mukoko-news.git
+cd mukoko-news
+pnpm install
+
+# Configure environment
+cp .env.example .env.local
+# Edit .env.local — see Environment Variables below
 
 # Start development server
-npm run dev
-
-# Build for production
-npm run build
-
-# Type check
-npm run typecheck
+pnpm dev
 ```
 
-### Backend Setup
-
-```bash
-# Navigate to backend
-cd backend
-
-# Install dependencies
-npm install
-
-# Apply database schema locally
-npm run db:local
-
-# Start development server
-npm run dev
-
-# Deploy to Cloudflare
-npm run deploy
-```
+Open [http://localhost:3000](http://localhost:3000).
 
 ### Environment Variables
 
-Create `.env.local` in the root directory:
+Create `.env.local`:
 
 ```env
-NEXT_PUBLIC_API_URL=https://mukoko-news-backend.nyuchi.workers.dev
-NEXT_PUBLIC_BASE_URL=https://news.mukoko.com  # Optional: Base URL for SEO/JSON-LD
-EXPO_PUBLIC_API_SECRET=your_api_secret_here
+# MongoDB Atlas — Server Actions read/write directly
+MONGODB_URI=mongodb+srv://<user>:<pass>@nyuchi-platform-doc-db.ge8d8qi.mongodb.net/?appName=nyuchi-platform-doc-db
+MONGODB_DATABASE=news
+
+# Leave empty (Server Actions handle all reads via MongoDB)
+# Set to Cloudflare Worker URL only for the external widget/resale API
+NEXT_PUBLIC_API_URL=
+NEXT_PUBLIC_BASE_URL=https://news.mukoko.com
+
+# WorkOS AuthKit
+WORKOS_API_KEY=sk_live_...
+WORKOS_CLIENT_ID=client_01KV2G41CHGBSH6HG57AQBFKDD
+WORKOS_COOKIE_PASSWORD=<32+ char random string>
+
+# Gateway Worker (admin mutations only)
+GATEWAY_API_URL=https://news.mukoko.com
+```
+
+## Project Structure
+
+```text
+mukoko-news/
+├── src/
+│   ├── app/              # Next.js App Router pages
+│   ├── components/
+│   │   ├── ui/           # Reusable UI (article-card, json-ld, skeleton, …)
+│   │   └── layout/       # Header, footer, bottom-nav
+│   ├── contexts/         # PreferencesContext, ThemeContext
+│   └── lib/
+│       ├── actions/      # Server Actions (feed.ts, refresh.ts, admin/)
+│       ├── mongodb/      # MongoDB query helpers (articles, categories, sources)
+│       ├── api.ts        # Client-side fetch helper + embed widget
+│       ├── constants.ts  # Countries, categories, BASE_URL helpers
+│       └── utils.ts      # Formatting, security helpers (safeCssUrl, isValidImageUrl)
+├── public/
+│   └── embed/            # Embeddable widget script (widget.js)
+└── CLAUDE.md             # AI assistant instructions
+```
+
+## Commands
+
+```bash
+pnpm dev              # Next.js dev server (port 3000)
+pnpm build            # Production build
+pnpm lint             # ESLint check
+pnpm lint:fix         # ESLint auto-fix
+pnpm typecheck        # TypeScript check
+pnpm test             # Vitest (single run, 448 tests)
+pnpm test:watch       # Vitest (watch mode)
+pnpm test:coverage    # Vitest with v8 coverage
 ```
 
 ## Architecture
 
 ### Frontend Stack
 
-- **Framework**: Next.js 15 with App Router
-- **UI**: Tailwind CSS 4 with custom design system
-- **Components**: Radix UI primitives
-- **Icons**: Lucide React
-- **Theme**: next-themes for dark mode support
-- **TypeScript**: Full type safety
+- **Framework**: Next.js 15 with App Router + React 19
+- **UI**: Tailwind CSS 4 with CSS variables, Radix UI primitives
+- **Icons**: Lucide React, **Theme**: next-themes
+- **Data**: MongoDB Atlas via Server Actions (`src/lib/actions/feed.ts`)
+- **Auth**: WorkOS AuthKit (`@workos-inc/authkit-nextjs`)
+- **State**: React Context (preferences, theme)
 
-### Backend Stack
+### Data Flow
 
-- **Runtime**: Cloudflare Workers (edge computing)
-- **Framework**: Hono (lightweight, ~12KB)
-- **Database**: D1 (SQLite at edge) + MongoDB Atlas (primary data store)
-- **Cache**: KV Namespaces
-- **Real-time**: Durable Objects (4 classes)
-- **AI**: Workers AI for content processing
-- **Search**: Vectorize for semantic search
-- **Auth**: OIDC via id.mukoko.com
+All news data flows through Server Actions → MongoDB Atlas (`news` database):
 
-### Pipeline Worker Stack (`fly-worker/`)
+```
+Browser → Next.js Server Action → src/lib/mongodb/*.ts → MongoDB Atlas
+```
 
-- **Runtime**: Fly.io (`mukoko-news-api`, Johannesburg JNB) — persistent FastAPI + APScheduler process
-- **Database**: MongoDB Atlas via Motor async driver (`news`, `engagement`, `entity`, `platform` databases)
-- **AI**: Anthropic Claude for NLP enrichment + Cloudflare Workers AI for BGE-M3 embeddings
-- **Jobs**: RSS ingestion (every 15 min), newsdata.io ingestion (every 6 h), AI enrichment, engagement aggregation, source health monitoring, trending, embedding backfill
-- **Endpoints**: `GET /health` (Fly.io health check), `POST /trigger/collect` (on-demand RSS trigger, rate-limited 3/min)
-- **No auth on trigger endpoint** — it's rate-limited only; callers are trusted internal services
+Admin mutations are the only exception — they route through the gateway Worker (`src/lib/admin/gateway.ts`) with a WorkOS access token.
 
 ### Design System (Nyuchi Brand v6)
 
-```javascript
+```js
 {
-  primary: '#4B0082',    // Tanzanite
+  primary:   '#4B0082',  // Tanzanite
   secondary: '#0047AB',  // Cobalt
-  accent: '#5D4037',     // Gold
-  surface: '#FAF9F5',    // Warm Cream (light mode)
-  fonts: {
-    heading: 'Noto Serif',
-    body: 'Plus Jakarta Sans'
-  }
+  accent:    '#5D4037',  // Gold
+  surface:   '#FAF9F5',  // Warm Cream
+  fonts: { heading: 'Noto Serif', body: 'Plus Jakarta Sans' }
 }
 ```
+
+CSS variables in `src/app/globals.css`. Tailwind classes: `bg-primary`, `text-foreground`, `bg-surface`.
+
+## Pages
+
+| Path | Description |
+|---|---|
+| `/` | Personalized feed — Featured + Latest layout |
+| `/discover` | Browse by country, category, source |
+| `/sources` | All news sources with stats |
+| `/newsbytes` | TikTok-style vertical scroll feed |
+| `/article/[slug]` | Full article with breadcrumbs and JSON-LD |
+| `/search` | Full-text search with filters |
+| `/profile` | User settings and preferences |
+| `/admin` | Admin dashboard (moderation, sources) |
+| `/embed/iframe` | Embeddable widget renderer |
+
+## Embed Widgets
+
+Drop-in news widgets for sister sites (e.g. weather.mukoko.com):
+
+```html
+<script src="https://news.mukoko.com/embed/widget.js"
+        data-layout="cards"
+        data-feed="latest"
+        data-country="ZW">
+</script>
+```
+
+5 layouts (`cards`, `compact`, `hero`, `ticker`, `list`) × 4 feed types (`top`, `featured`, `latest`, `location`).
 
 ## MCP Server
 
-Mukoko News exposes a **Model Context Protocol (MCP) server** so LLMs can search and browse Pan-African news directly.
+Mukoko News exposes a **Model Context Protocol (MCP) server** — hosted in [`nyuchi/mukoko-news-gateway`](https://github.com/nyuchi/mukoko-news-gateway).
 
-**Remote endpoint** (no install needed): `https://news.mukoko.com/mcp`
-
-**npm package**: `@nyuchi/mukoko-news-mcp`
-
-### Quick setup
-
-**Claude Desktop / Cursor / any stdio MCP client:**
-
-```json
-{
-  "mcpServers": {
-    "mukoko-news": {
-      "command": "npx",
-      "args": ["@nyuchi/mukoko-news-mcp"]
-    }
-  }
-}
-```
-
-**Streamable HTTP (direct):**
+**Remote endpoint**: `https://news.mukoko.com/mcp`
 
 ```json
 {
@@ -176,247 +193,45 @@ Mukoko News exposes a **Model Context Protocol (MCP) server** so LLMs can search
 }
 ```
 
-### Available tools
-
-| Tool | Description |
-|---|---|
-| `search_news` | Keyword search with optional `category` and `country` (ISO 3166-1, e.g. `ZW`) filters |
-| `get_article` | Full article details by numeric ID or slug |
-| `get_trending` | Most-viewed/liked articles; sort by `views`, `likes`, `trending_score`, or `recent` |
-| `get_similar_stories` | Articles similar to a given article by shared keywords and category |
-| `browse_by_tag` | Browse articles by tag |
-| `browse_by_author` | Articles by a specific author |
-| `browse_by_source` | Articles from a specific news source |
-| `list_categories` | All available categories |
-| `list_sources` | All active news sources |
-| `get_stats` | Platform stats (article count, source count, countries covered) |
-
-No authentication is required — all tools return public content.
-
-## API
-
-**Base URL**: `https://news.mukoko.com/api`
-
-All public endpoints are unauthenticated. Server-to-server callers send an `Authorization: Bearer <API_SECRET>` header. The full OpenAPI spec is in [`api-schema.yml`](api-schema.yml).
-
-### Public endpoints
-
-```bash
-# News feed — supports ?limit, ?category, ?countries (comma-separated ISO codes)
-GET /api/feeds
-
-# Feed sections (featured + latest + trending, one request)
-GET /api/feeds/sectioned
-
-# Single article
-GET /api/article/:id
-
-# Related articles
-GET /api/article/:id/related
-
-# Full-text + semantic search — ?q=query&category=politics&country=ZW
-GET /api/search
-
-# NewsBytes (short-form vertical feed)
-GET /api/news-bytes
-
-# Metadata
-GET /api/categories
-GET /api/sources
-GET /api/keywords
-GET /api/authors
-
-# Health check
-GET /api/health
-```
-
-### Authenticated endpoints (OIDC JWT required)
-
-```bash
-POST /api/articles/:id/like
-POST /api/articles/:id/save
-POST /api/articles/:id/view
-POST /api/articles/:id/comment
-GET  /api/articles/:id/comments
-
-GET  /api/user/me/preferences
-POST /api/user/me/preferences
-POST /api/user/me/follows
-```
-
-### Admin endpoints (admin role required)
-
-```bash
-GET /api/admin/stats
-GET /api/admin/sources
-GET /api/admin/sources/:id
-```
-
-## Common Commands
-
-### Frontend
-
-```bash
-npm run dev          # Start Next.js dev server
-npm run build        # Build for production
-npm run start        # Start production server
-npm run lint         # ESLint check
-npm run lint:fix     # ESLint auto-fix
-npm run typecheck    # TypeScript check
-npm run clean        # Clean build artifacts
-```
-
-### Backend
-
-```bash
-cd backend
-npm run dev          # wrangler dev (local worker)
-npm run deploy       # Deploy to Cloudflare Workers
-npm run test         # vitest run
-npm run test:watch   # vitest (watch mode)
-npm run typecheck    # tsc --noEmit
-npm run db:migrate   # Apply schema to remote D1
-npm run db:local     # Apply schema to local D1
-```
-
-## Features
-
-### Core Features
-
-- **Responsive Design**: Mobile-first, works on all devices
-- **Simplified Feed Layout**: Featured article + Latest articles grid
-- **TikTok-Style NewsBytes**: Vertical scroll news feed with snap scrolling
-- **Mobile Bottom Navigation**: Quick access to Home, Discover, NewsBytes, Search, Profile
-- **Schema.org SEO**: JSON-LD structured data (NewsArticle, Organization, Breadcrumb)
-- **Breadcrumb Navigation**: Clear navigation hierarchy on article pages
-- **Real-Time Engagement**: Live likes, saves, and views
-- **AI-Powered Search**: Semantic search with Vectorize
-- **Pan-African Coverage**: 16 countries, 56+ news sources
-- **Country-Filtered Feed**: Personalized news based on selected countries
-- **Dark Mode**: Full theme support with system detection
-- **Skeleton Loaders**: Graceful loading states across all pages
-- **Error Boundaries**: Graceful error handling with fallback UI
-
-### Pages
-
-- **Feed** (`/`) - Personalized news feed with Featured + Latest layout
-- **Discover** (`/discover`) - Browse by country, category, source, or trending topics
-- **NewsBytes** (`/newsbytes`) - TikTok-style vertical swipeable feed
-- **Article** (`/article/[id]`) - Full article view with breadcrumbs and JSON-LD
-- **Search** (`/search`) - Search articles with category filters
-- **Profile** (`/profile`) - User settings and preferences
-- **Admin** (`/admin`) - Dashboard for analytics, sources, users
-
 ## Testing
 
-### Frontend Tests
+448 tests — Vitest with jsdom environment + React Testing Library.
 
 ```bash
-npm run test         # Run all tests
-npm run test:watch   # Watch mode
-npm run test:coverage # With coverage
+pnpm test                                          # All tests
+pnpm vitest run src/lib/__tests__/utils.test.ts    # Single file
+pnpm vitest run -t "formatTimeAgo"                 # By pattern
 ```
 
-**Test Files** (frontend):
-- `src/lib/__tests__/utils.test.ts` - Utility functions + CSS injection & XSS attack vector tests
-- `src/lib/__tests__/constants.test.ts` - Constants, URL helpers, path traversal & injection tests
-- `src/lib/__tests__/rate-limit.test.ts` - Rate limiter + IP extraction tests
-- `src/lib/__tests__/refresh.test.ts` - Feed refresh server action tests
-- `src/components/__tests__/json-ld.test.tsx` - JSON-LD XSS prevention + expanded injection payloads
-- `src/components/__tests__/breadcrumb.test.tsx` - Breadcrumb navigation tests
-- `src/components/__tests__/bottom-nav.test.tsx` - Mobile bottom navigation + routing tests
-- `src/components/__tests__/hero-card.test.tsx` - HeroCard component tests
-- `src/components/__tests__/compact-card.test.tsx` - CompactCard component tests
-- `src/components/__tests__/error-boundary.test.tsx` - ErrorBoundary tests
+**Mock pattern for pages**: always mock `@/lib/actions/feed` (Server Actions), not `@/lib/api`.
 
-**Test Framework**: Vitest with jsdom environment
-
-### Backend Tests
-
-```bash
-cd backend
-npm run test         # Run all tests
-npm run test:watch   # Watch mode
-npm run test:coverage # With coverage
-```
-
-**Test Framework**: Vitest (10s timeout per test)
+CI runs on every PR: lint matrix (actionlint, JSON validity, prettier, markdownlint, yamllint) + tests, typecheck, lint, build.
 
 ## Deployment
 
-### Frontend (Vercel)
+The frontend auto-deploys to Vercel on push to `main`. No manual steps required.
 
-The Next.js frontend auto-deploys to Vercel on push to main.
-
-**URL**: `https://news.mukoko.com`
-
-### Backend (Cloudflare Workers)
-
-Deployed automatically by the Cloudflare GitHub App on push to main. Manual:
-
-```bash
-cd backend && npm run deploy
-```
-
-### Pipeline Worker (Fly.io — `mukoko-news-api`)
-
-Deployed automatically by CI on push to main (`deploy-fly-worker` job, requires `FLY_API_TOKEN` secret). Manual:
-
-```bash
-cd fly-worker && flyctl deploy --remote-only
-```
-
-Smoke tests run after every deploy and check `/health` (MongoDB connected + all jobs scheduled).
+**Live site**: [news.mukoko.com](https://news.mukoko.com)
 
 ## Contributing
 
-We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
-### Development Workflow
+1. Fork the repo, create a branch: `git checkout -b feature/my-feature`
+2. Make changes and run `pnpm lint && pnpm typecheck && pnpm test`
+3. Commit with [Conventional Commits](https://www.conventionalcommits.org/): `feat: add xyz`
+4. Push and open a Pull Request against `main`
 
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/my-feature`
-3. Make changes and test
-4. Run pre-commit checks: `npm run lint && npm run typecheck`
-5. Commit with conventional commits: `feat: Add new feature`
-6. Push and create a Pull Request
+## Security
 
-### Code Style
-
-- ESLint configuration: Flat config (ESLint 9)
-- Pre-commit hooks: TypeScript check + Build validation
-- Commit format: Conventional Commits
-
-## Documentation
-
-- [CLAUDE.md](CLAUDE.md) - AI assistant instructions
-- [CONTRIBUTING.md](CONTRIBUTING.md) - Contribution guidelines
-- [SECURITY.md](SECURITY.md) - Security policy
-- [api-schema.yml](api-schema.yml) - OpenAPI specification
+Report vulnerabilities to **security@nyuchi.com** — do not open a public GitHub issue. See [SECURITY.md](SECURITY.md).
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) for details
-
-## About Mukoko
-
-"Ndiri nekuti tiri" — I am because we are
-
-Mukoko ("Beehive" in Shona) represents the collective knowledge and community of Africa. Just as bees work together to create something greater than themselves, Mukoko News brings together voices from across the continent to inform and empower African communities.
-
-## Codebase Stats
-
-| Area | Lines of Code |
-|------|--------------|
-| Frontend (`src/`) | ~15,000 |
-| Backend (`backend/`) | ~38,200 |
-| Pipeline Worker (`fly-worker/`) | ~2,500 |
-| Processing Worker (`processing/`) | ~3,200 |
-| Database (`database/`) | ~6,900 |
-| **Total** | **~65,800** |
-
-Tests: 985+ total (437 frontend + 548 backend + fly-worker pytest)
+MIT — see [LICENSE](LICENSE) for details.
 
 ---
 
-Built with love by [Nyuchi Technologies](https://brand.nyuchi.com)
+"Ndiri nekuti tiri" — I am because we are
+
+Built with love by [Nyuchi Technologies](https://nyuchi.com)

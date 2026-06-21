@@ -1,381 +1,223 @@
 # Contributing to Mukoko News
 
-First off, thank you for considering contributing to Mukoko News! It's people like you who make Mukoko News a great tool for the Pan-African community.
+Thank you for considering a contribution to Mukoko News! This guide covers the **Next.js frontend** in `nyuchi/mukoko-news`. For the gateway API or data pipeline, see those repos.
 
 ## Table of Contents
 
 - [Code of Conduct](#code-of-conduct)
-- [How Can I Contribute?](#how-can-i-contribute)
+- [Getting Started](#getting-started)
 - [Development Setup](#development-setup)
 - [Pull Request Process](#pull-request-process)
 - [Coding Standards](#coding-standards)
-- [Commit Message Guidelines](#commit-message-guidelines)
+- [Commit Messages](#commit-messages)
 - [Testing](#testing)
-- [Documentation](#documentation)
+- [Getting Help](#getting-help)
 
 ## Code of Conduct
 
-By participating in this project, you agree to uphold our values of respect, inclusivity, and collaboration. We are building for the Pan-African community, and we expect all contributors to treat each other with dignity and respect.
+We are building for the Pan-African community. Treat all contributors with respect, be inclusive, and keep discussions constructive.
 
-### Our Standards
+Security vulnerabilities must be reported to **security@nyuchi.com**, not via GitHub issues.
 
-- **Be Respectful**: Respect differing viewpoints and experiences
-- **Be Inclusive**: Welcome newcomers and help them get started
-- **Be Collaborative**: Work together and share knowledge
-- **Be Professional**: Keep discussions focused and constructive
+## Getting Started
 
-## How Can I Contribute?
+This repo is the Next.js frontend only. It reads data from MongoDB Atlas via Server Actions — there is no local backend to run.
 
-### Reporting Bugs
+**What you can work on without a MongoDB connection:**
 
-Before creating a bug report, please check the [existing issues](https://github.com/nyuchitech/mukoko-news/issues) to avoid duplicates.
+- UI components (`src/components/`)
+- Page layouts and routing (`src/app/`)
+- Utility functions (`src/lib/utils.ts`, `src/lib/constants.ts`)
+- Tests (all 448 tests mock the Server Actions — no live DB needed)
+- The embed widget (`public/embed/widget.js`)
 
-When reporting a bug:
-
-1. Use the bug report template
-2. Include detailed steps to reproduce
-3. Provide environment information (OS, browser, device)
-4. Include error logs if applicable
-5. Add screenshots if relevant
-
-**Note**: Security vulnerabilities should be reported to security@nyuchi.com, NOT via GitHub issues.
-
-### Suggesting Features
-
-We welcome feature suggestions! Before creating a feature request:
-
-1. Check existing feature requests
-2. Use the feature request template
-3. Explain the problem you're trying to solve
-4. Describe your proposed solution
-5. Consider how it fits Mukoko News's mission
-
-### Contributing Code
-
-We love code contributions! Here's how to get started:
-
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/my-feature`
-3. Make your changes
-4. Run tests and linting
-5. Commit with conventional commits
-6. Push and create a Pull Request
+**For live data**, you need a `MONGODB_URI` — contact the maintainers.
 
 ## Development Setup
 
 ### Prerequisites
 
-- Node.js 20+
-- npm
-- Cloudflare account (for backend development)
+- Node.js 20+, pnpm 10+
 
-### Frontend Setup
+### Steps
 
 ```bash
-# Clone the repository
-git clone https://github.com/nyuchitech/mukoko-news.git
+# Clone
+git clone https://github.com/nyuchi/mukoko-news.git
 cd mukoko-news
 
 # Install dependencies
-npm install
+pnpm install
 
-# Set up environment variables
+# Configure environment
 cp .env.example .env.local
-# Edit .env.local with your values
+# Fill in at minimum: MONGODB_URI, WORKOS_CLIENT_ID, WORKOS_COOKIE_PASSWORD
 
-# Start development server
-npm run dev
-
-# Build for production
-npm run build
-
-# Run tests
-npm run test
+# Start dev server
+pnpm dev
 ```
 
-### Backend Setup
+Open [http://localhost:3000](http://localhost:3000).
+
+### Available Commands
 
 ```bash
-# Navigate to backend directory
-cd backend
+pnpm dev              # Next.js dev server (port 3000)
+pnpm build            # Production build
+pnpm lint             # ESLint check
+pnpm lint:fix         # ESLint auto-fix
+pnpm typecheck        # TypeScript check
+pnpm test             # Vitest (single run)
+pnpm test:watch       # Vitest (watch mode)
+pnpm test:coverage    # Vitest with v8 coverage
 
-# Install dependencies
-npm install
-
-# Apply database schema locally
-npm run db:local
-
-# Start development server
-npm run dev
-
-# Run tests
-npm run test
-```
-
-### Environment Variables
-
-Create `.env.local` in the root directory:
-
-```env
-# API URL
-NEXT_PUBLIC_API_URL=https://mukoko-news-backend.nyuchi.workers.dev
-
-# API Secret (for server-side requests)
-API_SECRET="your_api_secret_here"
+# Run a single test file
+pnpm vitest run src/lib/__tests__/utils.test.ts
+# Run tests matching a pattern
+pnpm vitest run -t "formatTimeAgo"
 ```
 
 ## Pull Request Process
 
 ### Before Submitting
 
-1. **Update Documentation**: Update README.md, CHANGELOG.md, or other docs if needed
-2. **Run Tests**: Ensure all tests pass (`npm run test`)
-3. **Run Linting**: Fix any linting errors (`npm run lint:fix`)
-4. **Type Check**: Ensure TypeScript types are correct (`npm run typecheck`)
-5. **Test Manually**: Test your changes in the app
+1. `pnpm lint` — fix any ESLint errors
+2. `pnpm typecheck` — fix any TypeScript errors
+3. `pnpm test` — all 448 tests must pass
+4. `pnpm build` — build must succeed
+5. Test your change manually in the browser (golden path + edge cases)
 
 ### PR Guidelines
 
-1. **One Feature Per PR**: Keep PRs focused on a single feature or bug fix
-2. **Descriptive Title**: Use a clear, descriptive title
-3. **Detailed Description**: Explain what, why, and how
-4. **Link Issues**: Reference related issues (e.g., "Fixes #123")
-5. **Add Screenshots**: For UI changes, include before/after screenshots
-6. **Update Tests**: Add or update tests for your changes
+- **One thing per PR**: one feature, one bug fix, one refactor
+- **Descriptive title** following Conventional Commits format
+- **Reference related issues** with `Fixes #123`
+- **Add or update tests** for any changed behaviour
+- **No AI-generated summaries** in PR descriptions — explain *why* the change matters
 
 ### PR Template
 
 ```markdown
-## Description
+## What
 
-Brief description of what this PR does
+Brief description of the change.
 
-## Type of Change
+## Why
 
-- [ ] Bug fix (non-breaking change which fixes an issue)
-- [ ] New feature (non-breaking change which adds functionality)
-- [ ] Breaking change (fix or feature that would cause existing functionality to not work as expected)
-- [ ] Documentation update
-
-## Related Issues
-
-Fixes #(issue number)
+Why is this needed? Link to issue if applicable (Fixes #NNN).
 
 ## Testing
 
-Describe how you tested your changes
-
-## Screenshots (if applicable)
-
-Add screenshots here
+How did you test this? Screenshots for UI changes.
 
 ## Checklist
 
-- [ ] My code follows the project's coding standards
-- [ ] I have run `npm run lint` and fixed any issues
-- [ ] I have run `npm run typecheck` and fixed any type errors
-- [ ] I have run `npm run test` and all tests pass
-- [ ] I have updated the documentation
-- [ ] I have added tests for my changes
-- [ ] I have tested on desktop and mobile browsers
+- [ ] `pnpm lint` passes
+- [ ] `pnpm typecheck` passes
+- [ ] `pnpm test` passes
+- [ ] Tested manually in browser
+- [ ] Tests added/updated for new behaviour
 ```
 
 ## Coding Standards
 
-### General Guidelines
-
-- **Keep it Simple**: Avoid over-engineering
-- **Write Readable Code**: Use descriptive variable and function names
-- **Comment Wisely**: Explain why, not what
-- **Follow Existing Patterns**: Match the existing codebase style
-
 ### TypeScript
 
-- **Use TypeScript**: All backend code must use TypeScript
-- **Strict Mode**: Enable TypeScript strict mode
-- **Type Everything**: Avoid `any` types when possible
-- **Use Interfaces**: Define interfaces for complex objects
+- Strict mode is enabled — no `any` types
+- Define interfaces for all component props and data shapes
+- Unused variables must be prefixed with `_`
 
 ### React / Next.js
 
-- **Functional Components**: Use functional components with hooks
-- **TypeScript**: Define TypeScript interfaces for props
-- **Component Organization**: One component per file
-- **Naming**: Use PascalCase for components, camelCase for functions
-- **Client Components**: Add "use client" directive when using hooks or browser APIs
-
-### Backend
-
-- **Services Pattern**: Use services for business logic
-- **Middleware**: Create middleware for cross-cutting concerns
-- **Error Handling**: Always handle errors gracefully
-- **Database**: Use parameterized queries to prevent SQL injection
+- Functional components only
+- Server Components by default; add `'use client'` only when needed (hooks, browser APIs)
+- Use `@/lib/actions/feed` Server Actions for data — never fetch from the gateway Worker directly in page components
+- One component per file, PascalCase filenames (`ArticleCard.tsx`)
+- Pages in kebab-case directories (`article/[slug]/page.tsx`)
 
 ### Styling
 
-- **ESLint**: Follow ESLint configuration (flat config, ESLint 9)
-- **Prettier**: Code will be auto-formatted (if configured)
-- **Indentation**: 2 spaces (not tabs)
-- **Line Length**: Max 100 characters
-- **Semicolons**: Required
+- Tailwind CSS only — no inline styles
+- Use design system tokens: `bg-primary`, `text-foreground`, `bg-surface`, etc.
+- 2-space indent, max 100 chars per line
+- Radix UI for interactive primitives (accessible by default)
 
-### File Organization
+### Security
 
+- **JSON-LD**: always use `safeJsonLdStringify()` — never `JSON.stringify()` in `<script>` tags
+- **Image URLs**: validate with `isValidImageUrl()` before rendering user-provided URLs
+- **CSS URLs**: use `safeCssUrl()` for any `background-image: url()` values
+- **Admin mutations**: route through `src/lib/admin/gateway.ts` with WorkOS tokens — never bypass
+
+### File Structure
+
+```text
+src/
+├── app/                   # Pages (App Router)
+├── components/
+│   ├── ui/                # Shared UI components
+│   └── layout/            # Header, footer, nav
+├── contexts/              # React context providers
+└── lib/
+    ├── actions/           # Server Actions
+    ├── mongodb/           # MongoDB query helpers
+    ├── admin/             # Gateway proxy for admin mutations
+    ├── auth/              # Auth utilities
+    ├── api.ts             # Client-side fetch helper
+    ├── constants.ts       # Countries, categories, URL helpers
+    └── utils.ts           # Formatting, security helpers
 ```
-mukoko-news/
-├── src/               # Next.js frontend
-│   ├── app/           # App Router pages
-│   ├── components/    # React components
-│   │   ├── ui/        # Reusable UI components
-│   │   └── layout/    # Layout components (header, footer, bottom-nav)
-│   ├── contexts/      # React contexts
-│   └── lib/           # Utilities, API client, constants
-├── backend/           # Cloudflare Workers API
-│   ├── services/      # Business logic services
-│   ├── middleware/    # Route middleware
-│   └── index.ts       # API entry point
-└── database/          # D1 schema and migrations
-    ├── schema.sql     # Complete schema
-    └── migrations/    # Migration files
-```
 
-## Commit Message Guidelines
+## Commit Messages
 
-We follow [Conventional Commits](https://www.conventionalcommits.org/).
-
-### Format
+Follow [Conventional Commits](https://www.conventionalcommits.org/):
 
 ```
 <type>(<scope>): <subject>
-
-<body>
-
-<footer>
 ```
 
-### Types
+**Types**: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`
 
-- **feat**: New feature
-- **fix**: Bug fix
-- **docs**: Documentation changes
-- **style**: Code style changes (formatting, no logic change)
-- **refactor**: Code refactoring
-- **test**: Adding or updating tests
-- **chore**: Maintenance tasks, dependency updates
-
-### Examples
+**Examples:**
 
 ```bash
-# Feature
-feat(mobile): Add pull-to-refresh for RSS collection
-
-# Bug fix
-fix(api): Correct category_id field in trending categories query
-
-# Documentation
-docs: Update README with new API endpoints
-
-# Breaking change
-feat(auth)!: Migrate to OIDC authentication
-
-BREAKING CHANGE: Old session-based auth is no longer supported
+feat(discover): add country filter to sources section
+fix(newsbytes): correct scroll position reset on feed change
+docs: update CONTRIBUTING setup instructions
+test(embed): add iframe layout rendering tests
+chore: update lucide-react to 0.470
 ```
 
 ## Testing
 
-### Frontend Tests
+All tests mock Server Actions — no MongoDB connection required.
 
 ```bash
-# Run all tests
-npm run test
-
-# Watch mode
-npm run test:watch
-
-# With coverage
-npm run test:coverage
+pnpm test             # Run all 448 tests
+pnpm test:watch       # Watch mode during development
+pnpm test:coverage    # Coverage report (thresholds: 60% lines, 50% branches)
 ```
 
-**Test Files**:
-- `src/lib/__tests__/` - Utility and constant tests
-- `src/components/__tests__/` - Component tests (including JSON-LD security)
+**Mock pattern** — pages use Server Actions, so mock `@/lib/actions/feed`:
 
-### Backend Tests
-
-```bash
-cd backend
-
-# Run all tests
-npm run test
-
-# Watch mode
-npm run test:watch
-
-# With coverage
-npm run test:coverage
+```tsx
+vi.mock("@/lib/actions/feed", () => ({
+  getArticlesAction: vi.fn(),
+  getCategoriesAction: vi.fn(),
+  getSourcesAction: vi.fn(),
+}));
 ```
 
-**Requirements**:
-
-- Write tests for new features
-- Update tests for bug fixes
-- Maintain or improve code coverage
-- Tests should pass before merging
-
-### Manual Testing
-
-For UI changes, please test on:
-
-- **Desktop**: Chrome, Safari, Firefox
-- **Mobile**: Chrome (Android), Safari (iOS)
-- **Dark Mode**: Test both light and dark themes
-
-## Documentation
-
-### Code Documentation
-
-- **JSDoc**: Use JSDoc for functions and classes
-- **Inline Comments**: Explain complex logic
-- **README**: Update README for new features
-- **CHANGELOG**: Add entry to CHANGELOG.md
-
-### Example JSDoc
-
-```typescript
-/**
- * Fetch articles from RSS sources
- * @param {number} limit - Maximum number of articles to fetch
- * @param {string[]} categories - Categories to filter by
- * @returns {Promise<Article[]>} Array of articles
- */
-async function fetchArticles(limit: number, categories: string[]): Promise<Article[]> {
-  // Implementation
-}
-```
-
-### Documentation Files
-
-When making significant changes, update:
-
-- **README.md** - Project overview and quick start
-- **CLAUDE.md** - AI assistant instructions
-- **CHANGELOG.md** - Version history
-- **API_SECRET_SETUP.md** - Authentication setup
-- **api-schema.yml** - OpenAPI specification
+**Never** mock `@/lib/api` for page tests — that's the client-side helper used only by the embed widget and route handlers.
 
 ## Getting Help
 
-- **Documentation**: Check [README.md](README.md) and [CLAUDE.md](CLAUDE.md)
-- **Issues**: Search [existing issues](https://github.com/nyuchitech/mukoko-news/issues)
-- **Email**: support@nyuchi.com for general questions
-- **Security**: security@nyuchi.com for security issues
-
-## Recognition
-
-All contributors will be recognized in our contributors list. Thank you for helping build Mukoko News!
+- **Issues**: [github.com/nyuchi/mukoko-news/issues](https://github.com/nyuchi/mukoko-news/issues)
+- **General**: support@nyuchi.com
+- **Security**: security@nyuchi.com
 
 ---
 
 "Ndiri nekuti tiri" — I am because we are
 
-Built with ❤️ by [Nyuchi Technologies](https://brand.nyuchi.com)
+Built with love by [Nyuchi Technologies](https://nyuchi.com)
