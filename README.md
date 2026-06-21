@@ -177,6 +177,6 @@ MIT — see [LICENSE](LICENSE).
 
 ---
 
-*"Ndiri nekuti tiri" — I am because we are*
+"Ndiri nekuti tiri" — I am because we are
 
 Built by [Nyuchi Technologies](https://nyuchi.com) and open-source contributors.
