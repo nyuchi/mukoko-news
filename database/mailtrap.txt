@@ -1,5 +1,0 @@
-CNAME mt82.notifications.nyuchi.com -> smtp.mailtrap.live
-CNAME rwmt1._domainkey.notifications.nyuchi.com -> rwmt1.dkim.smtp.mailtrap.live
-CNAME rwmt2._domainkey.notifications.nyuchi.com -> rwmt2.dkim.smtp.mailtrap.live
-TXT _dmarc.notifications.nyuchi.com -> v=DMARC1; p=none; rua=mailto:dmarc@smtp.mailtrap.live; ruf=mailto:dmarc@smtp.mailtrap.live; rf=afrf; pct=100
-CNAME mt-link.notifications.nyuchi.com -> t.mailtrap.live
