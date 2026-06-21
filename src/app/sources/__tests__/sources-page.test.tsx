@@ -40,12 +40,10 @@ vi.mock("@/components/ui/skeleton", () => ({
   ),
 }));
 
-// Mock API — wrapper function avoids hoisting issue
-const mockGetSources = vi.fn();
-vi.mock("@/lib/api", () => ({
-  api: {
-    getSources: (...args: unknown[]) => mockGetSources(...args),
-  },
+// Mock server action
+const mockGetSourcesAction = vi.fn();
+vi.mock("@/lib/actions/feed", () => ({
+  getSourcesAction: (...args: unknown[]) => mockGetSourcesAction(...args),
 }));
 
 const defaultSources = [
@@ -97,7 +95,7 @@ const defaultSources = [
 describe("SourcesPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockGetSources.mockResolvedValue({ sources: defaultSources, total: 4 });
+    mockGetSourcesAction.mockResolvedValue(defaultSources);
   });
 
   it("should render page header and stats after loading", async () => {
@@ -193,7 +191,7 @@ describe("SourcesPage", () => {
   });
 
   it("should show skeleton while loading", () => {
-    mockGetSources.mockReturnValue(new Promise(() => {}));
+    mockGetSourcesAction.mockReturnValue(new Promise(() => {}));
     render(<SourcesPage />);
     expect(screen.getByRole("status")).toBeInTheDocument();
   });
@@ -221,7 +219,7 @@ describe("SourcesPage", () => {
 
   it("should show error banner and zero stats when API fails", async () => {
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    mockGetSources.mockRejectedValue(new Error("Network error"));
+    mockGetSourcesAction.mockRejectedValue(new Error("Network error"));
     render(<SourcesPage />);
     await waitFor(() => {
       expect(screen.getByText("News Sources")).toBeInTheDocument();
