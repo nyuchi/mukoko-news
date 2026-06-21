@@ -14,7 +14,8 @@ import {
   RefreshCw,
   Check,
 } from "lucide-react";
-import { api, type Article } from "@/lib/api";
+import { type Article } from "@/lib/api";
+import { getArticleAction } from "@/lib/actions/feed";
 import { getArticleUrl } from "@/lib/constants";
 import { isValidImageUrl } from "@/lib/utils";
 import { ArticlePageSkeleton } from "@/components/ui/skeleton";
@@ -43,12 +44,12 @@ export default function ArticleDetailClient({
     setError(null);
 
     try {
-      const data = await api.getArticle(articleId);
-      if (data.article) {
-        setArticle(data.article);
-        setIsLiked(data.article.isLiked || false);
-        setIsSaved(data.article.isSaved || false);
-        setLikesCount(data.article.likesCount || 0);
+      const article = await getArticleAction(articleId);
+      if (article) {
+        setArticle(article);
+        setIsLiked(article.isLiked || false);
+        setIsSaved(article.isSaved || false);
+        setLikesCount(article.likesCount || 0);
       } else {
         setError("Article not found");
       }
@@ -74,7 +75,7 @@ export default function ArticleDetailClient({
     setLikesCount(wasLiked ? likesCount - 1 : likesCount + 1);
 
     try {
-      const result = await api.likeArticle(articleId);
+      const result = await fetch(`/api/articles/${articleId}/like`, { method: 'POST' }).then(r => r.json()) as { liked: boolean };
       // Sync with server state if different
       if (result.liked !== !wasLiked) {
         setIsLiked(result.liked);
@@ -93,7 +94,7 @@ export default function ArticleDetailClient({
     setIsSaved(!wasSaved);
 
     try {
-      const result = await api.saveArticle(articleId);
+      const result = await fetch(`/api/articles/${articleId}/save`, { method: 'POST' }).then(r => r.json()) as { saved: boolean };
       // Sync with server state if different
       if (result.saved !== !wasSaved) {
         setIsSaved(result.saved);
@@ -110,7 +111,7 @@ export default function ArticleDetailClient({
     if (article && articleId) {
       // Track view after short delay (avoid counting bounces)
       const viewTimer = setTimeout(() => {
-        api.trackView(articleId, { readingTime: 0, scrollDepth: 0 }).catch(() => {
+        fetch(`/api/articles/${articleId}/view`, { method: 'POST' }).catch(() => {
           // Silent fail - view tracking is non-critical
         });
       }, 2000);

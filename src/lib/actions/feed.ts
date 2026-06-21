@@ -6,9 +6,10 @@
  * These run on the server — no Worker interception, no API roundtrip.
  */
 
-import { getArticles, getArticleById, getNewsByteArticles, searchArticles } from '@/lib/mongodb/articles'
+import { cookies } from 'next/headers'
+import { getArticles, getArticleById, getNewsByteArticles, searchArticles, getSavedArticles } from '@/lib/mongodb/articles'
 import { getCategories, getTrendingCategories } from '@/lib/mongodb/categories'
-import { getSources, getStats } from '@/lib/mongodb/sources'
+import { getSources, getStats, getTrendingAuthors } from '@/lib/mongodb/sources'
 import type { Article } from '@/lib/api'
 
 export interface SectionedFeed {
@@ -115,4 +116,15 @@ export async function getSourcesAction() {
 
 export async function getStatsAction() {
   return getStats()
+}
+
+export async function getTrendingAuthorsAction(limit = 5) {
+  return getTrendingAuthors(limit)
+}
+
+export async function getSavedArticlesAction() {
+  const cookieStore = await cookies()
+  const sessionId = cookieStore.get('mukoko_session')?.value
+  if (!sessionId) return { articles: [] as Article[] }
+  return getSavedArticles(sessionId)
 }

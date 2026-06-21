@@ -1,6 +1,6 @@
 import { MetadataRoute } from 'next';
 import { BASE_URL, COUNTRIES, CATEGORY_META, getArticleUrl } from '@/lib/constants';
-import { api } from '@/lib/api';
+import { getArticles } from '@/lib/mongodb/articles';
 
 // Revalidate sitemap every hour to pick up new articles
 export const revalidate = 3600;
@@ -52,7 +52,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // Fetch recent articles for the sitemap
   let articleUrls: MetadataRoute.Sitemap = [];
   try {
-    const data = await api.getArticles({ limit: 200, sort: 'latest' });
+    const data = await getArticles({ limit: 200, sort: 'latest' });
     articleUrls = (data.articles || []).map((article) => ({
       url: getArticleUrl(article.id),
       lastModified: article.published_at || now,

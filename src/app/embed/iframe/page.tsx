@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import { RefreshCw, ExternalLink, Clock, MapPin, TrendingUp, Sparkles, Newspaper } from "lucide-react";
-import { api, type Article } from "@/lib/api";
+import { type Article } from "@/lib/api";
+import { getArticlesAction } from "@/lib/actions/feed";
 import { getArticleUrl, BASE_URL, COUNTRIES } from "@/lib/constants";
 import { isValidImageUrl, formatTimeAgo, safeCssUrl } from "@/lib/utils";
 import { SourceIcon } from "@/components/ui/source-icon";
@@ -369,10 +370,10 @@ export default function EmbedIframePage() {
 
   const loadArticles = useCallback(async () => {
     try {
-      const data = await api.getArticles({
+      const data = await getArticlesAction({
         countries: [resolvedCountry],
         limit,
-        sort: sortOrder,
+        sort: sortOrder === 'trending' ? 'popular' : sortOrder === 'popular' ? 'popular' : 'latest',
         category,
       });
       setArticles(data.articles || []);
