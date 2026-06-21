@@ -282,3 +282,27 @@ export async function searchArticles(
 
   return filtered.map(d => toArticle(d, sourceMap.get(d.feedSourceId)))
 }
+
+export async function getSavedArticles(sessionId: string): Promise<{ articles: Article[] }> {
+  const db = await getDb()
+  const saves = await db.collection('articleSaves')
+    .find({ sessionId })
+    .sort({ createdAt: -1 })
+    .toArray()
+
+  if (saves.length === 0) return { articles: [] }
+
+  const articleIds = saves.map(s => s.articleId as string)
+  const docs = await db.collection<MongoArticle>('articles')
+    .find({ _id: { $in: articleIds } })
+    .toArray()
+
+  const sourceIds = [...new Set(docs.map(d => d.feedSourceId))]
+  const sources = await db.collection<MongoFeedSource>('feedSources')
+    .find({ _id: { $in: sourceIds } })
+    .toArray()
+  const sourceMap = new Map(sources.map(s => [s._id, s]))
+
+  const articleMap = new Map(docs.map(d => [d._id, toArticle(d, sourceMap.get(d.feedSourceId))]))
+  return { articles: articleIds.map(id => articleMap.get(id)).filter(Boolean) as Article[] }
+}

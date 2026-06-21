@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { TrendingUp, ChevronRight, Loader2, BarChart3, Users, Newspaper, Layers } from "lucide-react";
-import { api } from "@/lib/api";
+import { getStatsAction, getTrendingCategoriesAction, getTrendingAuthorsAction } from "@/lib/actions/feed";
 
 // Category emojis
 const CATEGORY_EMOJIS: Record<string, string> = {
@@ -64,16 +64,16 @@ export default function InsightsPage() {
     setLoading(true);
     try {
       const results = await Promise.allSettled([
-        api.getStats(),
-        api.getTrendingCategories(8),
-        api.getTrendingAuthors(5),
+        getStatsAction(),
+        getTrendingCategoriesAction(8),
+        getTrendingAuthorsAction(5),
       ]);
 
       if (results[0].status === "fulfilled" && results[0].value.database) {
         setStats(results[0].value.database);
       }
-      if (results[1].status === "fulfilled" && results[1].value.trending) {
-        setTrending(results[1].value.trending);
+      if (results[1].status === "fulfilled") {
+        setTrending(results[1].value as TrendingCategory[]);
       }
       if (results[2].status === "fulfilled" && results[2].value.trending_authors) {
         setAuthors(results[2].value.trending_authors);

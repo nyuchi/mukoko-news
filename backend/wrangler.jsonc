@@ -32,7 +32,8 @@
   },
 
   /**
-   * Cloudflare D1 Database - Primary data store
+   * Cloudflare D1 Database - Logging, cron logs, MCP audit trails, session data
+   * Article/feed data lives in MongoDB Atlas; D1 retained for structured log storage.
    */
   "d1_databases": [
     {

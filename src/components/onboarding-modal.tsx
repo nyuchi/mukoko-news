@@ -4,7 +4,8 @@ import { useState, useEffect } from "react";
 import { X, Loader2, Sparkles } from "lucide-react";
 import { usePreferences } from "@/contexts/preferences-context";
 import { COUNTRIES, getCategoryEmoji } from "@/lib/constants";
-import { api, type Category } from "@/lib/api";
+import { type Category } from "@/lib/api";
+import { getCategoriesAction } from "@/lib/actions/feed";
 
 // Number of quick-pick items to show
 const QUICK_COUNTRIES_COUNT = 4;
@@ -26,8 +27,8 @@ export function OnboardingModal() {
   useEffect(() => {
     async function loadCategories() {
       try {
-        const data = await api.getCategories();
-        setCategories(data.categories || []);
+        const cats = await getCategoriesAction();
+        setCategories(cats);
       } catch (error) {
         console.error("Failed to load categories:", error);
       } finally {

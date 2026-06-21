@@ -47,6 +47,26 @@ export async function getSources(): Promise<Array<{
   }))
 }
 
+export async function getTrendingAuthors(limit = 5): Promise<{
+  trending_authors: Array<{ id: string; name: string; article_count: number }>
+}> {
+  const db = await getDb()
+  const results = await db.collection('articles').aggregate<{ _id: string; count: number }>([
+    { $match: { status: { $ne: 'rejected' }, author: { $exists: true, $nin: [null, ''] } } },
+    { $group: { _id: '$author', count: { $sum: 1 } } },
+    { $sort: { count: -1 } },
+    { $limit: limit },
+  ]).toArray()
+
+  return {
+    trending_authors: results.map(r => ({
+      id: r._id,
+      name: r._id,
+      article_count: r.count,
+    })),
+  }
+}
+
 export async function getStats(): Promise<{
   database: {
     total_articles: number

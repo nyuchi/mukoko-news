@@ -5,7 +5,8 @@ import Link from "next/link";
 import { Bookmark, Loader2, RefreshCw } from "lucide-react";
 import { ArticleCard } from "@/components/article-card";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
-import { api, type Article } from "@/lib/api";
+import { type Article } from "@/lib/api";
+import { getSavedArticlesAction } from "@/lib/actions/feed";
 
 function SavedContent() {
   const [savedArticles, setSavedArticles] = useState<Article[]>([]);
@@ -17,7 +18,7 @@ function SavedContent() {
     setError(null);
 
     try {
-      const data = await api.getSavedArticles();
+      const data = await getSavedArticlesAction();
       setSavedArticles(data.articles || []);
     } catch (err) {
       console.error("Failed to load saved articles:", err);

@@ -10,7 +10,8 @@ import {
   AlertCircle,
   RefreshCw,
 } from "lucide-react";
-import { api, type Article } from "@/lib/api";
+import { type Article } from "@/lib/api";
+import { getNewsBytesAction } from "@/lib/actions/feed";
 import { isValidImageUrl, safeCssUrl } from "@/lib/utils";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { NewsBytesSkeleton } from "@/components/ui/discover-skeleton";
@@ -40,8 +41,7 @@ export default function NewsBytesPage() {
     setError(null);
 
     try {
-      const data = await api.getNewsBytes({ limit: 50 });
-      const articles = data.articles || [];
+      const articles = await getNewsBytesAction(50);
 
       // Filter to only articles with valid image URLs
       const withImages = articles.filter((a) => isValidImageUrl(a.image_url));
@@ -112,7 +112,7 @@ export default function NewsBytesPage() {
 
     // Call API
     try {
-      await api.likeArticle(byteId);
+      await fetch(`/api/articles/${byteId}/like`, { method: 'POST' });
     } catch (err) {
       // Revert on error
       console.error("Failed to like article:", err);
@@ -147,7 +147,7 @@ export default function NewsBytesPage() {
 
     // Call API
     try {
-      await api.saveArticle(byteId);
+      await fetch(`/api/articles/${byteId}/save`, { method: 'POST' });
     } catch (err) {
       // Revert on error
       console.error("Failed to save article:", err);

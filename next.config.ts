@@ -14,10 +14,6 @@ const nextConfig: NextConfig = {
     ],
   },
 
-  // Environment variables exposed to the browser
-  env: {
-    NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || 'https://mukoko-news-backend.nyuchi.workers.dev',
-  },
 };
 
 export default nextConfig;

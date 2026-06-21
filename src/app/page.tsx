@@ -12,7 +12,8 @@ import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { FeedPageSkeleton } from "@/components/ui/skeleton";
 import { CollectionPageJsonLd, ItemListJsonLd } from "@/components/ui/json-ld";
 import { usePreferences } from "@/contexts/preferences-context";
-import { api, type Article, type StoryCluster as StoryClusterType, type CategorySection } from "@/lib/api";
+import { type Article, type StoryCluster as StoryClusterType, type CategorySection } from "@/lib/api";
+import { getSectionedFeedAction } from "@/lib/actions/feed";
 import { isValidImageUrl } from "@/lib/utils";
 import { BASE_URL } from "@/lib/constants";
 import { triggerFeedCollection } from "@/lib/actions/refresh";
@@ -65,7 +66,7 @@ export default function FeedPage() {
       const countries = countryKey ? countryKey.split(",") : [];
       const categories = categoryKey ? categoryKey.split(",") : [];
 
-      const response = await api.getSectionedFeed({
+      const response = await getSectionedFeedAction({
         countries: countries.length > 0 ? countries : undefined,
         categories: categories.length > 0 ? categories : undefined,
       });

@@ -13,7 +13,7 @@ import {
 import { SourceIcon } from "@/components/ui/source-icon";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { Skeleton } from "@/components/ui/skeleton";
-import { api } from "@/lib/api";
+import { getSourcesAction } from "@/lib/actions/feed";
 import { COUNTRIES, getFullUrl } from "@/lib/constants";
 import { WebPageJsonLd } from "@/components/ui/json-ld";
 import { formatTimeAgo } from "@/lib/utils";
@@ -55,8 +55,8 @@ export default function SourcesPage() {
   useEffect(() => {
     async function fetchSources() {
       try {
-        const res = await api.getSources();
-        setSources(res.sources || []);
+        const sources = await getSourcesAction();
+        setSources(sources);
       } catch (err) {
         console.error("Failed to fetch sources:", err);
         setError("Unable to load sources. Please try again later.");

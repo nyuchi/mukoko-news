@@ -3,7 +3,8 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { Loader2, ChevronRight } from "lucide-react";
-import { api, type Category } from "@/lib/api";
+import { type Category } from "@/lib/api";
+import { getCategoriesAction } from "@/lib/actions/feed";
 
 // Category colors and emojis
 const categoryMeta: Record<string, { emoji: string; color: string }> = {
@@ -36,8 +37,8 @@ export default function CategoriesPage() {
 
   const loadCategories = async () => {
     try {
-      const data = await api.getCategories();
-      setCategories(data.categories || []);
+      const cats = await getCategoriesAction();
+      setCategories(cats);
     } catch (error) {
       console.error("Failed to load categories:", error);
     } finally {
