@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Loader2, ChevronLeft, ChevronRight, Compass, RefreshCw, WifiOff, TrendingUp, Newspaper } from "lucide-react";
 import { CategoryChip } from "@/components/ui/category-chip";
 import { ArticleCard } from "@/components/article-card";
@@ -12,15 +13,19 @@ import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { FeedPageSkeleton } from "@/components/ui/skeleton";
 import { CollectionPageJsonLd, ItemListJsonLd } from "@/components/ui/json-ld";
 import { usePreferences } from "@/contexts/preferences-context";
-import { type Article, type StoryCluster as StoryClusterType, type CategorySection } from "@/lib/api";
-import { getSectionedFeedAction } from "@/lib/actions/feed";
+import { type Article, type Category, type StoryCluster as StoryClusterType, type CategorySection } from "@/lib/api";
+import { getSectionedFeedAction, getArticlesAction, getCategoriesAction } from "@/lib/actions/feed";
 import { isValidImageUrl } from "@/lib/utils";
 import { BASE_URL } from "@/lib/constants";
 import { triggerFeedCollection } from "@/lib/actions/refresh";
 
+// How many articles each "Latest" page fetches — must match the server action's latest limit.
+const LATEST_PAGE_SIZE = 20;
+
 // Redesigned layout - Top Stories, Your News, By Category, Latest
 
 export default function FeedPage() {
+  const router = useRouter();
   const { selectedCategories, selectedCountries } = usePreferences();
 
   // Sectioned feed state
@@ -29,13 +34,24 @@ export default function FeedPage() {
   const [byCategory, setByCategory] = useState<CategorySection[]>([]);
   const [latestArticles, setLatestArticles] = useState<Article[]>([]);
 
+  // Full category list for the quick-nav bar (independent of what's in the latest feed)
+  const [allCategories, setAllCategories] = useState<Category[]>([]);
+
+  // Infinite scroll for the chronological "Latest" feed
+  const [latestPage, setLatestPage] = useState(1);
+  const [hasMoreLatest, setHasMoreLatest] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+
+  // Measured height of the global sticky header, so the category bar sits flush
+  // beneath it instead of using a brittle hardcoded offset.
+  const [headerOffset, setHeaderOffset] = useState(64);
+
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isSticky, setIsSticky] = useState(false);
   const [pullDistance, setPullDistance] = useState(0);
-  const filtersSectionRef = useRef<HTMLDivElement>(null);
   const topStoriesScrollRef = useRef<HTMLDivElement>(null);
+  const latestSentinelRef = useRef<HTMLDivElement>(null);
   const touchStartY = useRef(0);
   const isPulling = useRef(false);
   const rafIdRef = useRef<number | null>(null);
@@ -71,10 +87,14 @@ export default function FeedPage() {
         categories: categories.length > 0 ? categories : undefined,
       });
 
+      const latest = response.latest || [];
       setTopStories(response.topStories || []);
       setYourNews(response.yourNews || []);
       setByCategory(response.byCategory || []);
-      setLatestArticles(response.latest || []);
+      setLatestArticles(latest);
+      // Reset infinite-scroll pagination for the new filter set
+      setLatestPage(1);
+      setHasMoreLatest(latest.length >= LATEST_PAGE_SIZE);
     } catch (err) {
       console.error("Failed to fetch feed:", err);
       setError(err instanceof Error ? err.message : "Failed to load news feed");
@@ -83,6 +103,81 @@ export default function FeedPage() {
       setRefreshing(false);
     }
   }, [countryKey, categoryKey]);
+
+  // Track the global header's height (it changes between breakpoints and scroll states)
+  useEffect(() => {
+    const header = document.querySelector<HTMLElement>("[data-app-header]");
+    if (!header) return;
+    const update = () => setHeaderOffset(header.getBoundingClientRect().height);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(header);
+    window.addEventListener("resize", update);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", update);
+    };
+  }, []);
+
+  // Load the full category list once for the quick-nav bar
+  useEffect(() => {
+    let cancelled = false;
+    getCategoriesAction()
+      .then((categories) => {
+        if (!cancelled) setAllCategories((categories || []).filter((c) => c.id !== "all"));
+      })
+      .catch((err) => console.error("Failed to fetch categories:", err));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Load the next page of the chronological "Latest" feed (sorted by timestamp,
+  // across all sources — never grouped by source).
+  const loadMoreLatest = useCallback(async () => {
+    if (loadingMore || !hasMoreLatest) return;
+    setLoadingMore(true);
+    try {
+      const nextPage = latestPage + 1;
+      const countries = countryKey ? countryKey.split(",") : [];
+      const { articles, total } = await getArticlesAction({
+        sort: "latest",
+        page: nextPage,
+        limit: LATEST_PAGE_SIZE,
+        countries: countries.length > 0 ? countries : undefined,
+      });
+      setLatestArticles((prev) => {
+        const seen = new Set(prev.map((a) => a.id));
+        return [...prev, ...articles.filter((a) => !seen.has(a.id))];
+      });
+      setLatestPage(nextPage);
+      setHasMoreLatest(articles.length >= LATEST_PAGE_SIZE && nextPage * LATEST_PAGE_SIZE < total);
+    } catch (err) {
+      console.error("Failed to load more articles:", err);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [loadingMore, hasMoreLatest, latestPage, countryKey]);
+
+  // Keep a stable ref to the latest loader so the observer never re-registers
+  const loadMoreLatestRef = useRef(loadMoreLatest);
+  useEffect(() => {
+    loadMoreLatestRef.current = loadMoreLatest;
+  }, [loadMoreLatest]);
+
+  // IntersectionObserver sentinel — fetches the next page as it nears the viewport
+  useEffect(() => {
+    const sentinel = latestSentinelRef.current;
+    if (!sentinel) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) loadMoreLatestRef.current();
+      },
+      { rootMargin: "400px" }
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [loading, error]);
 
   // Ref to always hold the latest handleRefresh
   const handleRefreshRef = useRef(() => {});
@@ -176,18 +271,6 @@ export default function FeedPage() {
         cancelAnimationFrame(rafIdRef.current);
       }
     };
-  }, []);
-
-  // Sticky header on scroll
-  useEffect(() => {
-    const handleScroll = () => {
-      if (filtersSectionRef.current) {
-        const rect = filtersSectionRef.current.getBoundingClientRect();
-        setIsSticky(rect.top <= 72);
-      }
-    };
-    window.addEventListener("scroll", handleScroll, { passive: true });
-    return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
   const scrollTopStories = (direction: "left" | "right") => {
@@ -287,34 +370,35 @@ export default function FeedPage() {
         </div>
       </header>
 
-      {/* Quick Category Pills */}
-      <div ref={filtersSectionRef}>
-        <nav
-          aria-label="Quick navigation"
-          className={`py-3 border-b border-elevated transition-all duration-300 ${
-            isSticky
-              ? "fixed top-[72px] left-0 right-0 z-40 bg-background/80 backdrop-blur-xl shadow-sm"
-              : ""
-          }`}
-        >
-          <div className={isSticky ? "max-w-[1200px] mx-auto px-4 sm:px-6" : ""}>
-            <div className="flex gap-2 overflow-x-auto scrollbar-hide" style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}>
-              <CategoryChip label="Top Stories" active icon={<TrendingUp className="w-3.5 h-3.5" />} onClick={() => document.getElementById('top-stories')?.scrollIntoView({ behavior: 'smooth' })} />
-              {selectedCategories.length > 0 && (
-                <CategoryChip label="Your News" icon={<Newspaper className="w-3.5 h-3.5" />} onClick={() => document.getElementById('your-news')?.scrollIntoView({ behavior: 'smooth' })} />
-              )}
-              {byCategory.map((section) => (
-                <CategoryChip
-                  key={section.id}
-                  label={section.name}
-                  onClick={() => document.getElementById(`category-${section.id}`)?.scrollIntoView({ behavior: 'smooth' })}
-                />
-              ))}
-            </div>
-          </div>
-        </nav>
-        {isSticky && <div className="h-[52px]" />}
-      </div>
+      {/* Quick Category Pills — sticks flush beneath the measured global header height */}
+      <nav
+        aria-label="Quick navigation"
+        className="sticky z-40 py-3 border-b border-elevated bg-background/80 backdrop-blur-xl"
+        style={{ top: headerOffset }}
+      >
+        <div className="flex gap-2 overflow-x-auto scrollbar-hide" style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}>
+          <CategoryChip label="Top Stories" active icon={<TrendingUp className="w-3.5 h-3.5" />} onClick={() => document.getElementById('top-stories')?.scrollIntoView({ behavior: 'smooth' })} />
+          {selectedCategories.length > 0 && (
+            <CategoryChip label="Your News" icon={<Newspaper className="w-3.5 h-3.5" />} onClick={() => document.getElementById('your-news')?.scrollIntoView({ behavior: 'smooth' })} />
+          )}
+          {allCategories.map((category) => {
+            // Scroll to the on-page section if this category is present in the feed;
+            // otherwise open the full category view in Discover.
+            const section = byCategory.find((s) => s.id === category.id || s.name === category.name);
+            return (
+              <CategoryChip
+                key={category.id}
+                label={category.name}
+                onClick={() =>
+                  section
+                    ? document.getElementById(`category-${section.id}`)?.scrollIntoView({ behavior: 'smooth' })
+                    : router.push(`/discover?category=${category.id}`)
+                }
+              />
+            );
+          })}
+        </div>
+      </nav>
 
       {/* Main Content */}
       <main>
@@ -465,6 +549,20 @@ export default function FeedPage() {
                       <ArticleCard key={article.id} article={article} />
                     ))}
                   </div>
+
+                  {/* Infinite scroll: sentinel triggers the next chronological page */}
+                  {hasMoreLatest && (
+                    <div ref={latestSentinelRef} className="flex justify-center py-8" aria-hidden="true">
+                      {loadingMore && (
+                        <Loader2 className="w-6 h-6 animate-spin text-text-tertiary" />
+                      )}
+                    </div>
+                  )}
+                  {!hasMoreLatest && latestArticles.length > LATEST_PAGE_SIZE && (
+                    <p className="text-center text-sm text-text-tertiary py-8" role="status">
+                      You&apos;re all caught up
+                    </p>
+                  )}
                 </section>
               </ErrorBoundary>
             )}
