@@ -4,10 +4,6 @@
       "type": "http",
       "url": "https://news.mukoko.com/mcp"
     },
-    "nyuchi-mongodb": {
-      "type": "http",
-      "url": "https://mongodb.nyuchi.dev/mcp"
-    },
     "fly": {
       "type": "stdio",
       "command": "flyctl",

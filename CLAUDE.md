@@ -149,10 +149,9 @@ Auto-deploys to Vercel on push to `main`.
 | Server | Type / URL | Auth |
 | --- | --- | --- |
 | `mukoko-news` | http — `https://news.mukoko.com/mcp` | Product MCP (gateway) |
-| `nyuchi-mongodb` | http — `https://mongodb.nyuchi.dev/mcp` | OAuth — each developer authenticates on first use; tokens in `~/.claude.json`, never committed |
 | `fly` | stdio — `flyctl mcp server` | Local `flyctl` auth |
 
-**First-time setup**: On session start, Claude Code prompts for OAuth with `nyuchi-mongodb` (read/write to the MongoDB cluster). Only team members with nyuchi.dev credentials should approve.
+**MongoDB access**: the nyuchi MongoDB MCP (`https://mongodb.nyuchi.dev/mcp`) is **not** project-scoped — it is added per-developer as a **personal Claude connector** (Claude → Settings → Connectors), not via this repo's `.mcp.json`. So it is not listed above.
 
 ## Environment Variables
 
