@@ -28,7 +28,14 @@ interface MongoArticle {
   articleBodyProcessed?: string
   articleSection?: string
   datePublished?: Date
-  image?: Array<{ '@type'?: string; url?: string }>
+  // Image has been stored in several shapes across pipeline versions:
+  //   schema.org array:  image: [{ url }]       (fly-worker rss/newsdata collectors)
+  //   schema.org object: image: { url }         (parser intermediate)
+  //   flat string:       image: "https://…"
+  //   flat field:        imageUrl / image_url   (processing worker / edge cache)
+  image?: Array<{ '@type'?: string; url?: string }> | { '@type'?: string; url?: string } | string
+  imageUrl?: string
+  image_url?: string
   wordCount?: number
   readingTimeMinutes?: number
   categoryIds?: string[]
@@ -47,8 +54,23 @@ interface MongoFeedSource {
   mediaOrganizationId: string
 }
 
+/**
+ * Resolve an article's image URL across the schema variants the pipeline has
+ * written over time (schema.org array/object, a flat string, or a flat
+ * imageUrl / image_url field). Returns the first non-empty candidate.
+ */
+function resolveImageUrl(doc: MongoArticle): string | null {
+  const img = doc.image
+  let fromImage: string | undefined
+  if (Array.isArray(img)) fromImage = img[0]?.url
+  else if (img && typeof img === 'object') fromImage = img.url
+  else if (typeof img === 'string') fromImage = img
+
+  return fromImage || doc.imageUrl || doc.image_url || null
+}
+
 function toArticle(doc: MongoArticle, source?: MongoFeedSource): Article {
-  const imageUrl = doc.image?.[0]?.url || null
+  const imageUrl = resolveImageUrl(doc)
   return {
     id: doc._id,
     title: doc.headline,
@@ -193,8 +215,15 @@ export async function getNewsByteArticles(limit = 10): Promise<Article[]> {
       status: { $ne: 'rejected' },
       moderationStatus: { $ne: 'removed' },
       wordCount: { $lte: 300 },
-      'image.0': { $exists: true },
-    })
+      // An image in any of the shapes the pipeline has used (see resolveImageUrl)
+      $or: [
+        { 'image.0': { $exists: true } },
+        { 'image.url': { $exists: true, $ne: null } },
+        { image: { $type: 'string', $ne: '' } },
+        { imageUrl: { $exists: true, $ne: null } },
+        { image_url: { $exists: true, $ne: null } },
+      ],
+    } as Filter<MongoArticle>)
     .sort({ datePublished: -1 })
     .limit(limit)
     .toArray()
