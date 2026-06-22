@@ -11,6 +11,10 @@ permissions:
   pull-requests: read
 
 jobs:
+  # ── Repo hygiene linters (file/format checks) ──────────────────────────────
+  # These five matrix entries are the branch-protection required checks
+  # (lint / actionlint, lint / JSON validity, lint / prettier, …). Keep their
+  # names stable so the org ruleset keeps matching them.
   lint:
     runs-on: ubuntu-latest
     name: lint / ${{ matrix.check }}
@@ -64,31 +68,61 @@ jobs:
         pip install yamllint
         yamllint -c .yamllint.yml .
 
-  test-frontend:
+  # ── Frontend pipeline ──────────────────────────────────────────────────────
+  # Sequential stages (ESLint → Typecheck → Test → Build) so the Actions graph
+  # shows a clear pipeline and pinpoints exactly which stage failed, instead of
+  # bundling everything into one opaque job.
+  eslint:
     runs-on: ubuntu-latest
-    name: Test Frontend (Next.js)
-
+    name: ESLint
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
+    - uses: actions/checkout@v4
+    - uses: actions/setup-node@v4
       with:
         node-version: '20'
         cache: 'npm'
-
-    - name: Install dependencies
-      run: npm ci
-
-    - name: Run frontend unit tests
-      run: npm run test
-
-    - name: Type check
-      run: npm run typecheck
-
-    - name: Lint
+    - run: npm ci
+    - name: Run ESLint
       run: npm run lint
 
+  typecheck:
+    runs-on: ubuntu-latest
+    name: Typecheck
+    needs: eslint
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+    - run: npm ci
+    - name: Run tsc --noEmit
+      run: npm run typecheck
+
+  test:
+    runs-on: ubuntu-latest
+    name: Test
+    needs: typecheck
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+    - run: npm ci
+    - name: Run Vitest
+      run: npm run test
+
+  build:
+    runs-on: ubuntu-latest
+    name: Build
+    needs: test
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+    - run: npm ci
     - name: Build Next.js
       run: npm run build

@@ -136,6 +136,7 @@ export function Header() {
 
   return (
     <header
+      data-app-header
       className={`sticky top-0 z-50 transition-all duration-300 ${
         isNewsBytes
           ? "bg-gradient-to-b from-black/60 via-black/30 to-transparent"
