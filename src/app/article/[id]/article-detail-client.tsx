@@ -316,11 +316,15 @@ export default function ArticleDetailClient({
         {/* Content */}
         {article.content && (
           <div className="prose prose-lg dark:prose-invert max-w-none mb-8">
-            {article.content.split("\n").map((paragraph, index) => (
-              <p key={`${article.id}-p-${index}`} className="mb-4 leading-relaxed">
-                {paragraph}
-              </p>
-            ))}
+            {article.content
+              .split(/\n+/)
+              .map((p) => p.trim())
+              .filter(Boolean)
+              .map((paragraph, index) => (
+                <p key={`${article.id}-p-${index}`} className="mb-4 leading-relaxed">
+                  {paragraph}
+                </p>
+              ))}
           </div>
         )}
 

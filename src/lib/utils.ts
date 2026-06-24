@@ -78,3 +78,35 @@ export function isValidImageUrl(url: string | undefined | null): boolean {
     return false;
   }
 }
+
+/**
+ * Convert HTML/markup to readable plain text.
+ *
+ * Article bodies sometimes arrive with residual markup — e.g. a
+ * `<html><body>…</body></html>` wrapper from upstream processing — which must
+ * never be rendered verbatim. Block-level tags become line breaks so paragraph
+ * structure survives; everything else is stripped and common entities decoded.
+ */
+export function stripHtml(input: string | undefined | null): string {
+  if (!input) return '';
+  return input
+    // Drop script/style blocks entirely (content and all)
+    .replace(/<\s*(script|style)[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/gi, '')
+    // Block-level boundaries → newlines so paragraphs are preserved
+    .replace(/<\s*br\s*\/?\s*>/gi, '\n')
+    .replace(/<\s*\/\s*(p|div|h[1-6]|li|ul|ol|section|article|header|footer|blockquote)\s*>/gi, '\n')
+    // Remove all remaining tags
+    .replace(/<[^>]+>/g, '')
+    // Decode the most common HTML entities
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#0*39;|&apos;/gi, "'")
+    // Tidy whitespace
+    .replace(/[ \t]+/g, ' ')
+    .replace(/[ \t]*\n[ \t]*/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}

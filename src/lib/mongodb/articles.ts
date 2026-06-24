@@ -6,6 +6,7 @@
 
 import type { Collection, Filter } from 'mongodb'
 import { getDb } from './client'
+import { stripHtml } from '@/lib/utils'
 import type { Article } from '@/lib/api'
 
 interface MongoArticle {
@@ -119,7 +120,7 @@ function toArticle(doc: MongoArticle, source?: MongoFeedSource): Article {
     id: doc._id,
     title: doc.headline,
     description: doc.description,
-    content: doc.articleBodyProcessed || doc.articleBody,
+    content: stripHtml(doc.articleBodyProcessed || doc.articleBody) || undefined,
     source: source?.name || doc.feedSourceId,
     source_id: doc.feedSourceId,
     slug: doc.slug,
