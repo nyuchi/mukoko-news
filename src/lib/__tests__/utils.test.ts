@@ -34,6 +34,17 @@ describe('stripHtml', () => {
   it('collapses excess whitespace and blank lines', () => {
     expect(stripHtml('<p>One</p><p></p><p></p><p>Two</p>')).toBe('One\n\nTwo');
   });
+
+  it('does not double-unescape chained entities', () => {
+    // "&amp;lt;" is the escaped literal "&lt;" — it must NOT become "<"
+    expect(stripHtml('&amp;lt;')).toBe('&lt;');
+    expect(stripHtml('&amp;lt;script&amp;gt;')).toBe('&lt;script&gt;');
+  });
+
+  it('drops script content even with adjacent text', () => {
+    expect(stripHtml('<script>steal()</script>hello')).toBe('hello');
+    expect(stripHtml('before<script>x</script>after')).toBe('beforeafter');
+  });
 });
 
 describe('formatTimeAgo', () => {

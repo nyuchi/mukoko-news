@@ -13,6 +13,7 @@ import {
   Tag,
   RefreshCw,
   Check,
+  ExternalLink,
 } from "lucide-react";
 import { type Article } from "@/lib/api";
 import { getArticleAction } from "@/lib/actions/feed";
@@ -326,6 +327,19 @@ export default function ArticleDetailClient({
                 </p>
               ))}
           </div>
+        )}
+
+        {/* Read original — sends the reader to the source article */}
+        {article.original_url && isValidImageUrl(article.original_url) && (
+          <a
+            href={article.original_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-primary text-white font-semibold hover:opacity-90 transition-opacity focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+          >
+            <ExternalLink className="w-5 h-5" aria-hidden="true" />
+            Read full article{article.source ? ` at ${article.source}` : ""}
+          </a>
         )}
 
         {/* Divider */}

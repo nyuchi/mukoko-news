@@ -87,24 +87,55 @@ export function isValidImageUrl(url: string | undefined | null): boolean {
  * never be rendered verbatim. Block-level tags become line breaks so paragraph
  * structure survives; everything else is stripped and common entities decoded.
  */
+const HTML_ENTITIES: Record<string, string> = {
+  '&nbsp;': ' ',
+  '&amp;': '&',
+  '&lt;': '<',
+  '&gt;': '>',
+  '&quot;': '"',
+  '&#39;': "'",
+  '&apos;': "'",
+};
+
+/** Repeatedly apply `re` until the string stops changing (complete sanitization). */
+function replaceUntilStable(input: string, re: RegExp, replacement: string): string {
+  let prev: string;
+  let out = input;
+  do {
+    prev = out;
+    out = out.replace(re, replacement);
+  } while (out !== prev);
+  return out;
+}
+
 export function stripHtml(input: string | undefined | null): string {
   if (!input) return '';
-  return input
-    // Drop script/style blocks entirely (content and all)
-    .replace(/<\s*(script|style)[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/gi, '')
-    // Block-level boundaries → newlines so paragraphs are preserved
+
+  // Drop <script>/<style> blocks (content and all). Loop until stable so a
+  // nested/overlapping sequence can't reconstruct a tag after a single pass.
+  let text = replaceUntilStable(
+    input,
+    /<\s*(script|style)\b[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/gi,
+    ''
+  );
+
+  // Block-level boundaries → newlines so paragraph structure survives.
+  text = text
     .replace(/<\s*br\s*\/?\s*>/gi, '\n')
-    .replace(/<\s*\/\s*(p|div|h[1-6]|li|ul|ol|section|article|header|footer|blockquote)\s*>/gi, '\n')
-    // Remove all remaining tags
-    .replace(/<[^>]+>/g, '')
-    // Decode the most common HTML entities
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/&amp;/gi, '&')
-    .replace(/&lt;/gi, '<')
-    .replace(/&gt;/gi, '>')
-    .replace(/&quot;/gi, '"')
-    .replace(/&#0*39;|&apos;/gi, "'")
-    // Tidy whitespace
+    .replace(/<\s*\/\s*(p|div|h[1-6]|li|ul|ol|section|article|header|footer|blockquote)\s*>/gi, '\n');
+
+  // Remove all remaining tags. Loop until stable so interleaved angle brackets
+  // (e.g. "<scr<script>ipt>") can't leave a usable tag behind.
+  text = replaceUntilStable(text, /<[^>]*>/g, '');
+
+  // Decode common HTML entities in a SINGLE pass via a lookup, so chained
+  // decoding can't double-unescape (e.g. "&amp;lt;" must yield "&lt;", not "<").
+  text = text.replace(/&(?:nbsp|amp|lt|gt|quot|apos|#0*39);/gi, (match) => {
+    const key = match.toLowerCase().replace(/&#0*39;/, '&#39;');
+    return HTML_ENTITIES[key] ?? match;
+  });
+
+  return text
     .replace(/[ \t]+/g, ' ')
     .replace(/[ \t]*\n[ \t]*/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
