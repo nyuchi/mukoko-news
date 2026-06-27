@@ -6,6 +6,7 @@
 
 import type { Collection, Filter } from 'mongodb'
 import { getDb } from './client'
+import { stripHtml } from '@/lib/utils'
 import type { Article } from '@/lib/api'
 
 interface MongoArticle {
@@ -40,6 +41,12 @@ interface MongoArticle {
   readingTimeMinutes?: number
   categoryIds?: string[]
   tagIds?: string[]
+  // Current schema keeps categories + keywords under an `engagement` subdocument.
+  // Elements may be plain strings (slug/name) or objects — handle both.
+  engagement?: {
+    interest_categories?: Array<string | { id?: string; category_id?: string; slug?: string; name?: string }>
+    tags?: Array<string | { id?: string; slug?: string; name?: string }>
+  }
   qualityScore?: number
   aiProcessed?: boolean
   embedding?: number[]
@@ -69,17 +76,56 @@ function resolveImageUrl(doc: MongoArticle): string | null {
   return fromImage || doc.imageUrl || doc.image_url || null
 }
 
+/** Human-readable label for a category/tag entry that may be a string or object. */
+function entryLabel(entry: string | { id?: string; category_id?: string; slug?: string; name?: string }): string | undefined {
+  if (typeof entry === 'string') return entry.trim() || undefined
+  return entry.name || entry.slug || entry.id || entry.category_id || undefined
+}
+
+/**
+ * Resolve an article's primary category. Current schema stores categories under
+ * `engagement.interest_categories`; fall back to the legacy `articleSection`
+ * (which the RSS collector hardcodes to "general").
+ */
+function resolveCategory(doc: MongoArticle): string | undefined {
+  const cats = doc.engagement?.interest_categories
+  if (Array.isArray(cats) && cats.length) {
+    const label = entryLabel(cats[0])
+    if (label) return label
+  }
+  return doc.articleSection || undefined
+}
+
+/** Map `engagement.tags` (strings or objects) onto the Article keyword shape. */
+function resolveKeywords(doc: MongoArticle): Article['keywords'] {
+  const tags = doc.engagement?.tags
+  if (!Array.isArray(tags) || tags.length === 0) return undefined
+  const mapped = tags
+    .map((t) => {
+      if (typeof t === 'string') {
+        const v = t.trim()
+        return v ? { id: v, name: v, slug: v } : null
+      }
+      const name = t.name || t.slug || t.id
+      if (!name) return null
+      return { id: t.id || t.slug || name, name, slug: t.slug || t.id || name }
+    })
+    .filter((k): k is { id: string; name: string; slug: string } => k !== null)
+  return mapped.length ? mapped : undefined
+}
+
 function toArticle(doc: MongoArticle, source?: MongoFeedSource): Article {
   const imageUrl = resolveImageUrl(doc)
   return {
     id: doc._id,
     title: doc.headline,
     description: doc.description,
-    content: doc.articleBodyProcessed || doc.articleBody,
+    content: stripHtml(doc.articleBodyProcessed || doc.articleBody) || undefined,
     source: source?.name || doc.feedSourceId,
     source_id: doc.feedSourceId,
     slug: doc.slug,
-    category: doc.articleSection || undefined,
+    category: resolveCategory(doc),
+    keywords: resolveKeywords(doc),
     country: source?.countryCode || undefined,
     image_url: imageUrl || undefined,
     original_url: doc.externalUrl,

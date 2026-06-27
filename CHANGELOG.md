@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [5.1.1] - 2026-06-27
+
+### Fixed
+
+- **Feed categories & keywords now read from the `engagement` subdocument**: `toArticle` resolves the display category from `engagement.interest_categories` (falling back to `articleSection`) and maps `engagement.tags` → `keywords` — handling both string- and object-shaped elements. Previously every article showed as **"general"** because the category was read from `articleSection`, which the RSS collector hardcodes.
+- **Raw HTML no longer leaks into the article body**: new `stripHtml()` util (block tags → newlines, tags removed, common entities decoded, `script`/`style` dropped) cleans `content` in `toArticle`; the detail view drops empty paragraphs. Hardened against the CodeQL incomplete-multi-character-sanitization finding. +7 `stripHtml` unit tests.
+
+### Added
+
+- **"Read original" button** on the article page linking to the source URL.
+
+### Notes
+
+- Cross-repo (gateway/pipeline) work shipped alongside this release: the gateway migrated off the decommissioned `mukoko-news-api` Worker to **direct MongoDB reads + a fly-worker collection trigger**, consolidated to a single `POST /api/refresh`, and added a platform-team-gated **`trigger_enrichment` MCP tool**; the fly-worker's RSS fetch interval is now tunable via `RSS_COLLECTION_INTERVAL_MINUTES`. See the `mukoko-news-gateway` and `mukoko-news-pipeline` repos.
+
+---
+
 ## [5.1.0] - 2026-06-21
 
 ### Changed

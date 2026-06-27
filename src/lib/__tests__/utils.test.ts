@@ -1,5 +1,51 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { formatTimeAgo, isValidImageUrl, cn, safeCssUrl } from '../utils';
+import { formatTimeAgo, isValidImageUrl, cn, safeCssUrl, stripHtml } from '../utils';
+
+describe('stripHtml', () => {
+  it('returns empty string for nullish input', () => {
+    expect(stripHtml('')).toBe('');
+    expect(stripHtml(null)).toBe('');
+    expect(stripHtml(undefined)).toBe('');
+  });
+
+  it('removes a full <html><body> wrapper, leaving the text', () => {
+    expect(stripHtml('<html><body>Hello world</body></html>')).toBe('Hello world');
+  });
+
+  it('strips inline tags', () => {
+    expect(stripHtml('<p>A <strong>bold</strong> claim</p>')).toBe('A bold claim');
+  });
+
+  it('converts block boundaries and <br> to newlines', () => {
+    expect(stripHtml('<p>One</p><p>Two</p>')).toBe('One\nTwo');
+    expect(stripHtml('Line1<br/>Line2')).toBe('Line1\nLine2');
+  });
+
+  it('drops script and style blocks entirely', () => {
+    expect(stripHtml('Hi<script>alert(1)</script> there')).toBe('Hi there');
+    expect(stripHtml('A<style>.x{color:red}</style>B')).toBe('AB');
+  });
+
+  it('decodes common HTML entities', () => {
+    expect(stripHtml('Tom &amp; Jerry &lt;3')).toBe('Tom & Jerry <3');
+    expect(stripHtml('it&#39;s &quot;quoted&quot;')).toBe('it\'s "quoted"');
+  });
+
+  it('collapses excess whitespace and blank lines', () => {
+    expect(stripHtml('<p>One</p><p></p><p></p><p>Two</p>')).toBe('One\n\nTwo');
+  });
+
+  it('does not double-unescape chained entities', () => {
+    // "&amp;lt;" is the escaped literal "&lt;" — it must NOT become "<"
+    expect(stripHtml('&amp;lt;')).toBe('&lt;');
+    expect(stripHtml('&amp;lt;script&amp;gt;')).toBe('&lt;script&gt;');
+  });
+
+  it('drops script content even with adjacent text', () => {
+    expect(stripHtml('<script>steal()</script>hello')).toBe('hello');
+    expect(stripHtml('before<script>x</script>after')).toBe('beforeafter');
+  });
+});
 
 describe('formatTimeAgo', () => {
   beforeEach(() => {
