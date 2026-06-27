@@ -1,11 +1,11 @@
 /* Import Google Fonts - must come first per CSS spec */
-@import url('https://fonts.googleapis.com/css2?family=Noto+Serif:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Noto+Serif:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Noto+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
 @import "tailwindcss";
 
 /*
  * Mukoko News Theme System
- * Based on Nyuchi Brand System v6
+ * Mukoko "Swarm" brand — African Minerals palette (doctrine v4.1.0)
  * WCAG 2.2 AAA Compliant - 7:1 contrast ratio for normal text
  */
 
@@ -25,17 +25,40 @@
   --text-secondary: #B8B8B3;
   --text-tertiary: #8A8A85;
 
-  /* Brand Colors - Dark mode - Mukoko News uses Tanzanite/Cobalt */
+  /* Brand Colors - Dark mode - African Minerals (dark_hex) */
   --tanzanite: #B388FF;
-  --cobalt: #64B5F6;
+  --cobalt: #00B0FF;
   --gold: #FFD740;
 
   /* Semantic */
   --primary: var(--tanzanite);
   --secondary: var(--cobalt);
-  --success: #2E8B57;
-  --warning: #E07A4D;
+  --success: #64FFDA;   /* Malachite (dark) */
+  --warning: #E1B07E;   /* Terracotta (dark) */
   --accent: var(--gold);
+
+  /* Full African Minerals palette (dark_hex) + containers */
+  --color-cobalt: #00B0FF;
+  --container-cobalt: #001F3F;
+  --on-container-cobalt: #B3E5FC;
+  --color-tanzanite: #B388FF;
+  --container-tanzanite: #1A0033;
+  --on-container-tanzanite: #E1BEE7;
+  --color-malachite: #64FFDA;
+  --container-malachite: #00251A;
+  --on-container-malachite: #A7FFEB;
+  --color-gold: #FFD740;
+  --container-gold: #332200;
+  --on-container-gold: #FFECB3;
+  --color-terracotta: #E1B07E;
+  --container-terracotta: #3E2817;
+  --on-container-terracotta: #FFCCBC;
+  --color-sodalite: #3D5AFE;
+  --container-sodalite: #0D1442;
+  --on-container-sodalite: #C5CAE9;
+  --color-copper: #FF8A65;
+  --container-copper: #3A1A0E;
+  --on-container-copper: #FFCCBC;
 
   /* UI Elements */
   --muted: #141414;
@@ -62,16 +85,39 @@
   --text-secondary: #B8B8B3;   /* 10.4:1 contrast */
   --text-tertiary: #8A8A85;    /* 7.1:1 contrast */
 
-  /* Brand Colors - Mukoko News */
+  /* Brand Colors - African Minerals (dark_hex) */
   --tanzanite: #B388FF;
-  --cobalt: #64B5F6;
+  --cobalt: #00B0FF;
   --gold: #FFD740;
 
   --primary: var(--tanzanite);
   --secondary: var(--cobalt);
-  --success: #2E8B57;
-  --warning: #E07A4D;
+  --success: #64FFDA;   /* Malachite (dark) */
+  --warning: #E1B07E;   /* Terracotta (dark) */
   --accent: var(--gold);
+
+  /* Full African Minerals palette (dark_hex) + containers */
+  --color-cobalt: #00B0FF;
+  --container-cobalt: #001F3F;
+  --on-container-cobalt: #B3E5FC;
+  --color-tanzanite: #B388FF;
+  --container-tanzanite: #1A0033;
+  --on-container-tanzanite: #E1BEE7;
+  --color-malachite: #64FFDA;
+  --container-malachite: #00251A;
+  --on-container-malachite: #A7FFEB;
+  --color-gold: #FFD740;
+  --container-gold: #332200;
+  --on-container-gold: #FFECB3;
+  --color-terracotta: #E1B07E;
+  --container-terracotta: #3E2817;
+  --on-container-terracotta: #FFCCBC;
+  --color-sodalite: #3D5AFE;
+  --container-sodalite: #0D1442;
+  --on-container-sodalite: #C5CAE9;
+  --color-copper: #FF8A65;
+  --container-copper: #3A1A0E;
+  --on-container-copper: #FFCCBC;
 
   /* UI Elements */
   --muted: #141414;
@@ -97,16 +143,39 @@
   --text-secondary: #404040;   /* 10.2:1 contrast */
   --text-tertiary: #595959;    /* 7.0:1 contrast */
 
-  /* Brand Colors - Darker for light mode - Mukoko News */
-  --tanzanite: #4B0082;        /* Deep Tanzanite */
-  --cobalt: #0047AB;           /* Deep Cobalt */
-  --gold: #8B5A00;             /* Deep Gold */
+  /* Brand Colors - African Minerals (light_hex) */
+  --tanzanite: #4B0082;        /* Tanzanite */
+  --cobalt: #0047AB;           /* Cobalt */
+  --gold: #5D4037;             /* Gold (light) */
 
   --primary: var(--tanzanite);
   --secondary: var(--cobalt);
-  --success: #2E8B57;
-  --warning: #E07A4D;
+  --success: #004D40;   /* Malachite (light) */
+  --warning: #A0522D;   /* Terracotta (light) */
   --accent: var(--gold);
+
+  /* Full African Minerals palette (light_hex) + containers */
+  --color-cobalt: #0047AB;
+  --container-cobalt: #E3F2FD;
+  --on-container-cobalt: #002966;
+  --color-tanzanite: #4B0082;
+  --container-tanzanite: #F3E5F5;
+  --on-container-tanzanite: #2E004D;
+  --color-malachite: #004D40;
+  --container-malachite: #E0F2F1;
+  --on-container-malachite: #00332B;
+  --color-gold: #5D4037;
+  --container-gold: #FFF8E1;
+  --on-container-gold: #3E2723;
+  --color-terracotta: #A0522D;
+  --container-terracotta: #F5E6D3;
+  --on-container-terracotta: #5D2906;
+  --color-sodalite: #283593;
+  --container-sodalite: #E8EAF6;
+  --on-container-sodalite: #1A237E;
+  --color-copper: #BF5A36;
+  --container-copper: #FBE4DA;
+  --on-container-copper: #5A2310;
 
   /* UI Elements */
   --muted: #F0F0ED;
@@ -143,9 +212,33 @@
   --color-input: var(--input);
   --color-ring: var(--ring);
 
+  /* African Minerals palette (theme-aware via .light/.dark) */
+  --color-cobalt: var(--color-cobalt);
+  --color-container-cobalt: var(--container-cobalt);
+  --color-on-container-cobalt: var(--on-container-cobalt);
+  --color-tanzanite: var(--color-tanzanite);
+  --color-container-tanzanite: var(--container-tanzanite);
+  --color-on-container-tanzanite: var(--on-container-tanzanite);
+  --color-malachite: var(--color-malachite);
+  --color-container-malachite: var(--container-malachite);
+  --color-on-container-malachite: var(--on-container-malachite);
+  --color-gold: var(--color-gold);
+  --color-container-gold: var(--container-gold);
+  --color-on-container-gold: var(--on-container-gold);
+  --color-terracotta: var(--color-terracotta);
+  --color-container-terracotta: var(--container-terracotta);
+  --color-on-container-terracotta: var(--on-container-terracotta);
+  --color-sodalite: var(--color-sodalite);
+  --color-container-sodalite: var(--container-sodalite);
+  --color-on-container-sodalite: var(--on-container-sodalite);
+  --color-copper: var(--color-copper);
+  --color-container-copper: var(--container-copper);
+  --color-on-container-copper: var(--on-container-copper);
+
   /* Typography */
-  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Noto Sans", ui-sans-serif, system-ui, sans-serif;
   --font-serif: "Noto Serif", ui-serif, Georgia, serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 
   /* Design Tokens */
   --radius-button: 12px;
@@ -165,6 +258,10 @@ body {
 
 h1, h2, h3, h4, h5, h6 {
   font-family: var(--font-serif);
+}
+
+code, pre, kbd, samp {
+  font-family: var(--font-mono);
 }
 
 /* Touch target minimum size */
@@ -244,8 +341,8 @@ a {
     #004D40 60%,
     #5D4037 60%,     /* Gold */
     #5D4037 80%,
-    #8B4513 80%,     /* Terracotta */
-    #8B4513 100%
+    #A0522D 80%,     /* Terracotta */
+    #A0522D 100%
   );
 }
 
@@ -263,8 +360,8 @@ a {
     #004D40 60%,
     #5D4037 60%,     /* Gold */
     #5D4037 80%,
-    #8B4513 80%,     /* Terracotta */
-    #8B4513 100%
+    #A0522D 80%,     /* Terracotta */
+    #A0522D 100%
   );
 }
 
