@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [5.2.0] - 2026-06-27
+
+### Changed
+
+- **Brand refresh: Mukoko "Swarm" identity** (doctrine v4.1.0). Replaces the Nyuchi Brand v6 styling.
+  - **Palette**: full **7 African Minerals** palette (cobalt, tanzanite, malachite, gold, terracotta, sodalite, copper) — each with light/dark + container/on-container values — added as theme-aware CSS variables in `src/app/globals.css` and exposed as Tailwind utilities. `--primary`=tanzanite, `--secondary`=cobalt, `--accent`=gold, `--success`=malachite, `--warning`=terracotta. Cobalt-dark corrected to `#00B0FF`.
+  - **Mark**: new **Seed-of-Life** mark (7 hexes, tanzanite core) drives the header logo (`AppIcon` now renders `mukoko-mark-full-{light,dark}.svg`).
+  - **App icons + favicon**: new full-palette app icons on deep tanzanite (`public/mukoko-appicon.png` + `-paper`/`-mono-tanzanite`), mono-tanzanite favicon set (`favicon.svg`, `favicon-dark.svg`, `favicon-{16,32,48,180}.png`), and Seed-of-Life lockups. `manifest.json` / layout metadata / theme-color updated (`#4B0082`).
+  - **Typography**: body now **Noto Sans** (was Plus Jakarta Sans); headings stay **Noto Serif**; **JetBrains Mono** added for code/data. Wordmark is lowercase Noto Serif 600.
+
+---
+
 ## [5.1.1] - 2026-06-27
 
 ### Fixed

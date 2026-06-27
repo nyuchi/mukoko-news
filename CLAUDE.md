@@ -209,15 +209,29 @@ const { user } = await withAuth()
 
 The MCP OAuth server (`news.mukoko.com/.well-known/oauth-authorization-server`, `/mcp`) lives in `nyuchi/mukoko-news-gateway`.
 
-## Design System (Nyuchi Brand v6)
+## Design System (Mukoko "Swarm" — doctrine v4.1.0)
 
-**Colors** (African Minerals palette): Primary Tanzanite (#4B0082), Secondary Cobalt (#0047AB), Accent Gold (#5D4037), Success Malachite (#2E8B57), Warning Terracotta (#E07A4D), Surface Warm Cream (#FAF9F5)
+**Mark**: the **Seed of Life** — one centre cell ringed by six, the first ring of the honeycomb, rendered in the 7 minerals with **tanzanite at the core**. Full-palette mark at ≥32px (`public/mukoko-mark-full-{light,dark}.svg`, used by `AppIcon`); mono-tanzanite favicon below 32px. App icon = full palette on deep tanzanite (`public/mukoko-appicon.png`). Never add gradients/shadows, recolour petals, or reorder the ring.
 
-**Typography**: Noto Serif (headings), Plus Jakarta Sans (body) — loaded via CSS `@import` with preconnect hints in `layout.tsx`
+**Palette** — 7 **African Minerals**, each with light/dark + container/on-container values (full set in `src/app/globals.css`, theme-aware via the `.light`/`.dark` classes; mirrored in the brand kit `tokens/minerals.json`):
+
+| mineral | light | dark | role |
+| --- | --- | --- | --- |
+| cobalt | `#0047AB` | `#00B0FF` | secondary / links / CTAs |
+| tanzanite | `#4B0082` | `#B388FF` | **primary / brand** |
+| malachite | `#004D40` | `#64FFDA` | success |
+| gold | `#5D4037` | `#FFD740` | accent / rewards |
+| terracotta | `#A0522D` | `#E1B07E` | warning / community |
+| sodalite | `#283593` | `#3D5AFE` | AI / Shamwari surfaces |
+| copper | `#BF5A36` | `#FF8A65` | commons |
+
+`--primary`=tanzanite, `--secondary`=cobalt, `--accent`=gold, `--success`=malachite, `--warning`=terracotta. Use light hex on light surfaces, dark hex on dark.
+
+**Typography**: **Noto Serif** (display/headings, wordmark = lowercase weight 600 — always "mukoko", never capitalised), **Noto Sans** (UI/body), **JetBrains Mono** (code/data/labels) — loaded via CSS `@import` with preconnect hints in `layout.tsx`.
 
 **Spacing**: 12px border-radius buttons, 16px cards. WCAG AAA compliant (7:1 contrast).
 
-CSS variables in `src/app/globals.css`. Use Tailwind classes: `bg-primary`, `text-foreground`, `bg-surface`, etc. (`components.json` configures the shadcn-style component generator; `tailwind.config.ts` holds the theme.)
+CSS variables in `src/app/globals.css`. Use Tailwind classes: `bg-primary`, `text-foreground`, `bg-surface`, and the mineral utilities `bg-tanzanite`, `text-cobalt`, `bg-container-sodalite`, etc. (`components.json` configures the shadcn-style component generator; `tailwind.config.ts` holds the theme.)
 
 ## Code Conventions
 

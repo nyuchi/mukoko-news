@@ -157,9 +157,9 @@ export function Header() {
               isScrolled && pageTitle ? "opacity-0 pointer-events-none" : "opacity-100"
             }`}
           >
-            <AppIcon size={32} className="shadow-sm" />
+            <AppIcon size={32} />
             <span
-              className={`text-[16px] sm:text-[20px] font-bold whitespace-nowrap ${
+              className={`font-serif font-semibold lowercase text-[16px] sm:text-[20px] whitespace-nowrap ${
                 isNewsBytes ? "text-white" : "text-primary"
               }`}
             >
@@ -183,8 +183,8 @@ export function Header() {
                 aria-haspopup="true"
                 title={isDropdownOpen ? "Refresh page" : "Navigate to page"}
               >
-                <AppIcon size={32} className="shadow-sm" />
-                <span className="text-[16px] sm:text-[20px] font-bold truncate max-w-[100px] sm:max-w-[160px]">
+                <AppIcon size={32} />
+                <span className="font-serif font-semibold lowercase text-[16px] sm:text-[20px] truncate max-w-[100px] sm:max-w-[160px]">
                   {pageTitle.toLowerCase()}
                 </span>
                 <ChevronDown

@@ -11,19 +11,19 @@ interface AppIconProps {
 export function AppIcon({ size = 32, className = "" }: AppIconProps) {
   const { resolvedTheme } = useTheme();
 
-  // Use matching icon for current theme
+  // Seed-of-Life mark — full-palette, theme-aware (transparent SVG)
   const iconSrc = resolvedTheme === "dark"
-    ? "/mukoko-icon-dark.png"
-    : "/mukoko-icon-light.png";
+    ? "/mukoko-mark-full-dark.svg"
+    : "/mukoko-mark-full-light.svg";
 
   return (
     <div
-      className={`relative overflow-hidden rounded-lg ${className}`}
+      className={`relative ${className}`}
       style={{ width: size, height: size }}
     >
       <Image
         src={iconSrc}
-        alt="Mukoko News"
+        alt="mukoko"
         width={size}
         height={size}
         className="object-contain"
