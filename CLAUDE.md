@@ -150,7 +150,7 @@ Auto-deploys to Vercel on push to `main`.
 
 | Server | Type / URL | Auth |
 | --- | --- | --- |
-| `mukoko-news` | http — `https://news.mukoko.com/mcp` | Product MCP (gateway) |
+| `mukoko-news` | http — `https://news.mukoko.dev/mcp` | Product MCP (gateway) |
 | `fly` | stdio — `flyctl mcp server` | Local `flyctl` auth |
 
 **MongoDB access**: the nyuchi MongoDB MCP (`https://mongodb.nyuchi.dev/mcp`) is **not** project-scoped — it is added per-developer as a **personal Claude connector** (Claude → Settings → Connectors), not via this repo's `.mcp.json`. So it is not listed above.
@@ -178,7 +178,7 @@ WORKOS_PLATFORM_ORG_ID=org_...                     # platform-team org → /admi
 NEXT_PUBLIC_API_URL=
 
 # Gateway Worker (admin mutations only)
-GATEWAY_API_URL=https://news.mukoko.com
+GATEWAY_API_URL=https://news.mukoko.dev
 
 # Pipeline trigger (manual refresh action)
 FLY_WORKER_URL=https://news-ingestion.fly-worker.nyuchi.dev
