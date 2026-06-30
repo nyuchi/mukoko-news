@@ -2,7 +2,7 @@
   "mcpServers": {
     "mukoko-news": {
       "type": "http",
-      "url": "https://news.mukoko.com/mcp"
+      "url": "https://news.mukoko.dev/mcp"
     },
     "fly": {
       "type": "stdio",

@@ -32,7 +32,7 @@ The frontend reads news data directly from MongoDB Atlas via Next.js Server Acti
 - **Search** — full-text search across all articles
 - **Dark mode** — respects system preference
 - **Embed widgets** — drop a news feed into any site with one `<script>` tag
-- **MCP server** — AI assistants can query Pan-African news at `news.mukoko.com/mcp`
+- **MCP server** — AI assistants can query Pan-African news at `news.mukoko.dev/mcp`
 - **Accessible** — Radix UI primitives, WCAG AAA contrast, Schema.org structured data
 
 ---
@@ -135,7 +135,7 @@ AI assistants and agents can query Pan-African news via the [Model Context Proto
   "mcpServers": {
     "mukoko-news": {
       "type": "http",
-      "url": "https://news.mukoko.com/mcp"
+      "url": "https://news.mukoko.dev/mcp"
     }
   }
 }

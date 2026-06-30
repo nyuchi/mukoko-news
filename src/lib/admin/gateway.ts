@@ -8,7 +8,7 @@ import { withAuth } from '@workos-inc/authkit-nextjs'
 // admin UI gated on. Reads stay in MongoDB (src/lib/mongodb/admin.ts); only
 // mutations route through the Worker — it owns the writes.
 
-const GATEWAY_BASE = process.env.GATEWAY_API_URL || 'https://news.mukoko.com'
+const GATEWAY_BASE = process.env.GATEWAY_API_URL || 'https://news.mukoko.dev'
 
 export interface GatewayResult<T = unknown> {
   ok: boolean
