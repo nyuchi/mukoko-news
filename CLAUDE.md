@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> **Canonical docs:** `agents.md` (task rules + data-flow boundaries), `review.md` (merge gate / review checklist), and `auth.md` (trust model) are the authoritative rule set for this repo. This file carries the full architecture detail and stays consistent with them.
+
 ## Project Overview
 
 Mukoko News is a Pan-African digital news aggregation platform. "Mukoko" means "Beehive" in Shona — where community gathers and stores knowledge. Primary market is Zimbabwe with expansion across 16 African countries.
