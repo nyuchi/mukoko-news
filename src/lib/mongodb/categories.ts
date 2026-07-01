@@ -32,18 +32,53 @@ interface MongoTrendingCache {
   expiresAt: Date
 }
 
+/** Title-case a category slug for display: "international" → "International",
+ *  "arts-culture" → "Arts Culture". Used when a category comes from the AI
+ *  classification (a bare slug) rather than a curated `categories` doc with a name. */
+function slugToName(slug: string): string {
+  return slug
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ')
+}
+
 export async function getCategories(): Promise<Category[]> {
   const db = await getDb()
-  const docs = await db.collection<MongoCategory>('categories')
+
+  // Prefer curated category docs when the collection is populated…
+  const curated = await db.collection<MongoCategory>('categories')
     .find({})
     .sort({ sortOrder: 1 })
     .toArray()
+  if (curated.length > 0) {
+    return curated.map(d => ({
+      id: d._id,
+      name: d.name,
+      slug: d.categorySlug,
+    }))
+  }
 
-  return docs.map(d => ({
-    id: d._id,
-    name: d.name,
-    slug: d.categorySlug,
-  }))
+  // …otherwise derive the list from the categories articles are ACTUALLY
+  // classified into. AI enrichment writes slugs to
+  // `engagement.interest_categories`; the legacy `articleSection` is hardcoded
+  // "general" at ingestion, so grouping on it (the old behaviour) collapsed the
+  // whole nav to a single "general" bucket. Rank by article count so the busiest
+  // real categories lead the quick-nav bar.
+  const rows = await db.collection('articles').aggregate<{ _id: string; n: number }>([
+    { $match: { status: { $ne: 'rejected' }, moderationStatus: { $ne: 'removed' } } },
+    { $unwind: '$engagement.interest_categories' },
+    { $group: { _id: '$engagement.interest_categories', n: { $sum: 1 } } },
+    { $sort: { n: -1 } },
+    { $limit: 24 },
+  ]).toArray()
+
+  return rows
+    .filter((r) => typeof r._id === 'string' && r._id.trim().length > 0)
+    .map((r) => {
+      const slug = r._id.trim()
+      return { id: slug, name: slugToName(slug), slug, article_count: r.n }
+    })
 }
 
 export async function getTrendingTags(limit = 32): Promise<Array<{
@@ -93,18 +128,26 @@ export async function getTrendingCategories(limit = 8): Promise<Array<{
     }))
   }
 
-  // Live fallback: aggregate from articles
+  // Live fallback: aggregate from the AI-classified categories
+  // (`engagement.interest_categories`), NOT the hardcoded-"general"
+  // `articleSection`, so trending reflects real topic distribution.
   const pipeline = [
-    { $match: { status: { $in: ['approved', 'published'] }, articleSection: { $exists: true, $ne: null } } },
-    { $group: { _id: '$articleSection', article_count: { $sum: 1 } } },
+    { $match: { status: { $ne: 'rejected' }, moderationStatus: { $ne: 'removed' } } },
+    { $unwind: '$engagement.interest_categories' },
+    { $group: { _id: '$engagement.interest_categories', article_count: { $sum: 1 } } },
     { $sort: { article_count: -1 } },
     { $limit: limit },
   ]
   const rows = await db.collection('articles').aggregate(pipeline).toArray()
-  return rows.map(r => ({
-    id: r._id as string,
-    name: r._id as string,
-    slug: (r._id as string).toLowerCase().replace(/\s+/g, '-'),
-    article_count: r.article_count as number,
-  }))
+  return rows
+    .filter(r => typeof r._id === 'string' && (r._id as string).trim().length > 0)
+    .map(r => {
+      const slug = (r._id as string).trim()
+      return {
+        id: slug,
+        name: slugToName(slug),
+        slug,
+        article_count: r.article_count as number,
+      }
+    })
 }

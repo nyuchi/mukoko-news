@@ -93,7 +93,13 @@ function resolveCategory(doc: MongoArticle): string | undefined {
     const label = entryLabel(cats[0])
     if (label) return label
   }
-  return doc.articleSection || undefined
+  // Fall back to `articleSection` ONLY when it carries real signal. The collectors
+  // hardcode it to "general" at ingestion, so an un-enriched article would otherwise
+  // render a misleading "general" badge (the "everything is "general"" symptom).
+  // Genuinely-classified "general" comes from `interest_categories` above and is kept.
+  const section = doc.articleSection?.trim()
+  if (section && section.toLowerCase() !== 'general') return section
+  return undefined
 }
 
 /** Map `engagement.tags` (strings or objects) onto the Article keyword shape. */
@@ -151,11 +157,18 @@ export async function getArticles(params: {
     status: { $ne: 'rejected' },
     moderationStatus: { $ne: 'removed' },
   }
+  // Filter on the AI-classified categories (`engagement.interest_categories`,
+  // an array of slugs) — NOT the legacy `articleSection`, which the collectors
+  // hardcode to "general", so filtering on it returned everything-or-nothing and
+  // never matched a real category the nav surfaced. Case-insensitive so a nav
+  // slug matches regardless of how enrichment cased it.
+  const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   if (categories?.length) {
-    const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    filter.articleSection = { $in: categories.map(c => new RegExp(`^${escapeRegex(c)}$`, 'i')) } as never
+    filter['engagement.interest_categories'] = {
+      $in: categories.map(c => new RegExp(`^${escapeRegex(c)}$`, 'i')),
+    } as never
   } else if (category) {
-    filter.articleSection = category
+    filter['engagement.interest_categories'] = new RegExp(`^${escapeRegex(category)}$`, 'i') as never
   }
   if (countries?.length) {
     const sources = await db.collection<MongoFeedSource>('feedSources')
