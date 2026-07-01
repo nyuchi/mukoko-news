@@ -6,6 +6,7 @@ import Image from "next/image";
 import { Clock } from "lucide-react";
 import type { Article } from "@/lib/api";
 import { formatTimeAgo, isValidImageUrl } from "@/lib/utils";
+import { mukokoImageLoader } from "@/lib/image";
 import { SourceIcon } from "@/components/ui/source-icon";
 
 interface HeroCardProps {
@@ -36,6 +37,7 @@ export function HeroCard({ article }: HeroCardProps) {
           {hasImage && article.image_url ? (
             <>
               <Image
+                loader={mukokoImageLoader}
                 src={article.image_url}
                 alt={article.description || article.title || "Article image"}
                 fill
