@@ -1,8 +1,8 @@
 name: Release (auto version + tag)
 
 # Every merge to main bumps the MINOR version by 0.1.0 and pushes a matching
-# vX.Y.0 tag + GitHub Release. Authors only add a `## [x.y.0]` section to
-# CHANGELOG.md in their PR; CI owns the VERSION file and the tag.
+# vX.Y.0 annotated tag + GitHub Release. Authors only add a `## [x.y.0]` section
+# to CHANGELOG.md in their PR; CI owns the VERSION file and the tag.
 on:
   push:
     branches: [main]
@@ -14,12 +14,14 @@ concurrency: release-${{ github.ref }}
 
 jobs:
   release:
+    # Skip the bot's own release commit so it can't trigger itself.
     if: ${{ !startsWith(github.event.head_commit.message, 'chore(release):') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: main # tip of main (not the trigger SHA) so rapid merges don't tag a stale commit
 
       - name: Compute next version
         id: v
@@ -28,12 +30,18 @@ jobs:
           LATEST="$(git tag -l 'v*' --sort=-v:refname | head -n1 || true)"
           if [ -n "$LATEST" ]; then
             BASE="${LATEST#v}"
+            if [[ ! "$BASE" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "Latest tag '$LATEST' is not X.Y.Z — aborting to avoid a nonsensical bump." >&2
+              exit 1
+            fi
             IFS=. read -r MA MI _ <<< "$BASE"
             NEW="${MA}.$((MI + 1)).0"
           else
+            # Bootstrap: the FIRST release tags the current VERSION file as-is (no bump).
             NEW="$(cat VERSION 2>/dev/null || echo '0.1.0')"
           fi
           echo "new=$NEW" >> "$GITHUB_OUTPUT"
+          echo "Next version: v$NEW"
 
       - name: Tag + bump VERSION + release
         env:
@@ -41,13 +49,34 @@ jobs:
           NEW: ${{ steps.v.outputs.new }}
         run: |
           set -euo pipefail
+          if git rev-parse "v$NEW" >/dev/null 2>&1; then
+            echo "Tag v$NEW already exists — nothing to do."; exit 0
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Bump VERSION on main (if it changed), with a rebase-retry against a
+          # concurrent release commit from a near-simultaneous merge.
           if [ "$(cat VERSION 2>/dev/null || true)" != "$NEW" ]; then
             echo "$NEW" > VERSION
             git add VERSION
             git commit -m "chore(release): v$NEW [skip ci]"
+            pushed=false
+            for attempt in 1 2 3; do
+              if git push origin HEAD:main; then pushed=true; break; fi
+              git pull --rebase origin main || true
+              sleep $((attempt * 2))
+            done
+            [ "$pushed" = true ] || { echo "Failed to push VERSION bump to main." >&2; exit 1; }
           fi
-          git tag "v$NEW"
-          git push origin HEAD:main --follow-tags
-          gh release create "v$NEW" --title "v$NEW" --generate-notes || echo "release create skipped"
+
+          # ANNOTATED tag pushed EXPLICITLY (a lightweight tag would be skipped by
+          # --follow-tags and never reach the remote — the whole point of this job).
+          git tag -a "v$NEW" -m "v$NEW"
+          git push origin "v$NEW"
+
+          # Create the release only if it doesn't already exist — don't blanket-swallow
+          # real failures (auth/network) into a green run with no release.
+          if ! gh release view "v$NEW" >/dev/null 2>&1; then
+            gh release create "v$NEW" --title "v$NEW" --generate-notes
+          fi
