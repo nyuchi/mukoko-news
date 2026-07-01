@@ -1,0 +1,53 @@
+name: Release (auto version + tag)
+
+# Every merge to main bumps the MINOR version by 0.1.0 and pushes a matching
+# vX.Y.0 tag + GitHub Release. Authors only add a `## [x.y.0]` section to
+# CHANGELOG.md in their PR; CI owns the VERSION file and the tag.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency: release-${{ github.ref }}
+
+jobs:
+  release:
+    if: ${{ !startsWith(github.event.head_commit.message, 'chore(release):') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute next version
+        id: v
+        run: |
+          set -euo pipefail
+          LATEST="$(git tag -l 'v*' --sort=-v:refname | head -n1 || true)"
+          if [ -n "$LATEST" ]; then
+            BASE="${LATEST#v}"
+            IFS=. read -r MA MI _ <<< "$BASE"
+            NEW="${MA}.$((MI + 1)).0"
+          else
+            NEW="$(cat VERSION 2>/dev/null || echo '0.1.0')"
+          fi
+          echo "new=$NEW" >> "$GITHUB_OUTPUT"
+
+      - name: Tag + bump VERSION + release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEW: ${{ steps.v.outputs.new }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [ "$(cat VERSION 2>/dev/null || true)" != "$NEW" ]; then
+            echo "$NEW" > VERSION
+            git add VERSION
+            git commit -m "chore(release): v$NEW [skip ci]"
+          fi
+          git tag "v$NEW"
+          git push origin HEAD:main --follow-tags
+          gh release create "v$NEW" --title "v$NEW" --generate-notes || echo "release create skipped"
