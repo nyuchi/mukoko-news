@@ -15,6 +15,7 @@ import {
   Check,
   ExternalLink,
 } from "lucide-react";
+import { Markdown } from "@/components/ui/markdown";
 import { type Article } from "@/lib/api";
 import { getArticleAction } from "@/lib/actions/feed";
 import { getArticleUrl } from "@/lib/constants";
@@ -314,19 +315,27 @@ export default function ArticleDetailClient({
           </p>
         )}
 
-        {/* Content */}
-        {article.content && (
-          <div className="prose prose-lg dark:prose-invert max-w-none mb-8">
-            {article.content
-              .split(/\n+/)
-              .map((p) => p.trim())
-              .filter(Boolean)
-              .map((paragraph, index) => (
-                <p key={`${article.id}-p-${index}`} className="mb-4 leading-relaxed">
-                  {paragraph}
-                </p>
-              ))}
+        {/* Content — prefer the pipeline's Markdown rendition (headings, lists,
+            links, emphasis) for a richer reader; fall back to plain paragraphs
+            for legacy articles that don't have Markdown yet. */}
+        {article.content_markdown ? (
+          <div className="mb-8">
+            <Markdown>{article.content_markdown}</Markdown>
           </div>
+        ) : (
+          article.content && (
+            <div className="prose prose-lg dark:prose-invert max-w-none mb-8">
+              {article.content
+                .split(/\n+/)
+                .map((p) => p.trim())
+                .filter(Boolean)
+                .map((paragraph, index) => (
+                  <p key={`${article.id}-p-${index}`} className="mb-4 leading-relaxed">
+                    {paragraph}
+                  </p>
+                ))}
+            </div>
+          )
         )}
 
         {/* Read original — sends the reader to the source article */}
