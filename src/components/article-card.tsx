@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Clock } from "lucide-react";
 import type { Article } from "@/lib/api";
 import { isValidImageUrl, safeCssUrl } from "@/lib/utils";
+import { imageProxyUrl } from "@/lib/image";
 import { SourceBadge } from "@/components/ui/source-icon";
 import { InlineEngagement } from "@/components/ui/engagement-bar";
 
@@ -41,7 +42,7 @@ export function ArticleCard({ article }: ArticleCardProps) {
 
   const coverStyle = hasImage
     ? {
-        background: `linear-gradient(135deg, rgba(0,0,0,0.3), rgba(0,0,0,0.6)), ${safeCssUrl(article.image_url!)} center/cover`,
+        background: `linear-gradient(135deg, rgba(0,0,0,0.3), rgba(0,0,0,0.6)), ${safeCssUrl(imageProxyUrl(article.image_url!, { width: 800 }))} center/cover`,
       }
     : { background: "linear-gradient(135deg, var(--primary), var(--secondary))" };
 
