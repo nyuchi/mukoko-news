@@ -7,6 +7,7 @@ interface Article {
   title: string;
   description?: string;
   content?: string;
+  content_markdown?: string;
   source: string;
   source_id?: string;
   slug: string;

@@ -27,6 +27,7 @@ interface MongoArticle {
   description?: string
   articleBody?: string
   articleBodyProcessed?: string
+  articleBodyMarkdown?: string
   articleSection?: string
   datePublished?: Date
   // Image has been stored in several shapes across pipeline versions:
@@ -114,13 +115,22 @@ function resolveKeywords(doc: MongoArticle): Article['keywords'] {
   return mapped.length ? mapped : undefined
 }
 
-function toArticle(doc: MongoArticle, source?: MongoFeedSource): Article {
+function toArticle(
+  doc: MongoArticle,
+  source?: MongoFeedSource,
+  opts: { fullContent?: boolean } = {}
+): Article {
   const imageUrl = resolveImageUrl(doc)
   return {
     id: doc._id,
     title: doc.headline,
     description: doc.description,
     content: stripHtml(doc.articleBodyProcessed || doc.articleBody) || undefined,
+    // Markdown rendition (pipeline-generated from the sanitized body) for the rich
+    // reader — only on the single-article detail path (`fullContent`). Kept out of
+    // list responses (feed/search/related) so 20× full article bodies don't bloat
+    // the payload; cards render title/description only. Guard against a stray "".
+    content_markdown: opts.fullContent ? doc.articleBodyMarkdown?.trim() || undefined : undefined,
     source: source?.name || doc.feedSourceId,
     source_id: doc.feedSourceId,
     slug: doc.slug,
@@ -192,7 +202,7 @@ export async function getArticleBySlug(slug: string): Promise<Article | null> {
   if (!doc) return null
 
   const source = await db.collection<MongoFeedSource>('feedSources').findOne({ _id: doc.feedSourceId })
-  return toArticle(doc, source || undefined)
+  return toArticle(doc, source || undefined, { fullContent: true })
 }
 
 export async function getArticleById(id: string): Promise<Article | null> {
@@ -201,7 +211,7 @@ export async function getArticleById(id: string): Promise<Article | null> {
   if (!doc) return null
 
   const source = await db.collection<MongoFeedSource>('feedSources').findOne({ _id: doc.feedSourceId })
-  return toArticle(doc, source || undefined)
+  return toArticle(doc, source || undefined, { fullContent: true })
 }
 
 export async function getRelatedArticles(articleId: string, limit = 5): Promise<Article[]> {
