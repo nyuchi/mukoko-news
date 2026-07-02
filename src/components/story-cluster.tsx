@@ -31,7 +31,7 @@ export function StoryCluster({ cluster }: StoryClusterProps) {
           >
             {/* Category Badge */}
             {(primaryArticle.category_id || primaryArticle.category) && (
-              <div className="absolute top-3 left-3 bg-secondary text-white px-2.5 py-1 rounded-full text-[10px] font-bold uppercase">
+              <div className="absolute top-3 left-3 bg-black/70 text-white backdrop-blur-sm px-2.5 py-1 rounded-full text-[10px] font-bold uppercase">
                 {primaryArticle.category_id || primaryArticle.category}
               </div>
             )}

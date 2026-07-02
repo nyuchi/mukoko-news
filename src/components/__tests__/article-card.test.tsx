@@ -15,6 +15,12 @@ vi.mock('next/link', () => ({
   ),
 }));
 
+// Mock the image proxy to a stable pass-through so assertions are simple
+vi.mock('@/lib/image', () => ({
+  imageProxyUrl: (src: string) => src,
+  mukokoImageLoader: ({ src }: { src: string }) => src,
+}));
+
 // Mock child components
 vi.mock('@/components/ui/source-icon', () => ({
   SourceBadge: ({ source }: { source: string }) => (
@@ -82,24 +88,24 @@ describe('ArticleCard', () => {
   });
 
   describe('image handling', () => {
-    it('should display image background when valid image_url', () => {
+    it('should render the cover image when valid image_url', () => {
       const article = {
         ...baseArticle,
         image_url: 'https://example.com/image.jpg',
       };
       render(<ArticleCard article={article} />);
 
-      // The component should have a background style with the image
-      const container = document.querySelector('[style*="background"]');
-      expect(container).toBeInTheDocument();
+      const img = document.querySelector('img');
+      expect(img).toBeInTheDocument();
+      expect(img).toHaveAttribute('src', 'https://example.com/image.jpg');
     });
 
-    it('should display gradient fallback when no image', () => {
+    it('should render a text-only card when no image', () => {
       render(<ArticleCard article={baseArticle} />);
 
-      // Should use gradient background
-      const container = document.querySelector('[style*="linear-gradient"]');
-      expect(container).toBeInTheDocument();
+      // The brand card omits the cover area entirely without an image
+      expect(document.querySelector('img')).not.toBeInTheDocument();
+      expect(screen.getByText('Test Article Title')).toBeInTheDocument();
     });
 
     it('should not display image for invalid URLs', () => {
@@ -109,9 +115,8 @@ describe('ArticleCard', () => {
       };
       render(<ArticleCard article={article} />);
 
-      // Should use gradient fallback for invalid URLs
-      const container = document.querySelector('[style*="var(--primary)"]');
-      expect(container).toBeInTheDocument();
+      // Invalid/unsafe URLs are rejected → no <img> at all
+      expect(document.querySelector('img')).not.toBeInTheDocument();
     });
   });
 
@@ -167,28 +172,6 @@ describe('ArticleCard', () => {
       render(<ArticleCard article={article} />);
 
       expect(screen.getByText('Recently')).toBeInTheDocument();
-    });
-  });
-
-  describe('date badge', () => {
-    it('should display day number', () => {
-      const article = {
-        ...baseArticle,
-        published_at: '2024-01-15T10:00:00Z',
-      };
-      render(<ArticleCard article={article} />);
-
-      expect(screen.getByText('15')).toBeInTheDocument();
-    });
-
-    it('should display month abbreviation', () => {
-      const article = {
-        ...baseArticle,
-        published_at: '2024-01-15T10:00:00Z',
-      };
-      render(<ArticleCard article={article} />);
-
-      expect(screen.getByText('JAN')).toBeInTheDocument();
     });
   });
 

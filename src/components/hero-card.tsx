@@ -55,7 +55,7 @@ export function HeroCard({ article }: HeroCardProps) {
 
           {/* Category badge */}
           {category && (
-            <span className="absolute top-4 left-4 bg-primary text-white px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-wide z-10">
+            <span className="absolute top-4 left-4 bg-black/70 text-white backdrop-blur-sm px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-wide z-10">
               {category}
             </span>
           )}

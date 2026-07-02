@@ -55,7 +55,7 @@ function HeroEmbed({ article }: { article: Article }) {
 
         <div className="relative flex flex-col justify-end h-full p-5" style={{ minHeight: 280 }}>
           {category && (
-            <span className="self-start bg-primary text-white px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider mb-2">
+            <span className="self-start bg-black/70 text-white backdrop-blur-sm px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider mb-2">
               {category}
             </span>
           )}
