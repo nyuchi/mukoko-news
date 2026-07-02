@@ -100,7 +100,7 @@ export function OnboardingModal() {
                   onClick={() => toggleCountry(country.code)}
                   className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all ${
                     isSelected
-                      ? "bg-secondary text-white"
+                      ? "bg-secondary text-on-secondary"
                       : "bg-elevated text-foreground hover:bg-muted"
                   }`}
                   aria-pressed={isSelected}
@@ -129,7 +129,7 @@ export function OnboardingModal() {
                     onClick={() => toggleCategory(category.id)}
                     className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all ${
                       isSelected
-                        ? "bg-primary text-white"
+                        ? "bg-primary text-on-primary"
                         : "bg-elevated text-foreground hover:bg-muted"
                     }`}
                     aria-pressed={isSelected}
@@ -146,7 +146,7 @@ export function OnboardingModal() {
         <div className="p-6 pt-2">
           <button
             onClick={handleGetStarted}
-            className="w-full py-3 px-6 rounded-xl bg-primary text-white font-semibold hover:opacity-90 transition-opacity focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+            className="w-full py-3 px-6 rounded-xl bg-primary text-on-primary font-semibold hover:opacity-90 transition-opacity focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
           >
             {selectedCategories.length > 0 || selectedCountries.length > 0
               ? "Start Reading"

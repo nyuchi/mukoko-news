@@ -210,7 +210,7 @@ export default function NewsBytesPage() {
             <p className="text-white/60 mb-6">{error}</p>
             <button
               onClick={handleForceRefresh}
-              className="inline-flex items-center gap-2 px-6 py-3 bg-primary text-white font-medium rounded-xl hover:opacity-90 transition-opacity"
+              className="inline-flex items-center gap-2 px-6 py-3 bg-primary text-on-primary font-medium rounded-xl hover:opacity-90 transition-opacity"
             >
               <RefreshCw className="w-4 h-4" />
               Try Again

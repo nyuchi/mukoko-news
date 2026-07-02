@@ -433,7 +433,7 @@ export default function EmbedIframePage() {
           <p className="text-sm text-text-secondary mb-3">{error}</p>
           <button
             onClick={() => { setLoading(true); loadArticles(); }}
-            className="text-xs px-3 py-1.5 bg-primary text-white rounded-lg hover:opacity-90 transition-opacity"
+            className="text-xs px-3 py-1.5 bg-primary text-on-primary rounded-lg hover:opacity-90 transition-opacity"
           >
             Try Again
           </button>

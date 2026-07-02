@@ -215,7 +215,7 @@ export default function AnalyticsPage() {
                 <div className="flex justify-between items-start mb-2">
                   <span className="text-2xl">{getEmoji(t.name)}</span>
                   {i < 3 && (
-                    <span className="w-6 h-6 rounded-full bg-primary text-white text-xs font-bold flex items-center justify-center">
+                    <span className="w-6 h-6 rounded-full bg-primary text-on-primary text-xs font-bold flex items-center justify-center">
                       {i + 1}
                     </span>
                   )}

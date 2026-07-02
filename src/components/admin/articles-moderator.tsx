@@ -50,7 +50,7 @@ export function ArticlesModerator({ initialArticles, activeFilter }: ArticlesMod
             href={`/admin/articles?moderationStatus=${f.key}`}
             className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
               activeFilter === f.key
-                ? 'bg-primary text-white'
+                ? 'bg-primary text-on-primary'
                 : 'bg-surface border border-elevated text-text-secondary hover:bg-elevated'
             }`}
           >

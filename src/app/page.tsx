@@ -334,7 +334,7 @@ export default function FeedPage() {
       {/* Refreshing indicator */}
       {refreshing && (
         <div className="fixed top-[80px] left-0 right-0 flex justify-center z-50" role="status" aria-live="polite">
-          <div className="bg-primary text-white px-4 py-2 rounded-full text-sm font-medium flex items-center gap-2 shadow-lg">
+          <div className="bg-primary text-on-primary px-4 py-2 rounded-full text-sm font-medium flex items-center gap-2 shadow-lg">
             <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
             Refreshing...
           </div>
@@ -411,7 +411,7 @@ export default function FeedPage() {
             <p className="text-sm text-text-tertiary mb-6 max-w-md">{error}</p>
             <button
               onClick={() => fetchData()}
-              className="flex items-center gap-2 px-6 py-3 bg-primary text-white rounded-full font-medium hover:opacity-90 transition-opacity"
+              className="flex items-center gap-2 px-6 py-3 bg-primary text-on-primary rounded-full font-medium hover:opacity-90 transition-opacity"
             >
               <RefreshCw className="w-4 h-4" aria-hidden="true" />
               Try Again
