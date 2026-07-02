@@ -42,11 +42,18 @@ interface ScopedLogger {
   error: (message: string, error?: Error, data?: Record<string, unknown>) => void;
 }
 
+// debug/info are development-only: lifecycle chatter (mounted / status:
+// healthy) must never reach production consoles — with dozens of cards per
+// feed it floods them. warn/error always emit (real signals). NODE_ENV is
+// statically inlined by the bundler, so the prod branch compiles away.
+const IS_DEV = process.env.NODE_ENV === "development";
+const noop = () => {};
+
 function createScopedLogger(componentName: string): ScopedLogger {
   const prefix = `[nyuchi:${componentName}]`;
   return {
-    debug: (msg, data) => console.debug(`${prefix} ${msg}`, data || ""),
-    info: (msg, data) => console.info(`${prefix} ${msg}`, data || ""),
+    debug: IS_DEV ? (msg, data) => console.debug(`${prefix} ${msg}`, data || "") : noop,
+    info: IS_DEV ? (msg, data) => console.info(`${prefix} ${msg}`, data || "") : noop,
     warn: (msg, data) => console.warn(`${prefix} ${msg}`, data || ""),
     error: (msg, err, data) => console.error(`${prefix} ${msg}`, err || "", data || ""),
   };
