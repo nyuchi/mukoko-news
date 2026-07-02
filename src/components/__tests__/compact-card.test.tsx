@@ -9,11 +9,20 @@ vi.mock('next/link', () => ({
   ),
 }));
 
-// Mock SourceIcon component
+// Mock source icon/badge components
 vi.mock('../ui/source-icon', () => ({
   SourceIcon: ({ source }: { source: string }) => (
     <span data-testid="source-icon">{source}</span>
   ),
+  SourceBadge: ({ source }: { source: string }) => (
+    <span data-testid="source-badge">{source}</span>
+  ),
+}));
+
+// Mock the image proxy to a stable pass-through
+vi.mock('@/lib/image', () => ({
+  imageProxyUrl: (src: string) => src,
+  mukokoImageLoader: ({ src }: { src: string }) => src,
 }));
 
 const mockArticle = {
@@ -34,9 +43,7 @@ describe('CompactCard', () => {
 
   it('should render article source', () => {
     render(<CompactCard article={mockArticle} />);
-    // Source appears both in SourceIcon and text span
-    const sourceElements = screen.getAllByText('Test Source');
-    expect(sourceElements.length).toBeGreaterThan(0);
+    expect(screen.getByTestId('source-badge')).toHaveTextContent('Test Source');
   });
 
   it('should render category', () => {
@@ -62,15 +69,16 @@ describe('CompactCard', () => {
     expect(link).toHaveClass('focus-visible:ring-2');
   });
 
-  it('should use article element for semantic HTML', () => {
+  it('should render as the nyuchi article-card brand component (row variant)', () => {
     render(<CompactCard article={mockArticle} />);
-    const article = screen.getByRole('article');
-    expect(article).toBeInTheDocument();
+    const card = document.querySelector('[data-slot="nyuchi-article-card"]');
+    expect(card).toBeInTheDocument();
+    expect(card).toHaveAttribute('data-variant', 'row');
   });
 
-  it('should render time element with datetime attribute', () => {
+  it('should render relative published time', () => {
     render(<CompactCard article={mockArticle} />);
-    const timeElement = screen.getByRole('time');
-    expect(timeElement).toHaveAttribute('dateTime', '2024-01-15T10:00:00Z');
+    // 2024-01-15 is older than 7 days → absolute short date
+    expect(screen.getByText(/Jan 15/)).toBeInTheDocument();
   });
 });

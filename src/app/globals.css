@@ -246,6 +246,60 @@
   --radius-input: 8px;
   --radius-badge: 9999px;
   --radius: 0.75rem;
+
+  /* Mzizi N1 radii consumed by the brand components (nyuchi-listing-card, …) */
+  --radius-inner: 7px;
+  --radius-pill: 9999px;
+
+  /* Status colors (mzizi styling-semantic-colors) */
+  --color-status-success: var(--status-success);
+  --color-status-warning: var(--status-warning);
+  --color-status-error: var(--status-error);
+  --color-status-neutral: var(--status-neutral);
+}
+
+/* ── Mzizi N1 semantic status tokens (theme-aware) ─────────────────
+   Consumed by the nyuchi brand components (factcheck + credibility
+   indicators). Mirrors the mineral roles: success=malachite,
+   warning=gold, error=red ramp, neutral=tertiary text. */
+:root,
+.dark {
+  --status-success: #64FFDA;
+  --status-warning: #FFD740;
+  --status-error: #FF5252;
+  --status-neutral: #8A8A85;
+  /* Focus ring (mzizi styling-accessibility-checks) */
+  --focusRing-width: 2px;
+  --focusRing-offset: 2px;
+}
+
+.light {
+  --status-success: #004D40;
+  --status-warning: #5D4037;
+  --status-error: #B3261E;
+  --status-neutral: #595959;
+}
+
+/* ── Mzizi motion tokens: entry animation used by the nyuchi harness ── */
+@keyframes nyuchi-fade-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.nyuchi-animate-in {
+  animation: nyuchi-fade-slide-up 200ms cubic-bezier(0, 0, 0.2, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nyuchi-animate-in {
+    animation: none;
+  }
 }
 
 body {

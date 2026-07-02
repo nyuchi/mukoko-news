@@ -15,15 +15,9 @@ vi.mock('next/link', () => ({
   ),
 }));
 
-// Mock next/image → plain <img> so we can assert the rendered source
-vi.mock('next/image', () => ({
-  default: ({ src, alt }: { src: string; alt: string }) => (
-    <img src={src} alt={alt} data-testid="cover-image" />
-  ),
-}));
-
-// Mock the proxy loader to a stable pass-through so assertions are simple
+// Mock the image proxy to a stable pass-through so assertions are simple
 vi.mock('@/lib/image', () => ({
+  imageProxyUrl: (src: string) => src,
   mukokoImageLoader: ({ src }: { src: string }) => src,
 }));
 
@@ -101,18 +95,17 @@ describe('ArticleCard', () => {
       };
       render(<ArticleCard article={article} />);
 
-      const img = screen.getByTestId('cover-image');
+      const img = document.querySelector('img');
       expect(img).toBeInTheDocument();
       expect(img).toHaveAttribute('src', 'https://example.com/image.jpg');
     });
 
-    it('should display gradient fallback when no image', () => {
+    it('should render a text-only card when no image', () => {
       render(<ArticleCard article={baseArticle} />);
 
-      // No <img> is rendered; a gradient fallback element stands in
-      expect(screen.queryByTestId('cover-image')).not.toBeInTheDocument();
-      const fallback = document.querySelector('[class*="bg-gradient-to-br"]');
-      expect(fallback).toBeInTheDocument();
+      // The brand card omits the cover area entirely without an image
+      expect(document.querySelector('img')).not.toBeInTheDocument();
+      expect(screen.getByText('Test Article Title')).toBeInTheDocument();
     });
 
     it('should not display image for invalid URLs', () => {
@@ -122,10 +115,8 @@ describe('ArticleCard', () => {
       };
       render(<ArticleCard article={article} />);
 
-      // Invalid/unsafe URLs are rejected → gradient fallback, no <img>
-      expect(screen.queryByTestId('cover-image')).not.toBeInTheDocument();
-      const fallback = document.querySelector('[class*="bg-gradient-to-br"]');
-      expect(fallback).toBeInTheDocument();
+      // Invalid/unsafe URLs are rejected → no <img> at all
+      expect(document.querySelector('img')).not.toBeInTheDocument();
     });
   });
 

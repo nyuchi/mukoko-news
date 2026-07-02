@@ -484,8 +484,8 @@ export default function FeedPage() {
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {yourNews.slice(0, 6).map((article) => (
-                      <ArticleCard key={article.id} article={article} />
+                    {yourNews.slice(0, 6).map((article, index) => (
+                      <ArticleCard key={article.id} article={article} index={index} />
                     ))}
                   </div>
                 </section>
@@ -523,8 +523,8 @@ export default function FeedPage() {
 
                       {/* Compact cards for rest */}
                       <div className="space-y-3">
-                        {section.articles.slice(1, 5).map((article) => (
-                          <CompactCard key={article.id} article={article} />
+                        {section.articles.slice(1, 5).map((article, index) => (
+                          <CompactCard key={article.id} article={article} index={index} />
                         ))}
                       </div>
                     </div>
@@ -545,8 +545,8 @@ export default function FeedPage() {
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {latestArticles.map((article) => (
-                      <ArticleCard key={article.id} article={article} />
+                    {latestArticles.map((article, index) => (
+                      <ArticleCard key={article.id} article={article} index={index} />
                     ))}
                   </div>
 

@@ -175,8 +175,8 @@ export default function DiscoverPage() {
             </Link>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredArticles.map((article) => (
-              <ArticleCard key={article.id} article={article} />
+            {filteredArticles.map((article, index) => (
+              <ArticleCard key={article.id} article={article} index={index} />
             ))}
           </div>
           {filteredArticles.length === 0 && (
@@ -202,8 +202,8 @@ export default function DiscoverPage() {
               </Link>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {articles.slice(0, 6).map((article) => (
-                <ArticleCard key={article.id} article={article} />
+              {articles.slice(0, 6).map((article, index) => (
+                <ArticleCard key={article.id} article={article} index={index} />
               ))}
             </div>
           </section>
