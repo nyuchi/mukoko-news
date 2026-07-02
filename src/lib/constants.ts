@@ -64,6 +64,12 @@ export const COUNTRIES = [
 
 export type CountryCode = (typeof COUNTRIES)[number]["code"];
 
+// Default feed preferences for first-time visitors (and for the server-rendered
+// initial feed). Must stay in sync between PreferencesContext defaults and the
+// server pages that prefetch the feed, so the client can skip its initial
+// refetch when the user's preferences match these defaults.
+export const DEFAULT_FEED_COUNTRIES: string[] = ["ZW"];
+
 // Category emoji and color mapping
 export const CATEGORY_META: Record<string, { emoji: string; color: string }> = {
   all: { emoji: "📰", color: "bg-gray-500" },

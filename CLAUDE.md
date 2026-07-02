@@ -231,7 +231,7 @@ The MCP OAuth server (`news.mukoko.com/.well-known/oauth-authorization-server`, 
 
 `--primary`=tanzanite, `--secondary`=cobalt, `--accent`=gold, `--success`=malachite, `--warning`=terracotta. Use light hex on light surfaces, dark hex on dark.
 
-**Typography**: **Noto Serif** (display/headings, wordmark = lowercase weight 600 — always "mukoko", never capitalised), **Noto Sans** (UI/body), **JetBrains Mono** (code/data/labels) — loaded via CSS `@import` with preconnect hints in `layout.tsx`.
+**Typography**: **Noto Serif** (display/headings, wordmark = lowercase weight 600 — always "mukoko", never capitalised), **Noto Sans** (UI/body), **JetBrains Mono** (code/data/labels) — self-hosted via `next/font/google` in `layout.tsx`, with the CSS variables wired to the `--font-sans/serif/mono` theme tokens in `globals.css`.
 
 **Spacing**: 12px border-radius buttons, 16px cards. WCAG AAA compliant (7:1 contrast).
 

@@ -22,8 +22,11 @@ export function BottomNav() {
   }
 
   return (
+    // Floating pill, lifted clear of the iOS/Android home-indicator swipe zone
+    // via env(safe-area-inset-bottom) (requires viewport-fit=cover, set in
+    // layout.tsx). 16px radius per the card doctrine.
     <nav
-      className="fixed bottom-0 left-0 right-0 z-50 md:hidden bg-background/95 backdrop-blur-xl border-t border-border safe-area-bottom"
+      className="fixed bottom-[calc(env(safe-area-inset-bottom,0px)_+_0.75rem)] left-4 right-4 z-50 md:hidden mx-auto max-w-md rounded-2xl border border-border bg-background/90 backdrop-blur-xl shadow-lg"
       aria-label="Main navigation"
     >
       <div className="flex items-center justify-around h-16 px-2">
@@ -35,7 +38,7 @@ export function BottomNav() {
             <Link
               key={item.href}
               href={item.href}
-              className={`flex flex-col items-center justify-center gap-0.5 px-3 py-2 rounded-xl transition-colors min-w-[60px] ${
+              className={`flex flex-col items-center justify-center gap-0.5 px-3 py-2 rounded-xl transition-colors min-w-[60px] min-h-12 ${
                 isActive
                   ? "text-primary"
                   : "text-text-tertiary hover:text-foreground"

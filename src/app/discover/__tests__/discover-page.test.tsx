@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
-import DiscoverPage from "../page";
+// The route is now a server page (../page) that prefetches initial data and
+// renders this client component; rendering it without props exercises the
+// same client-fetch path the tests always covered.
+import DiscoverPage from "../discover-client";
 
 // Mock Next.js modules
 vi.mock("next/link", () => ({
