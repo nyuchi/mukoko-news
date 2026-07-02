@@ -25,8 +25,8 @@ jobs:
           ref: main # tip of main (not the trigger SHA) so rapid merges don't tag a stale commit
           # Org-wide release PAT so the push to a protected `main` and the tag/release
           # are allowed (the default GITHUB_TOKEN can't bypass branch protection).
-          # Set the org secret name here if it differs from RELEASE_TOKEN.
-          token: ${{ secrets.RELEASE_TOKEN }}
+          # Set the org secret name here if it differs from RELEASE_BUMP_TOKEN.
+          token: ${{ secrets.RELEASE_BUMP_TOKEN }}
 
       - name: Compute next version
         id: v
@@ -50,7 +50,7 @@ jobs:
 
       - name: Tag + bump VERSION + release
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASE_BUMP_TOKEN }}
           NEW: ${{ steps.v.outputs.new }}
         run: |
           set -euo pipefail

@@ -19,6 +19,7 @@ import { Markdown } from "@/components/ui/markdown";
 import { type Article } from "@/lib/api";
 import { getArticleAction } from "@/lib/actions/feed";
 import { getArticleUrl } from "@/lib/constants";
+import { imageProxyUrl } from "@/lib/image";
 import { isValidImageUrl } from "@/lib/utils";
 import { ArticlePageSkeleton } from "@/components/ui/skeleton";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
@@ -298,7 +299,7 @@ export default function ArticleDetailClient({
         <div className="max-w-[900px] mx-auto px-6 -mt-6">
           <div className="rounded-2xl overflow-hidden shadow-xl">
             <img
-              src={article.image_url}
+              src={imageProxyUrl(article.image_url, { width: 900 })}
               alt={article.title}
               className="w-full aspect-video object-cover"
             />

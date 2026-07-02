@@ -29,7 +29,7 @@ export function CompactCard({ article }: CompactCardProps) {
         )}
 
         {/* Title */}
-        <h3 className="text-base font-semibold mt-1 mb-2 leading-snug line-clamp-2 group-hover:text-primary transition-colors">
+        <h3 className="text-base font-semibold mt-1 mb-2 leading-snug line-clamp-2 group-hover:underline decoration-2 underline-offset-2">
           {article.title}
         </h3>
 
