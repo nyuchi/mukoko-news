@@ -1,180 +1,327 @@
-"use client";
+'use client'
 
-import { useState, useEffect, useCallback } from "react";
-import Link from "next/link";
+import { useMemo, useState } from 'react'
+import Link from 'next/link'
 import {
-  TrendingUp,
-  ChevronRight,
   BarChart3,
-  Users,
   Newspaper,
-  Layers,
-  RefreshCw,
-  WifiOff,
-} from "lucide-react";
-import {
-  getStatsAction,
-  getTrendingCategoriesAction,
-  getTrendingAuthorsAction,
-} from "@/lib/actions/feed";
-import { ErrorBoundary } from "@/components/ui/error-boundary";
-import { InsightsPageSkeleton } from "@/components/ui/skeleton";
+  Radio,
+  Building2,
+  Globe2,
+  Sparkles,
+  Gauge,
+  CalendarRange,
+  Download,
+  ArrowUpDown,
+  BadgeCheck,
+  TrendingUp,
+} from 'lucide-react'
+import { ErrorBoundary } from '@/components/ui/error-boundary'
+import { getCategoryEmoji } from '@/lib/constants'
+import type { InsightsBundle } from '@/lib/actions/insights'
 
-// Category emojis
-const CATEGORY_EMOJIS: Record<string, string> = {
-  politics: "🏛️",
-  business: "💼",
-  sports: "⚽",
-  entertainment: "🎬",
-  technology: "💻",
-  health: "🏥",
-  world: "🌍",
-  local: "📍",
-  opinion: "💭",
-  breaking: "⚡",
-  crime: "🚨",
-  education: "📚",
-  environment: "🌱",
-  lifestyle: "✨",
-  agriculture: "🌾",
-  mining: "⛏️",
-  tourism: "✈️",
-  finance: "💰",
-  culture: "🎭",
-};
+// ---------------------------------------------------------------------------
+// Formatting helpers (pure — unit-testable)
+// ---------------------------------------------------------------------------
 
-const getEmoji = (name: string) => CATEGORY_EMOJIS[name?.toLowerCase()] || "📰";
-
-export interface Stats {
-  total_articles: number;
-  active_sources: number;
-  categories: number;
+export function formatNumber(n: number): string {
+  return (Number.isFinite(n) ? n : 0).toLocaleString('en-US')
 }
 
-export interface TrendingCategory {
-  id: string;
-  name: string;
-  slug: string;
-  article_count: number;
-  growth_rate?: number;
+/** Title-case a lowercase slug/tag for display: "arts-culture" → "Arts Culture". */
+export function humanize(slug: string): string {
+  return slug
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ')
 }
 
-export interface Author {
-  id: string;
-  name: string;
-  article_count: number;
+export function formatDay(iso: string | null): string {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return '—'
+  return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
 }
 
-/**
- * Some ingested articles store `author` as a schema.org object
- * (`{"@type": "Person", "name": "…"}`) rather than a string, so the
- * trending-authors aggregation can return objects in `id`/`name`. Rendering
- * those crashed the page ("Objects are not valid as a React child").
- * Normalise every entry to a plain display string, merge duplicates, and
- * title-case the lowercase pipeline names.
- */
-export function normalizeAuthors(raw: unknown): Author[] {
-  if (!Array.isArray(raw)) return [];
-  const merged = new Map<string, number>();
-  for (const entry of raw) {
-    const e = entry as { name?: unknown; article_count?: unknown };
-    const rawName =
-      typeof e.name === "string" ? e.name : (e.name as { name?: unknown } | null)?.name;
-    if (typeof rawName !== "string" || rawName.trim().length === 0) continue;
-    const name = rawName
-      .trim()
-      .split(/\s+/)
-      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-      .join(" ");
-    const count = typeof e.article_count === "number" ? e.article_count : 0;
-    merged.set(name, (merged.get(name) ?? 0) + count);
-  }
-  return [...merged.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .map(([name, article_count]) => ({ id: name, name, article_count }));
+// Fixed diverging semantics for sentiment — never color-alone, always labelled.
+const SENTIMENT_STYLE: Record<string, { bar: string; label: string }> = {
+  positive: { bar: 'bg-malachite', label: 'Positive' },
+  negative: { bar: 'bg-destructive', label: 'Negative' },
+  neutral: { bar: 'bg-text-tertiary', label: 'Neutral' },
+  mixed: { bar: 'bg-gold', label: 'Mixed' },
 }
 
-interface InsightsClientProps {
-  /** Data prefetched by the server page — null members mean that fetch failed. */
-  initialStats?: Stats | null;
-  initialTrending?: TrendingCategory[] | null;
-  /** Raw trending_authors payload (normalised client-side). */
-  initialAuthors?: unknown[] | null;
+// ---------------------------------------------------------------------------
+// Small presentational pieces
+// ---------------------------------------------------------------------------
+
+function StatTile({
+  icon: Icon,
+  label,
+  value,
+  caption,
+}: {
+  icon: typeof Newspaper
+  label: string
+  value: string
+  caption?: string
+}) {
+  return (
+    <div className="bg-surface rounded-2xl p-5 border border-elevated">
+      <Icon className="w-6 h-6 text-primary mb-3" aria-hidden="true" />
+      <div className="text-2xl font-bold text-foreground font-mono">{value}</div>
+      <div className="text-sm text-text-secondary">{label}</div>
+      {caption && <div className="text-xs text-text-tertiary mt-1">{caption}</div>}
+    </div>
+  )
 }
 
-export default function InsightsClient({
-  initialStats = null,
-  initialTrending = null,
-  initialAuthors = null,
-}: InsightsClientProps) {
-  const hasInitialData =
-    initialStats !== null || initialTrending !== null || initialAuthors !== null;
+/** A single-hue horizontal magnitude bar list (category / country / topics). */
+function BarList({
+  items,
+  colorClass = 'bg-primary',
+  href,
+}: {
+  items: Array<{ key: string; label: string; value: number; share?: number; emoji?: string }>
+  colorClass?: string
+  href?: (key: string) => string
+}) {
+  const max = Math.max(1, ...items.map((i) => i.value))
+  return (
+    <ol className="space-y-2">
+      {items.map((item) => {
+        const pct = Math.max(2, Math.round((item.value / max) * 100))
+        const row = (
+          <div className="flex items-center gap-3">
+            <div className="w-40 shrink-0 truncate text-sm text-foreground flex items-center gap-1.5">
+              {item.emoji && <span aria-hidden="true">{item.emoji}</span>}
+              <span className="truncate">{item.label}</span>
+            </div>
+            <div className="flex-1 h-3 rounded-full bg-elevated overflow-hidden">
+              <div
+                className={`h-full rounded-full ${colorClass}`}
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+            <div className="w-24 shrink-0 text-right text-xs text-text-secondary font-mono">
+              {formatNumber(item.value)}
+              {typeof item.share === 'number' && (
+                <span className="text-text-tertiary"> · {item.share}%</span>
+              )}
+            </div>
+          </div>
+        )
+        return (
+          <li key={item.key}>
+            {href ? (
+              <Link
+                href={href(item.key)}
+                className="block rounded-lg hover:bg-elevated/50 transition-colors py-1"
+              >
+                {row}
+              </Link>
+            ) : (
+              <div className="py-1">{row}</div>
+            )}
+          </li>
+        )
+      })}
+    </ol>
+  )
+}
 
-  const [loading, setLoading] = useState(!hasInitialData);
-  const [error, setError] = useState<string | null>(null);
-  const [stats, setStats] = useState<Stats | null>(initialStats);
-  const [trending, setTrending] = useState<TrendingCategory[]>(initialTrending ?? []);
-  const [authors, setAuthors] = useState<Author[]>(normalizeAuthors(initialAuthors ?? []));
-
-  const loadData = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    const results = await Promise.allSettled([
-      getStatsAction(),
-      getTrendingCategoriesAction(8),
-      getTrendingAuthorsAction(5),
-    ]);
-
-    if (results[0].status === "fulfilled" && results[0].value.database) {
-      setStats(results[0].value.database);
-    }
-    if (results[1].status === "fulfilled") {
-      setTrending(results[1].value as TrendingCategory[]);
-    }
-    if (results[2].status === "fulfilled" && results[2].value.trending_authors) {
-      setAuthors(normalizeAuthors(results[2].value.trending_authors));
-    }
-
-    // Surface an explicit error (with retry) when nothing loaded, instead of
-    // silently rendering the "No data available" empty state.
-    if (results.every((r) => r.status === "rejected")) {
-      const reason = (results[0] as PromiseRejectedResult).reason;
-      console.error("Failed to load insights:", reason);
-      setError(reason instanceof Error ? reason.message : "Failed to load insights");
-    }
-    setLoading(false);
-  }, []);
-
-  // Fetch on mount only when the server page couldn't provide initial data.
-  useEffect(() => {
-    if (!hasInitialData) {
-      loadData();
-    }
-  }, [hasInitialData, loadData]);
-
-  if (loading) {
-    return <InsightsPageSkeleton />;
-  }
-
-  if (error) {
-    return (
-      <div
-        className="min-h-[60vh] flex flex-col items-center justify-center px-6 text-center"
-        role="alert"
+/** Inline SVG bar chart for the daily publishing volume (single-hue, tanzanite). */
+function VolumeChart({ series }: { series: InsightsBundle['volume']['series'] }) {
+  if (series.length === 0) return null
+  const max = Math.max(1, ...series.map((p) => p.count))
+  const n = series.length
+  const gap = 0.25
+  const barW = (100 - gap * (n - 1)) / n
+  return (
+    <div className="text-primary">
+      <svg
+        viewBox="0 0 100 40"
+        preserveAspectRatio="none"
+        className="w-full h-40"
+        role="img"
+        aria-label={`Daily publishing volume over ${n} days, peaking at ${formatNumber(max)} articles`}
       >
-        <WifiOff className="w-12 h-12 text-text-tertiary mb-4" aria-hidden="true" />
-        <p className="text-lg text-text-secondary mb-2">Unable to load insights</p>
-        <p className="text-sm text-text-tertiary mb-6 max-w-md">{error}</p>
-        <button
-          onClick={() => loadData()}
-          className="flex items-center gap-2 px-6 py-3 bg-primary text-on-primary rounded-full font-medium hover:opacity-90 transition-opacity"
-        >
-          <RefreshCw className="w-4 h-4" aria-hidden="true" />
-          Try Again
-        </button>
-      </div>
-    );
+        {series.map((p, i) => {
+          const h = (p.count / max) * 38
+          const x = i * (barW + gap)
+          const y = 40 - h
+          return (
+            <rect
+              key={p.date}
+              x={x}
+              y={y}
+              width={barW}
+              height={Math.max(h, 0.4)}
+              rx={0.4}
+              fill="currentColor"
+            >
+              <title>{`${p.date}: ${formatNumber(p.count)} articles`}</title>
+            </rect>
+          )
+        })}
+      </svg>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Leaderboard (client-sortable table)
+// ---------------------------------------------------------------------------
+
+type LeaderRow = InsightsBundle['leaderboard'][number]
+type SortKey = 'name' | 'articleCount' | 'avgQualityScore' | 'avgWordCount' | 'countries' | 'lastPublished'
+
+function SourceLeaderboard({ rows }: { rows: LeaderRow[] }) {
+  const [sortKey, setSortKey] = useState<SortKey>('articleCount')
+  const [asc, setAsc] = useState(false)
+
+  const sorted = useMemo(() => {
+    const copy = [...rows]
+    copy.sort((a, b) => {
+      let cmp = 0
+      switch (sortKey) {
+        case 'name':
+          cmp = a.name.localeCompare(b.name)
+          break
+        case 'countries':
+          cmp = a.countries.length - b.countries.length
+          break
+        case 'lastPublished':
+          cmp = (a.lastPublished ?? '').localeCompare(b.lastPublished ?? '')
+          break
+        default:
+          cmp = (a[sortKey] as number) - (b[sortKey] as number)
+      }
+      return asc ? cmp : -cmp
+    })
+    return copy
+  }, [rows, sortKey, asc])
+
+  const toggle = (key: SortKey) => {
+    if (key === sortKey) setAsc((v) => !v)
+    else {
+      setSortKey(key)
+      setAsc(key === 'name')
+    }
   }
+
+  const header = (key: SortKey, label: string, align = 'text-left') => (
+    <th className={`px-3 py-2 ${align}`}>
+      <button
+        type="button"
+        onClick={() => toggle(key)}
+        className="inline-flex items-center gap-1 font-semibold text-text-secondary hover:text-foreground transition-colors"
+        aria-label={`Sort by ${label}`}
+      >
+        {label}
+        <ArrowUpDown
+          className={`w-3 h-3 ${sortKey === key ? 'text-primary' : 'text-text-tertiary'}`}
+          aria-hidden="true"
+        />
+      </button>
+    </th>
+  )
+
+  return (
+    <div className="overflow-x-auto rounded-2xl border border-elevated">
+      <table className="w-full text-sm border-collapse">
+        <thead className="bg-elevated/40">
+          <tr>
+            {header('name', 'Source')}
+            {header('articleCount', 'Articles', 'text-right')}
+            {header('avgQualityScore', 'Avg quality', 'text-right')}
+            {header('avgWordCount', 'Avg words', 'text-right')}
+            {header('countries', 'Countries', 'text-right')}
+            {header('lastPublished', 'Last published', 'text-right')}
+          </tr>
+        </thead>
+        <tbody>
+          {sorted.map((r) => (
+            <tr key={r.sourceId} className="border-t border-elevated hover:bg-elevated/30">
+              <td className="px-3 py-2">
+                <div className="flex items-center gap-1.5">
+                  <span className="font-medium text-foreground truncate max-w-[220px]">
+                    {r.name}
+                  </span>
+                  {r.verified && (
+                    <BadgeCheck
+                      className="w-4 h-4 text-secondary shrink-0"
+                      aria-label="Verified publisher"
+                    />
+                  )}
+                </div>
+                {r.organization && r.organization !== r.name && (
+                  <div className="text-xs text-text-tertiary truncate max-w-[220px]">
+                    {r.organization}
+                  </div>
+                )}
+              </td>
+              <td className="px-3 py-2 text-right font-mono text-foreground">
+                {formatNumber(r.articleCount)}
+              </td>
+              <td className="px-3 py-2 text-right font-mono text-text-secondary">
+                {r.avgQualityScore > 0 ? r.avgQualityScore.toFixed(2) : '—'}
+              </td>
+              <td className="px-3 py-2 text-right font-mono text-text-secondary">
+                {r.avgWordCount > 0 ? formatNumber(r.avgWordCount) : '—'}
+              </td>
+              <td className="px-3 py-2 text-right font-mono text-text-secondary">
+                {r.countries.length > 0 ? r.countries.join(', ') : '—'}
+              </td>
+              <td className="px-3 py-2 text-right text-text-secondary whitespace-nowrap">
+                {formatDay(r.lastPublished)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Section wrapper
+// ---------------------------------------------------------------------------
+
+function Section({
+  title,
+  caption,
+  children,
+}: {
+  title: string
+  caption?: string
+  children: React.ReactNode
+}) {
+  return (
+    <section className="mb-10">
+      <div className="mb-4">
+        <h2 className="text-xl font-bold text-foreground">{title}</h2>
+        {caption && <p className="text-sm text-text-secondary mt-1">{caption}</p>}
+      </div>
+      {children}
+    </section>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Main
+// ---------------------------------------------------------------------------
+
+export default function InsightsClient({ data }: { data: InsightsBundle }) {
+  const { summary, volume, leaderboard, categories, countries, sentiment, topics } = data
+
+  const isEmpty =
+    summary.totalArticles === 0 &&
+    volume.total === 0 &&
+    leaderboard.length === 0 &&
+    categories.categories.length === 0 &&
+    countries.countries.length === 0
 
   return (
     <ErrorBoundary
@@ -184,136 +331,229 @@ export default function InsightsClient({
     >
       <div className="max-w-[1200px] mx-auto px-6 py-8">
         {/* Header */}
-        <div className="mb-8">
+        <header className="mb-8">
           <div className="flex items-center gap-3 mb-2">
-            <BarChart3 className="w-8 h-8 text-primary" />
-            <h1 className="text-3xl font-bold text-foreground">Insights</h1>
+            <BarChart3 className="w-8 h-8 text-primary" aria-hidden="true" />
+            <h1 className="text-3xl font-bold text-foreground">Open Data &amp; Insights</h1>
           </div>
-          <p className="text-text-secondary">
-            Analytics and trending topics across African news
+          <p className="text-text-secondary max-w-2xl">
+            A live, public analytics view of the Mukoko News corpus — every figure is computed
+            directly from the articles we aggregate across African newsrooms. Open data, free to
+            download.
           </p>
-        </div>
-
-        {/* Stats Grid */}
-        {stats && (
-          <div className="grid grid-cols-3 gap-4 mb-8">
-            <div className="bg-surface rounded-2xl p-6 text-center border border-elevated">
-              <Newspaper className="w-8 h-8 text-primary mx-auto mb-3" />
-              <div className="text-3xl font-bold text-foreground mb-1">
-                {stats.total_articles.toLocaleString()}
-              </div>
-              <div className="text-sm text-text-secondary">Articles</div>
-            </div>
-            <div className="bg-surface rounded-2xl p-6 text-center border border-elevated">
-              <Users className="w-8 h-8 text-primary mx-auto mb-3" />
-              <div className="text-3xl font-bold text-foreground mb-1">
-                {stats.active_sources}
-              </div>
-              <div className="text-sm text-text-secondary">Sources</div>
-            </div>
-            <div className="bg-surface rounded-2xl p-6 text-center border border-elevated">
-              <Layers className="w-8 h-8 text-primary mx-auto mb-3" />
-              <div className="text-3xl font-bold text-foreground mb-1">
-                {stats.categories > 0 ? stats.categories : trending.length}
-              </div>
-              <div className="text-sm text-text-secondary">Topics</div>
-            </div>
+          <div className="mt-4 flex flex-wrap gap-3">
+            <a
+              href="/api/insights/export?format=json"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-on-primary rounded-full text-sm font-medium hover:opacity-90 transition-opacity"
+              download
+            >
+              <Download className="w-4 h-4" aria-hidden="true" />
+              Download open data (JSON)
+            </a>
+            <a
+              href="/api/insights/export?format=csv"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-surface border border-elevated text-foreground rounded-full text-sm font-medium hover:bg-elevated/50 transition-colors"
+              download
+            >
+              <Download className="w-4 h-4" aria-hidden="true" />
+              Download tables (CSV)
+            </a>
           </div>
-        )}
+        </header>
 
-        {/* Trending Topics */}
-        {trending.length > 0 && (
-          <section className="mb-8">
-            <h2 className="text-xl font-bold text-foreground mb-4 flex items-center gap-2">
-              <span>🔥</span> Trending Now
-            </h2>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {trending.map((topic, i) => (
-                <Link
-                  key={topic.id}
-                  href={`/discover?category=${topic.id}`}
-                  className="bg-surface rounded-xl p-4 border border-elevated hover:border-primary/50 transition-colors"
-                >
-                  <div className="flex justify-between items-start mb-2">
-                    <span className="text-2xl">{getEmoji(topic.name)}</span>
-                    {i < 3 && (
-                      <span className="w-6 h-6 rounded-full bg-amber-500 text-white text-xs font-bold flex items-center justify-center">
-                        {i + 1}
-                      </span>
-                    )}
-                  </div>
-                  <h3 className="font-semibold text-foreground mb-1 truncate">
-                    {topic.name}
-                  </h3>
-                  <p className="text-xs text-text-secondary">
-                    {topic.article_count} articles
-                  </p>
-                  {topic.growth_rate && topic.growth_rate > 0 && (
-                    <div className="flex items-center gap-1 mt-2 text-green-600">
-                      <TrendingUp className="w-3 h-3" />
-                      <span className="text-xs font-medium">
-                        +{Math.round(topic.growth_rate)}%
-                      </span>
-                    </div>
-                  )}
-                </Link>
-              ))}
-            </div>
-          </section>
-        )}
-
-        {/* Top Journalists */}
-        {authors.length > 0 && (
-          <section>
-            <h2 className="text-xl font-bold text-foreground mb-4 flex items-center gap-2">
-              <span>✍️</span> Top Journalists
-            </h2>
-            <div className="bg-surface rounded-xl border border-elevated divide-y divide-elevated">
-              {authors.map((author, i) => (
-                <Link
-                  key={author.id}
-                  href={`/search?q=${encodeURIComponent(author.name)}`}
-                  className="flex items-center p-4 hover:bg-elevated/50 transition-colors"
-                >
-                  <div
-                    className={`w-8 h-8 rounded-full flex items-center justify-center mr-4 font-bold text-sm ${
-                      i === 0
-                        ? "bg-accent text-on-accent"
-                        : i === 1
-                          ? "bg-elevated text-foreground"
-                          : i === 2
-                            ? "bg-warning text-on-warning"
-                            : "bg-surface text-foreground"
-                    }`}
-                  >
-                    {i + 1}
-                  </div>
-                  <div className="flex-1">
-                    <h3 className="font-medium text-foreground">{author.name}</h3>
-                    <p className="text-xs text-text-secondary">
-                      {author.article_count} articles
-                    </p>
-                  </div>
-                  <ChevronRight className="w-5 h-5 text-text-tertiary" />
-                </Link>
-              ))}
-            </div>
-          </section>
-        )}
-
-        {/* Empty State */}
-        {!stats && trending.length === 0 && authors.length === 0 && (
-          <div className="text-center py-16">
-            <span className="text-6xl mb-4 block">📊</span>
-            <h3 className="text-lg font-semibold text-foreground mb-2">
-              No data available
-            </h3>
+        {isEmpty ? (
+          <div className="text-center py-16" role="status">
+            <span className="text-6xl mb-4 block" aria-hidden="true">
+              📊
+            </span>
+            <h3 className="text-lg font-semibold text-foreground mb-2">No data available yet</h3>
             <p className="text-text-secondary">
-              Check back later for insights and analytics
+              Analytics will appear here once the corpus has been populated. Check back shortly.
             </p>
           </div>
+        ) : (
+          <>
+            {/* Corpus summary */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
+              <StatTile
+                icon={Newspaper}
+                label="Articles"
+                value={formatNumber(summary.totalArticles)}
+              />
+              <StatTile icon={Radio} label="Sources" value={formatNumber(summary.sources)} />
+              <StatTile
+                icon={Building2}
+                label="Publishers"
+                value={formatNumber(summary.organizations)}
+              />
+              <StatTile
+                icon={Globe2}
+                label="Countries"
+                value={formatNumber(summary.countries)}
+              />
+              <StatTile
+                icon={Sparkles}
+                label="AI-enriched"
+                value={`${summary.aiEnrichedPct}%`}
+                caption="of the corpus"
+              />
+              <StatTile
+                icon={Gauge}
+                label="Avg quality"
+                value={summary.avgQualityScore > 0 ? summary.avgQualityScore.toFixed(2) : '—'}
+                caption="0–1 quality score"
+              />
+              <StatTile
+                icon={CalendarRange}
+                label="Earliest"
+                value={formatDay(summary.earliest)}
+              />
+              <StatTile icon={CalendarRange} label="Latest" value={formatDay(summary.latest)} />
+            </div>
+
+            {/* Publishing volume */}
+            {volume.total > 0 && (
+              <Section
+                title="Publishing volume"
+                caption={`${formatNumber(volume.total)} articles over the last ${volume.days} days (${formatDay(
+                  volume.from
+                )} – ${formatDay(volume.to)}).`}
+              >
+                <div className="bg-surface rounded-2xl border border-elevated p-5">
+                  <VolumeChart series={volume.series} />
+                  <div className="flex justify-between mt-2 text-xs text-text-tertiary font-mono">
+                    <span>{formatDay(volume.from)}</span>
+                    <span>{formatDay(volume.to)}</span>
+                  </div>
+                  {volume.topSources.length > 0 && (
+                    <p className="text-xs text-text-secondary mt-4">
+                      Most active sources in this window:{' '}
+                      {volume.topSources
+                        .slice(0, 5)
+                        .map((s) => `${s.name} (${formatNumber(s.count)})`)
+                        .join(', ')}
+                      .
+                    </p>
+                  )}
+                </div>
+              </Section>
+            )}
+
+            {/* Source / organization leaderboard */}
+            {leaderboard.length > 0 && (
+              <Section
+                title="Media organizations"
+                caption="Sources ranked by output, with average article quality and length, countries covered and last-published time. Click a column to sort."
+              >
+                <SourceLeaderboard rows={leaderboard} />
+              </Section>
+            )}
+
+            <div className="grid md:grid-cols-2 gap-10">
+              {/* Category distribution */}
+              {categories.categories.length > 0 && (
+                <Section
+                  title="Topic distribution"
+                  caption={`Share of ${formatNumber(
+                    categories.totalAssignments
+                  )} category assignments — top ${categories.categories.length} cover ${categories.coverage}%.`}
+                >
+                  <BarList
+                    colorClass="bg-cobalt"
+                    href={(slug) => `/discover?category=${encodeURIComponent(slug)}`}
+                    items={categories.categories.map((c) => ({
+                      key: c.slug,
+                      label: humanize(c.slug),
+                      emoji: getCategoryEmoji(c.slug),
+                      value: c.count,
+                      share: c.share,
+                    }))}
+                  />
+                </Section>
+              )}
+
+              {/* Country coverage */}
+              {countries.countries.length > 0 && (
+                <Section
+                  title="Country coverage"
+                  caption={`Articles by country of publication, across ${countries.countries.length} countries.`}
+                >
+                  <BarList
+                    colorClass="bg-malachite"
+                    items={countries.countries.slice(0, 15).map((c) => ({
+                      key: c.code,
+                      label: c.name,
+                      value: c.count,
+                      share: c.share,
+                    }))}
+                  />
+                </Section>
+              )}
+            </div>
+
+            {/* Sentiment breakdown */}
+            {sentiment.breakdown.length > 0 && (
+              <Section
+                title="Sentiment"
+                caption={`AI-assessed tone. Coverage: ${sentiment.coverage}% of the corpus is enriched with a sentiment label (${formatNumber(
+                  sentiment.total
+                )} articles) — the rest is not yet processed.`}
+              >
+                <div className="bg-surface rounded-2xl border border-elevated p-5 space-y-3">
+                  {sentiment.breakdown.map((s) => {
+                    const style = SENTIMENT_STYLE[s.sentiment] ?? {
+                      bar: 'bg-text-tertiary',
+                      label: humanize(s.sentiment),
+                    }
+                    return (
+                      <div key={s.sentiment} className="flex items-center gap-3">
+                        <div className="w-24 shrink-0 text-sm text-foreground">{style.label}</div>
+                        <div className="flex-1 h-3 rounded-full bg-elevated overflow-hidden">
+                          <div
+                            className={`h-full rounded-full ${style.bar}`}
+                            style={{ width: `${Math.max(2, s.share)}%` }}
+                          />
+                        </div>
+                        <div className="w-28 shrink-0 text-right text-xs text-text-secondary font-mono">
+                          {formatNumber(s.count)} · {s.share}%
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </Section>
+            )}
+
+            {/* Trending topics */}
+            {topics.length > 0 && (
+              <Section
+                title="Trending topics"
+                caption="Most-tagged topics across the last 7 days."
+              >
+                <div className="flex flex-wrap gap-2">
+                  {topics.map((t) => (
+                    <Link
+                      key={t.tag}
+                      href={`/search?q=${encodeURIComponent(t.tag)}`}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-container-tanzanite text-on-container-tanzanite text-sm hover:opacity-90 transition-opacity"
+                    >
+                      <TrendingUp className="w-3.5 h-3.5" aria-hidden="true" />
+                      {humanize(t.tag)}
+                      <span className="font-mono text-xs opacity-70">{formatNumber(t.count)}</span>
+                    </Link>
+                  ))}
+                </div>
+              </Section>
+            )}
+
+            <footer className="mt-8 pt-6 border-t border-elevated text-xs text-text-tertiary">
+              Figures are computed live from the Mukoko News corpus and cached for up to 10 minutes.
+              Metrics over enriched subsets (sentiment, quality) are labelled with their coverage.
+              Data generated {formatDay(data.generatedAt)}.
+            </footer>
+          </>
         )}
       </div>
     </ErrorBoundary>
-  );
+  )
 }

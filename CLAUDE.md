@@ -113,11 +113,14 @@ All news data reads go through Server Actions → MongoDB Atlas (`news` database
 
 `mongodb/client.ts` owns the singleton `MongoClient` (reads `MONGODB_URI` / `MONGODB_DATABASE`). `mongodb/admin.ts` powers admin **reads**; admin **writes** go through the gateway (below).
 
+**Public Insights / open-data analytics** — `src/lib/mongodb/insights.ts` holds read-only aggregation pipelines over `news.articles` (+ `feedSources` / `newsMediaOrganizations`) for the flagship open-data dashboard: `getCorpusSummary`, `getPublishingVolume`, `getSourceLeaderboard`, `getCategoryDistribution`, `getCountryCoverage`, `getSentimentBreakdown`, `getTopTopics`. **Every function is wrapped so a failure returns an empty-but-typed result — it never throws to the page.** `src/lib/actions/insights.ts` exposes them as Server Actions (incl. the aggregate `getInsightsBundleAction`), which back the server-rendered, ISR-cached (`revalidate = 600`) `/insights` page. Metrics computed over an enriched subset (sentiment, quality) carry an explicit **coverage %** so nothing is misrepresented.
+
 ### Data Flow (writes / mutations)
 
 - **Engagement** (like / view / save) — Next.js **Route Handlers** under `src/app/api/articles/[id]/{like,view,save}/route.ts` (`POST`, `runtime = 'nodejs'`), rate-limited via `src/lib/rate-limit.ts` (`checkRateLimit`, `getRequestIp`). Note the limiter is in-memory per Vercel instance, so limits apply per-instance rather than globally — a shared store (e.g. Redis/Upstash) is the durable upgrade. `src/app/api/health/route.ts` is the health probe.
 - **Admin mutations** — `src/lib/admin/gateway.ts` proxies to the gateway Worker's WorkOS-gated `/api/admin/*` endpoints, forwarding the WorkOS access token as a Bearer header so the Worker re-verifies the same RBAC. **This is the only place the frontend touches the gateway.**
 - **Pipeline refresh** — `src/lib/actions/refresh.ts` `triggerFeedCollection()` fire-and-forget `POST`s to `FLY_WORKER_URL/trigger/collect` with `FLY_TRIGGER_TOKEN`.
+- **Open-data export** (read-only, public) — `src/app/api/insights/export/route.ts` (`GET`, `runtime = 'nodejs'`, `revalidate = 600`) returns the aggregated Insights bundle. `?format=json` (default) emits the full `InsightsBundle`; `?format=csv` emits one CSV with three labelled tables — `## media_organizations`, `## topic_distribution`, `## country_coverage` (RFC-4180 quoted). Rate-limited via `checkRateLimit`/`getRequestIp` (20 req/min/IP → `429` + `Retry-After`); edge-cached (`Cache-Control: public, s-maxage=600, stale-while-revalidate=1800`). Linked from the `/insights` page ("Download open data"). This is a plain Route Handler → MongoDB, not a gateway call.
 
 ### API Client (`src/lib/api.ts`)
 
