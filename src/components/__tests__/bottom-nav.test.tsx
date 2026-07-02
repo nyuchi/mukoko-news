@@ -109,4 +109,44 @@ describe('BottomNav', () => {
 
     expect(screen.getByRole('navigation')).toBeInTheDocument();
   });
+
+  describe('floating pill design', () => {
+    it('should float inset from the viewport edges (not flush bottom)', () => {
+      mockUsePathname.mockReturnValue('/');
+
+      render(<BottomNav />);
+
+      const nav = screen.getByRole('navigation', { name: /main navigation/i });
+      expect(nav).toHaveClass('fixed', 'left-4', 'right-4', 'rounded-2xl');
+      expect(nav).not.toHaveClass('bottom-0');
+    });
+
+    it('should lift above the home-indicator via the safe-area inset', () => {
+      mockUsePathname.mockReturnValue('/');
+
+      render(<BottomNav />);
+
+      const nav = screen.getByRole('navigation', { name: /main navigation/i });
+      expect(nav).toHaveClass('bottom-[calc(env(safe-area-inset-bottom,0px)_+_0.75rem)]');
+    });
+
+    it('should use the floating card styling (blur, border, shadow)', () => {
+      mockUsePathname.mockReturnValue('/');
+
+      render(<BottomNav />);
+
+      const nav = screen.getByRole('navigation', { name: /main navigation/i });
+      expect(nav).toHaveClass('bg-background/90', 'backdrop-blur-xl', 'border', 'shadow-lg');
+    });
+
+    it('should keep 48px minimum touch targets on nav items', () => {
+      mockUsePathname.mockReturnValue('/');
+
+      render(<BottomNav />);
+
+      for (const link of screen.getAllByRole('link')) {
+        expect(link).toHaveClass('min-h-12');
+      }
+    });
+  });
 });

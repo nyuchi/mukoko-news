@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
-import { COUNTRIES } from "@/lib/constants";
+import { COUNTRIES, DEFAULT_FEED_COUNTRIES } from "@/lib/constants";
 
 // Re-export for backwards compatibility
 export { COUNTRIES } from "@/lib/constants";
@@ -37,8 +37,13 @@ const STORAGE_KEYS = {
 };
 
 export function PreferencesProvider({ children }: { children: ReactNode }) {
-  const [selectedCountries, setSelectedCountries] = useState<string[]>([]);
-  const [primaryCountry, setPrimaryCountryState] = useState<string | null>(null);
+  // Initialise with the server-side defaults so SSR HTML (rendered with these
+  // values) matches the first client render — stored preferences are applied
+  // in an effect after hydration.
+  const [selectedCountries, setSelectedCountries] = useState<string[]>(DEFAULT_FEED_COUNTRIES);
+  const [primaryCountry, setPrimaryCountryState] = useState<string | null>(
+    DEFAULT_FEED_COUNTRIES[0] ?? null
+  );
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState(true);
   const [showOnboarding, setShowOnboarding] = useState(false);
@@ -57,16 +62,16 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
         if (Array.isArray(parsed)) {
           setSelectedCountries(parsed);
         } else {
-          setSelectedCountries(["ZW"]);
+          setSelectedCountries([...DEFAULT_FEED_COUNTRIES]);
         }
       } else {
-        setSelectedCountries(["ZW"]);
+        setSelectedCountries([...DEFAULT_FEED_COUNTRIES]);
       }
 
       if (primary) {
         setPrimaryCountryState(primary);
       } else {
-        setPrimaryCountryState("ZW");
+        setPrimaryCountryState(DEFAULT_FEED_COUNTRIES[0] ?? null);
       }
 
       if (categories) {
@@ -84,8 +89,8 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
       }
     } catch (error) {
       console.error("Failed to read preferences from localStorage:", error);
-      setSelectedCountries(["ZW"]);
-      setPrimaryCountryState("ZW");
+      setSelectedCountries([...DEFAULT_FEED_COUNTRIES]);
+      setPrimaryCountryState(DEFAULT_FEED_COUNTRIES[0] ?? null);
       setSelectedCategories(["all"]);
     } finally {
       setIsLoaded(true);
@@ -182,12 +187,10 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  // Don't render children until preferences are loaded from localStorage
-  // Returns null to avoid a loading spinner flash — localStorage reads are synchronous
-  if (!isLoaded) {
-    return null;
-  }
-
+  // Children render immediately (including during SSR) with the default
+  // preferences above; stored preferences are applied post-hydration. Gating
+  // on isLoaded here used to return null, which blanked out every
+  // server-rendered page and forced a client-only first paint.
   return (
     <PreferencesContext.Provider
       value={{

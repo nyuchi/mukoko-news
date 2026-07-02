@@ -1,5 +1,7 @@
-/* Import Google Fonts - must come first per CSS spec */
-@import url('https://fonts.googleapis.com/css2?family=Noto+Serif:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Noto+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+/* Fonts are self-hosted via next/font/google in src/app/layout.tsx, which
+   exposes --font-noto-serif / --font-noto-sans / --font-jetbrains-mono on
+   <html>. The --font-sans/serif/mono theme tokens below consume them — no
+   render-blocking Google Fonts @import. */
 
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
@@ -264,10 +266,11 @@
   --color-container-copper: var(--container-copper);
   --color-on-container-copper: var(--on-container-copper);
 
-  /* Typography */
-  --font-sans: "Noto Sans", ui-sans-serif, system-ui, sans-serif;
-  --font-serif: "Noto Serif", ui-serif, Georgia, serif;
-  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  /* Typography — next/font variables (set on <html> in layout.tsx) with
+     system fallbacks for non-Next contexts (tests, embeds) */
+  --font-sans: var(--font-noto-sans, "Noto Sans"), ui-sans-serif, system-ui, sans-serif;
+  --font-serif: var(--font-noto-serif, "Noto Serif"), ui-serif, Georgia, serif;
+  --font-mono: var(--font-jetbrains-mono, "JetBrains Mono"), ui-monospace, SFMono-Regular, Menlo, monospace;
 
   /* Design Tokens */
   --radius-button: 12px;
@@ -457,9 +460,4 @@ a:where(:not(.prose *)) {
 }
 .scrollbar-hide::-webkit-scrollbar {
   display: none;
-}
-
-/* Safe area for iOS devices with home indicator */
-.safe-area-bottom {
-  padding-bottom: env(safe-area-inset-bottom, 0);
 }

@@ -9,6 +9,12 @@ interface Props {
   params: Promise<{ id: string }>;
 }
 
+// ISR: cache each article's rendered HTML for 5 minutes — article content only
+// changes when the pipeline (re-)enriches it, so this removes the per-view
+// MongoDB read without meaningful staleness. Nothing in this page reads
+// cookies()/headers(), so the route stays cacheable.
+export const revalidate = 300;
+
 const fetchArticle = cache(async (id: string) => {
   try {
     return await getArticleById(id);

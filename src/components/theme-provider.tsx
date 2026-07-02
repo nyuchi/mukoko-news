@@ -85,11 +85,11 @@ export function ThemeProvider({
     });
   };
 
-  // Prevent flash of wrong theme
-  if (!mounted) {
-    return null;
-  }
-
+  // Children render immediately (including during SSR) — the theme-bootstrap
+  // inline script in layout.tsx applies the stored theme class before first
+  // paint, so there is no flash of the wrong theme. Returning null until
+  // mounted (the old behaviour) blanked out every server-rendered page and
+  // forced a client-only first paint.
   return (
     <ThemeContext.Provider value={{ theme, resolvedTheme, setTheme, cycleTheme }}>
       {children}
