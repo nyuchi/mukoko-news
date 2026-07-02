@@ -21,6 +21,9 @@ export default authkitMiddleware({
 
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|embed|robots.txt|sitemap.xml).*)',
+    // sw.js and manifest.json are static public assets fetched by the browser
+    // itself (service-worker update checks / install prompts) — no session to
+    // refresh, so they are excluded like the other static files.
+    '/((?!_next/static|_next/image|favicon.ico|embed|robots.txt|sitemap.xml|sw.js|manifest.json).*)',
   ],
 }

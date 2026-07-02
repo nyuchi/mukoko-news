@@ -1,6 +1,6 @@
 {
-  "name": "Mukoko News - Pan-African News Hub",
-  "short_name": "Mukoko News",
+  "name": "mukoko news",
+  "short_name": "mukoko",
   "description": "Pan-African digital news aggregation platform. Breaking news, top stories, and in-depth coverage from Zimbabwe, South Africa, Kenya, Nigeria, and 12 more African countries.",
   "start_url": "/",
   "display": "standalone",

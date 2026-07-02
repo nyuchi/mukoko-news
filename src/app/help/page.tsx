@@ -18,7 +18,7 @@ const faqs = [
   },
   {
     question: "Can I read news offline?",
-    answer: "Yes! Articles you've viewed are cached automatically. Open articles while online and they'll be available offline later."
+    answer: "Yes! Articles you open and pages you visit are cached automatically, so they stay readable when you lose connection. Open articles while online and they'll be available offline later — fresh stories load again once you're back online."
   },
   {
     question: "How do I change the theme?",

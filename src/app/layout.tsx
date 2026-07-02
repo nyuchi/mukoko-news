@@ -7,6 +7,7 @@ import { Header } from '@/components/layout/header';
 import { Footer } from '@/components/layout/footer';
 import { BottomNav } from '@/components/layout/bottom-nav';
 import { OnboardingModal } from '@/components/onboarding-modal';
+import { ServiceWorkerRegister } from '@/components/pwa/sw-register';
 import { OrganizationJsonLd, WebSiteJsonLd } from '@/components/ui/json-ld';
 import { AuthKitProvider } from '@workos-inc/authkit-nextjs/components';
 
@@ -170,6 +171,9 @@ export default function RootLayout({
 
             {/* Onboarding Modal */}
             <OnboardingModal />
+
+            {/* PWA: registers /sw.js (production only) + update banner */}
+            <ServiceWorkerRegister />
           </PreferencesProvider>
         </ThemeProvider>
         </AuthKitProvider>
