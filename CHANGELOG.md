@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [5.3.0] - 2026-07-02
+
+### Added
+
+- **On-site MFA (TOTP) step-up for inline sign-in.** When an account has MFA enabled, WorkOS returns an `mfa_challenge` / `mfa_enrollment` step-up after a correct Magic Auth code. `src/lib/auth/actions.ts` now resolves it (`verifyEmailCode` challenges the enrolled TOTP factor, or enrols a new one and returns its QR; new `verifyMfaCode` completes the second factor via `authenticateWithTotp`), and `inline-sign-in.tsx` renders the authenticator-code step on-site — no hosted redirect. See `auth.md`.
+- **Segmented 6-box one-time-code input** shared by the emailed Magic Auth code and the authenticator code (auto-advance, paste, backspace, arrow keys).
+
+### Changed
+
+- `InlineSignIn` reworked into a three-step flow (email → code → MFA); MFA enrolment shows a scannable QR + manual secret fallback.
+
 ## [5.2.0] - 2026-06-27
 
 ### Changed
