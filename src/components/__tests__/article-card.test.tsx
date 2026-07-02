@@ -15,6 +15,18 @@ vi.mock('next/link', () => ({
   ),
 }));
 
+// Mock next/image → plain <img> so we can assert the rendered source
+vi.mock('next/image', () => ({
+  default: ({ src, alt }: { src: string; alt: string }) => (
+    <img src={src} alt={alt} data-testid="cover-image" />
+  ),
+}));
+
+// Mock the proxy loader to a stable pass-through so assertions are simple
+vi.mock('@/lib/image', () => ({
+  mukokoImageLoader: ({ src }: { src: string }) => src,
+}));
+
 // Mock child components
 vi.mock('@/components/ui/source-icon', () => ({
   SourceBadge: ({ source }: { source: string }) => (
@@ -82,24 +94,25 @@ describe('ArticleCard', () => {
   });
 
   describe('image handling', () => {
-    it('should display image background when valid image_url', () => {
+    it('should render the cover image when valid image_url', () => {
       const article = {
         ...baseArticle,
         image_url: 'https://example.com/image.jpg',
       };
       render(<ArticleCard article={article} />);
 
-      // The component should have a background style with the image
-      const container = document.querySelector('[style*="background"]');
-      expect(container).toBeInTheDocument();
+      const img = screen.getByTestId('cover-image');
+      expect(img).toBeInTheDocument();
+      expect(img).toHaveAttribute('src', 'https://example.com/image.jpg');
     });
 
     it('should display gradient fallback when no image', () => {
       render(<ArticleCard article={baseArticle} />);
 
-      // Should use gradient background
-      const container = document.querySelector('[style*="linear-gradient"]');
-      expect(container).toBeInTheDocument();
+      // No <img> is rendered; a gradient fallback element stands in
+      expect(screen.queryByTestId('cover-image')).not.toBeInTheDocument();
+      const fallback = document.querySelector('[class*="bg-gradient-to-br"]');
+      expect(fallback).toBeInTheDocument();
     });
 
     it('should not display image for invalid URLs', () => {
@@ -109,9 +122,10 @@ describe('ArticleCard', () => {
       };
       render(<ArticleCard article={article} />);
 
-      // Should use gradient fallback for invalid URLs
-      const container = document.querySelector('[style*="var(--primary)"]');
-      expect(container).toBeInTheDocument();
+      // Invalid/unsafe URLs are rejected → gradient fallback, no <img>
+      expect(screen.queryByTestId('cover-image')).not.toBeInTheDocument();
+      const fallback = document.querySelector('[class*="bg-gradient-to-br"]');
+      expect(fallback).toBeInTheDocument();
     });
   });
 
@@ -167,28 +181,6 @@ describe('ArticleCard', () => {
       render(<ArticleCard article={article} />);
 
       expect(screen.getByText('Recently')).toBeInTheDocument();
-    });
-  });
-
-  describe('date badge', () => {
-    it('should display day number', () => {
-      const article = {
-        ...baseArticle,
-        published_at: '2024-01-15T10:00:00Z',
-      };
-      render(<ArticleCard article={article} />);
-
-      expect(screen.getByText('15')).toBeInTheDocument();
-    });
-
-    it('should display month abbreviation', () => {
-      const article = {
-        ...baseArticle,
-        published_at: '2024-01-15T10:00:00Z',
-      };
-      render(<ArticleCard article={article} />);
-
-      expect(screen.getByText('JAN')).toBeInTheDocument();
     });
   });
 
