@@ -94,7 +94,7 @@ export default function HelpPage() {
         </p>
         <Link
           href="mailto:support@mukoko.com"
-          className="inline-block px-6 py-2.5 bg-primary text-white font-medium rounded-xl hover:opacity-90 transition-opacity"
+          className="inline-block px-6 py-2.5 bg-primary text-on-primary font-medium rounded-xl hover:opacity-90 transition-opacity"
         >
           Contact Support
         </Link>

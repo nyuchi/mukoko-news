@@ -161,7 +161,7 @@ export function ShareModal({ article, isOpen, onClose }: ShareModalProps) {
           {typeof navigator !== "undefined" && typeof navigator.share === "function" && (
             <button
               onClick={handleNativeShare}
-              className="w-full flex items-center justify-center gap-2 p-3 mt-3 bg-primary text-white rounded-xl font-medium transition-opacity hover:opacity-90"
+              className="w-full flex items-center justify-center gap-2 p-3 mt-3 bg-primary text-on-primary rounded-xl font-medium transition-opacity hover:opacity-90"
             >
               <Share2 className="w-5 h-5" />
               <span>More Options</span>

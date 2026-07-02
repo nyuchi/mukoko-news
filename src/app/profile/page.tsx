@@ -83,7 +83,7 @@ function ProfileContent() {
             <div className="flex gap-3 justify-center">
               <button
                 onClick={() => setShowSignIn(true)}
-                className="px-6 py-3 bg-primary text-white font-medium rounded-xl hover:opacity-90 transition-opacity"
+                className="px-6 py-3 bg-primary text-on-primary font-medium rounded-xl hover:opacity-90 transition-opacity"
               >
                 Sign In
               </button>

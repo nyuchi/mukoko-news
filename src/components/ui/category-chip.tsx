@@ -15,7 +15,7 @@ export function CategoryChip({ label, active = false, onClick, icon }: CategoryC
       onClick={onClick}
       className={`px-3 py-1.5 rounded-full text-xs font-medium cursor-pointer transition-all duration-200 whitespace-nowrap flex items-center gap-1.5 ${
         active
-          ? "bg-primary text-white"
+          ? "bg-primary text-on-primary"
           : "bg-surface text-foreground border border-elevated hover:border-primary hover:text-primary"
       }`}
     >

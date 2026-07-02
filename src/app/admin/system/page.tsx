@@ -122,7 +122,7 @@ export default function AdminSystemPage() {
       <section>
         <h2 className="text-lg font-semibold text-foreground mb-4">Actions</h2>
         <div className="flex flex-wrap gap-3">
-          <button className="flex items-center gap-2 px-4 py-2.5 bg-primary text-white rounded-xl font-medium hover:opacity-90">
+          <button className="flex items-center gap-2 px-4 py-2.5 bg-primary text-on-primary rounded-xl font-medium hover:opacity-90">
             <RefreshCw className="w-4 h-4" />
             Clear Cache
           </button>

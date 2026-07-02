@@ -18,6 +18,32 @@ import { isValidImageUrl } from "@/lib/utils";
  * cross-origin fetch is slow, hotlink-blocked, or dropped by OpaqueResponseBlocking.
  * Unsafe/relative srcs are skipped (`isValidImageUrl`) rather than rendered raw.
  */
+/**
+ * Decode HTML entities that survive the pipeline's HTML→Markdown rendition
+ * (e.g. `&#8230;` in WordPress excerpts). Safe: react-markdown escapes its
+ * output, so decoded characters render as text, never as live HTML.
+ */
+const NAMED_ENTITIES: Record<string, string> = {
+  amp: "&",
+  quot: '"',
+  apos: "'",
+  nbsp: " ",
+  hellip: "…",
+  mdash: "—",
+  ndash: "–",
+  lsquo: "‘",
+  rsquo: "’",
+  ldquo: "“",
+  rdquo: "”",
+};
+
+export function decodeHtmlEntities(text: string): string {
+  return text
+    .replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(Number(code)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
+    .replace(/&([a-zA-Z]+);/g, (m, name: string) => NAMED_ENTITIES[name] ?? m);
+}
+
 export function Markdown({ children }: { children: string }) {
   return (
     <div className="prose prose-lg dark:prose-invert max-w-none">
@@ -42,7 +68,7 @@ export function Markdown({ children }: { children: string }) {
           },
         }}
       >
-        {children}
+        {decodeHtmlEntities(children)}
       </ReactMarkdown>
     </div>
   );

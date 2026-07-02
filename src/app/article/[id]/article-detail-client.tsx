@@ -15,7 +15,7 @@ import {
   Check,
   ExternalLink,
 } from "lucide-react";
-import { Markdown } from "@/components/ui/markdown";
+import { Markdown, decodeHtmlEntities } from "@/components/ui/markdown";
 import { type Article } from "@/lib/api";
 import { getArticleAction } from "@/lib/actions/feed";
 import { getArticleUrl } from "@/lib/constants";
@@ -25,6 +25,28 @@ import { ArticlePageSkeleton } from "@/components/ui/skeleton";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { ArticleJsonLd } from "@/components/ui/json-ld";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
+
+/**
+ * True when the article body is just the description again — excerpt-only RSS
+ * sources (e.g. Zimpapers feeds) store the same ~30-word teaser in both
+ * fields, and showing it twice reads like a bug. Compared on a normalized
+ * prefix so trailing ellipses / entity differences don't defeat the check.
+ */
+function bodyRepeatsDescription(article: Article): boolean {
+  const body = article.content_markdown || article.content;
+  if (!body || !article.description) return false;
+  const normalize = (s: string) =>
+    decodeHtmlEntities(s)
+      .toLowerCase()
+      .replace(/[\s…]+/g, " ")
+      .replace(/\.{3,}/g, " ")
+      .trim();
+  const desc = normalize(article.description);
+  const bodyNorm = normalize(body);
+  if (!desc || !bodyNorm) return false;
+  const prefix = desc.slice(0, Math.min(desc.length, 120));
+  return bodyNorm.startsWith(prefix) || bodyNorm.includes(prefix);
+}
 
 export default function ArticleDetailClient({
   articleId,
@@ -41,6 +63,7 @@ export default function ArticleDetailClient({
   const [isLiked, setIsLiked] = useState(initialArticle?.isLiked || false);
   const [isSaved, setIsSaved] = useState(initialArticle?.isSaved || false);
   const [likesCount, setLikesCount] = useState(initialArticle?.likesCount || 0);
+  const [heroImageFailed, setHeroImageFailed] = useState(false);
 
   const loadArticle = useCallback(async () => {
     setLoading(true);
@@ -222,7 +245,7 @@ export default function ArticleDetailClient({
             </button>
             <button
               onClick={handleForceRefresh}
-              className="inline-flex items-center gap-2 px-6 py-3 bg-primary text-white font-medium rounded-xl hover:opacity-90 transition-opacity"
+              className="inline-flex items-center gap-2 px-6 py-3 bg-primary text-on-primary font-medium rounded-xl hover:opacity-90 transition-opacity"
             >
               <RefreshCw className="w-4 h-4" />
               Try Again
@@ -250,7 +273,7 @@ export default function ArticleDetailClient({
         </div>
 
         {/* Hero Section */}
-        <div className="bg-primary text-white px-6 py-12 relative">
+        <div className="bg-primary text-on-primary px-6 py-12 relative">
         {/* Back Button */}
         <button
           onClick={() => router.back()}
@@ -284,7 +307,7 @@ export default function ArticleDetailClient({
           </h1>
 
           {/* Source and Date */}
-          <div className="flex items-center gap-4 text-white/80">
+          <div className="flex items-center gap-4 text-on-primary/80">
             <span className="font-medium">{article.source}</span>
             <span className="flex items-center gap-1">
               <Clock className="w-4 h-4" />
@@ -294,14 +317,16 @@ export default function ArticleDetailClient({
         </div>
       </div>
 
-      {/* Article Image */}
-      {article.image_url && isValidImageUrl(article.image_url) && (
+      {/* Article Image — hidden entirely if the proxy can't fetch it (some
+          publisher WAFs block server-side fetches); no empty placeholder box. */}
+      {article.image_url && isValidImageUrl(article.image_url) && !heroImageFailed && (
         <div className="max-w-[900px] mx-auto px-6 -mt-6">
           <div className="rounded-2xl overflow-hidden shadow-xl">
             <img
               src={imageProxyUrl(article.image_url, { width: 900 })}
               alt={article.title}
               className="w-full aspect-video object-cover"
+              onError={() => setHeroImageFailed(true)}
             />
           </div>
         </div>
@@ -309,8 +334,9 @@ export default function ArticleDetailClient({
 
       {/* Article Content */}
       <div className="max-w-[800px] mx-auto px-6 py-8">
-        {/* Description */}
-        {article.description && (
+        {/* Description — skipped when the body just repeats it (excerpt-only
+            RSS sources store the same text in both fields). */}
+        {article.description && !bodyRepeatsDescription(article) && (
           <p className="text-lg text-text-secondary leading-relaxed mb-8">
             {article.description}
           </p>
@@ -345,7 +371,7 @@ export default function ArticleDetailClient({
             href={article.original_url}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-primary text-white font-semibold hover:opacity-90 transition-opacity focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-primary text-on-primary font-semibold hover:opacity-90 transition-opacity focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
           >
             <ExternalLink className="w-5 h-5" aria-hidden="true" />
             Read full article{article.source ? ` at ${article.source}` : ""}
@@ -386,7 +412,7 @@ export default function ArticleDetailClient({
             className={`flex items-center gap-2 px-4 py-2.5 rounded-xl transition-all ml-auto ${
               copySuccess
                 ? "bg-success text-white"
-                : "bg-primary text-white hover:opacity-90"
+                : "bg-primary text-on-primary hover:opacity-90"
             }`}
           >
             {copySuccess ? <Check className="w-5 h-5" /> : <Share2 className="w-5 h-5" />}

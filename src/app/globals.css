@@ -33,6 +33,8 @@
   /* Semantic */
   --primary: var(--tanzanite);
   --secondary: var(--cobalt);
+  --on-primary: #1A0033;   /* deep tanzanite ink on light-lavender primary — 7.2:1 */
+  --on-secondary: #002966; /* deep cobalt ink on light-cyan secondary — 5.7:1 */
   --success: #64FFDA;   /* Malachite (dark) */
   --warning: #E1B07E;   /* Terracotta (dark) */
   --accent: var(--gold);
@@ -92,6 +94,8 @@
 
   --primary: var(--tanzanite);
   --secondary: var(--cobalt);
+  --on-primary: #1A0033;   /* deep tanzanite ink on light-lavender primary — 7.2:1 */
+  --on-secondary: #002966; /* deep cobalt ink on light-cyan secondary — 5.7:1 */
   --success: #64FFDA;   /* Malachite (dark) */
   --warning: #E1B07E;   /* Terracotta (dark) */
   --accent: var(--gold);
@@ -150,6 +154,8 @@
 
   --primary: var(--tanzanite);
   --secondary: var(--cobalt);
+  --on-primary: #FFFFFF;   /* white on deep tanzanite — 12.9:1 */
+  --on-secondary: #FFFFFF; /* white on deep cobalt — 7.6:1 */
   --success: #004D40;   /* Malachite (light) */
   --warning: #A0522D;   /* Terracotta (light) */
   --accent: var(--gold);
@@ -197,6 +203,8 @@
   --color-elevated: var(--elevated);
   --color-primary: var(--primary);
   --color-secondary: var(--secondary);
+  --color-on-primary: var(--on-primary);
+  --color-on-secondary: var(--on-secondary);
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-accent: var(--accent);
