@@ -2,23 +2,24 @@ import type { Metadata } from "next";
 import { getFullUrl } from "@/lib/constants";
 
 export const metadata: Metadata = {
-  title: "Insights",
+  title: "Open Data & Insights",
   description:
-    "Analytics and trending topics across African news. See platform stats, trending categories, and top journalists on Mukoko News.",
+    "A live, public analytics dashboard for African news. Publishing volume, media-organization leaderboard, topic and country coverage, and sentiment — computed from the Mukoko News corpus and free to download as open data (JSON/CSV).",
   alternates: {
     canonical: getFullUrl("/insights"),
   },
   openGraph: {
-    title: "News Insights & Analytics | Mukoko News",
+    title: "Open Data & Insights | Mukoko News",
     description:
-      "Trending topics, analytics, and top journalists across African news.",
+      "Public analytics for African news: publishing volume, source leaderboard, topic and country coverage, sentiment. Open data, free to download.",
     url: getFullUrl("/insights"),
     type: "website",
   },
   twitter: {
     card: "summary",
-    title: "News Insights | Mukoko News",
-    description: "Trending topics and analytics across African news.",
+    title: "Open Data & Insights | Mukoko News",
+    description:
+      "Public analytics for African news, computed from the corpus. Open data, free to download.",
     creator: "@mukokoafrica",
   },
 };
