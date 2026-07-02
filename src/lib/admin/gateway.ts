@@ -1,6 +1,8 @@
 'use server'
 
 import { withAuth } from '@workos-inc/authkit-nextjs'
+import { z } from 'zod'
+import { idSchema, boundedTextSchema, parseOrDefault } from '@/lib/safety'
 
 // Server Actions that proxy admin mutations to the gateway Worker's
 // WorkOS-gated /api/admin/* endpoints. The WorkOS access token (from withAuth)
@@ -50,11 +52,19 @@ async function callGateway<T = unknown>(
   }
 }
 
+const moderationStatusSchema = z.enum(['active', 'flagged', 'removed'])
+
 /** Toggle a feed source active/inactive (gateway: PATCH /api/admin/sources/:id). */
 export async function setSourceActive(id: string, isActive: boolean): Promise<GatewayResult> {
-  return callGateway(`/api/admin/sources/${encodeURIComponent(id)}`, {
+  // These are Server Actions (public RPC surface): length-bound the
+  // user-supplied id and coerce the flag before it reaches the gateway.
+  const safeId = parseOrDefault(idSchema, id, null)
+  if (!safeId) {
+    return { ok: false, status: 400, error: 'Invalid source id' }
+  }
+  return callGateway(`/api/admin/sources/${encodeURIComponent(safeId)}`, {
     method: 'PATCH',
-    body: JSON.stringify({ isActive }),
+    body: JSON.stringify({ isActive: isActive === true }),
   })
 }
 
@@ -64,8 +74,17 @@ export async function moderateArticle(
   moderationStatus: 'active' | 'flagged' | 'removed',
   reason?: string,
 ): Promise<GatewayResult> {
-  return callGateway(`/api/moderator/articles/${encodeURIComponent(id)}`, {
+  const safeId = parseOrDefault(idSchema, id, null)
+  if (!safeId) {
+    return { ok: false, status: 400, error: 'Invalid article id' }
+  }
+  const safeStatus = parseOrDefault(moderationStatusSchema, moderationStatus, null)
+  if (!safeStatus) {
+    return { ok: false, status: 400, error: 'Invalid moderation status' }
+  }
+  const safeReason = parseOrDefault(boundedTextSchema(1000), reason, undefined)
+  return callGateway(`/api/moderator/articles/${encodeURIComponent(safeId)}`, {
     method: 'PATCH',
-    body: JSON.stringify({ moderationStatus, reason }),
+    body: JSON.stringify({ moderationStatus: safeStatus, reason: safeReason }),
   })
 }

@@ -4,12 +4,25 @@
  * Server Actions for fetching feed data directly from MongoDB.
  * Call these from Client Components instead of the api.* fetch helpers.
  * These run on the server — no Worker interception, no API roundtrip.
+ *
+ * Server Actions are a public RPC surface: every param is validated/clamped
+ * via `@/lib/safety` before it reaches the MongoDB layer. Reads degrade
+ * gracefully to safe defaults rather than throwing to the client.
  */
 
 import { cookies } from 'next/headers'
 import { getArticles, getArticleById, getNewsByteArticles, searchArticles, getSavedArticles } from '@/lib/mongodb/articles'
 import { getCategories, getTrendingCategories } from '@/lib/mongodb/categories'
 import { getSources, getStats, getTrendingAuthors } from '@/lib/mongodb/sources'
+import {
+  clampInt,
+  countryCodeSchema,
+  idSchema,
+  parseOrDefault,
+  safeFeedParams,
+  searchQuerySchema,
+  boundedTextSchema,
+} from '@/lib/safety'
 import type { Article } from '@/lib/api'
 
 export interface SectionedFeed {
@@ -34,7 +47,7 @@ export async function getSectionedFeedAction(params: {
   countries?: string[]
   categories?: string[]
 } = {}): Promise<SectionedFeed> {
-  const { countries, categories } = params
+  const { countries, categories } = safeFeedParams(params)
 
   const [topResult, latestResult, categoryResult] = await Promise.all([
     getArticles({ limit: 5, sort: 'popular', countries }),
@@ -83,15 +96,25 @@ export async function getArticlesAction(params: {
   countries?: string[]
   sort?: 'latest' | 'popular'
 } = {}) {
-  return getArticles(params)
+  const safe = safeFeedParams(params)
+  return getArticles({
+    limit: safe.limit ?? 20,
+    page: safe.page ?? 1,
+    category: safe.category,
+    categories: safe.categories,
+    countries: safe.countries,
+    sort: safe.sort === 'popular' ? 'popular' : 'latest',
+  })
 }
 
 export async function getArticleAction(id: string) {
-  return getArticleById(id)
+  const safeId = parseOrDefault(idSchema, id, null)
+  if (!safeId) return null
+  return getArticleById(safeId)
 }
 
 export async function getNewsBytesAction(limit = 20) {
-  return getNewsByteArticles(limit)
+  return getNewsByteArticles(clampInt(limit, 1, 100, 20))
 }
 
 export async function searchArticlesAction(
@@ -99,7 +122,18 @@ export async function searchArticlesAction(
   limit = 20,
   filters: { category?: string; countryCode?: string } = {},
 ) {
-  return searchArticles(query, limit, filters)
+  const safeQuery = parseOrDefault(searchQuerySchema, query, null)
+  if (!safeQuery) return [] as Article[]
+
+  const safeFilters =
+    filters && typeof filters === 'object'
+      ? {
+          category: parseOrDefault(boundedTextSchema(50), filters.category, undefined),
+          countryCode: parseOrDefault(countryCodeSchema, filters.countryCode, undefined),
+        }
+      : {}
+
+  return searchArticles(safeQuery, clampInt(limit, 1, 100, 20), safeFilters)
 }
 
 export async function getCategoriesAction() {
@@ -107,7 +141,7 @@ export async function getCategoriesAction() {
 }
 
 export async function getTrendingCategoriesAction(limit = 8) {
-  return getTrendingCategories(limit)
+  return getTrendingCategories(clampInt(limit, 1, 100, 8))
 }
 
 export async function getSourcesAction() {
@@ -119,12 +153,13 @@ export async function getStatsAction() {
 }
 
 export async function getTrendingAuthorsAction(limit = 5) {
-  return getTrendingAuthors(limit)
+  return getTrendingAuthors(clampInt(limit, 1, 100, 5))
 }
 
 export async function getSavedArticlesAction() {
   const cookieStore = await cookies()
   const sessionId = cookieStore.get('mukoko_session')?.value
-  if (!sessionId) return { articles: [] as Article[] }
-  return getSavedArticles(sessionId)
+  const safeSessionId = parseOrDefault(idSchema, sessionId, null)
+  if (!safeSessionId) return { articles: [] as Article[] }
+  return getSavedArticles(safeSessionId)
 }

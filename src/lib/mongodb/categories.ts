@@ -4,6 +4,7 @@
  */
 
 import { getDb } from './client'
+import { clampInt, MAX_LIMIT } from '@/lib/safety'
 import type { Category } from '@/lib/api'
 
 interface MongoCategory {
@@ -88,6 +89,7 @@ export async function getTrendingTags(limit = 32): Promise<Array<{
   type: string
   article_count: number
 }>> {
+  limit = clampInt(limit, 1, MAX_LIMIT, 32)
   const db = await getDb()
   const docs = await db.collection<MongoTag>('tags')
     .find({ articleCount: { $gt: 0 } })
@@ -110,6 +112,7 @@ export async function getTrendingCategories(limit = 8): Promise<Array<{
   slug: string
   article_count: number
 }>> {
+  limit = clampInt(limit, 1, MAX_LIMIT, 8)
   const db = await getDb()
 
   // Use trendingCache if populated, fall back to live aggregation
