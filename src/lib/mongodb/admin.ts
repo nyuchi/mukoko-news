@@ -69,6 +69,23 @@ interface MongoArticle {
   datePublished?: Date
 }
 
+export interface AdminEngagementTotals {
+  likes: number
+  saves: number
+  viewEvents: number
+}
+
+export interface AdminCategoryCount {
+  slug: string
+  name: string
+  count: number
+}
+
+export interface AdminDbPing {
+  ok: boolean
+  latencyMs: number | null
+}
+
 /** Aggregate counts for the dashboard. */
 export async function getAdminStats(): Promise<AdminStats> {
   const db = await getDb()
@@ -89,6 +106,69 @@ export async function getAdminStats(): Promise<AdminStats> {
     ])
 
   return { totalArticles, activeSources, categories, todayArticles, pendingArticles }
+}
+
+/**
+ * Totals from the engagement event collections the like/view/save
+ * Route Handlers write (`articleLikes`, `articleSaves`, `articleViews`).
+ * Views are deduplicated per session per day by the Route Handler, so
+ * `viewEvents` counts tracked view events — not raw page loads.
+ */
+export async function getAdminEngagementTotals(): Promise<AdminEngagementTotals> {
+  const db = await getDb()
+  const [likes, saves, viewEvents] = await Promise.all([
+    db.collection('articleLikes').countDocuments({}),
+    db.collection('articleSaves').countDocuments({}),
+    db.collection('articleViews').countDocuments({}),
+  ])
+  return { likes, saves, viewEvents }
+}
+
+/** Title-case a category slug for display ("arts-culture" → "Arts Culture"). */
+function slugToName(slug: string): string {
+  return slug
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ')
+}
+
+/**
+ * Live per-category article counts from the AI-classified
+ * `engagement.interest_categories` slugs — the same field the public feed reads.
+ */
+export async function getAdminCategoryCounts(limit = 8): Promise<AdminCategoryCount[]> {
+  const db = await getDb()
+  const rows = await db
+    .collection('articles')
+    .aggregate<{ _id: string; count: number }>([
+      { $match: { status: { $ne: 'rejected' }, moderationStatus: { $ne: 'removed' } } },
+      { $unwind: '$engagement.interest_categories' },
+      { $group: { _id: '$engagement.interest_categories', count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+      { $limit: limit },
+    ])
+    .toArray()
+
+  return rows
+    .filter((r) => typeof r._id === 'string' && r._id.trim().length > 0)
+    .map((r) => {
+      const slug = r._id.trim()
+      return { slug, name: slugToName(slug), count: r.count }
+    })
+}
+
+/** Cheap MongoDB reachability probe for the system page. Never throws. */
+export async function pingDatabase(): Promise<AdminDbPing> {
+  try {
+    const db = await getDb()
+    const start = Date.now()
+    await db.command({ ping: 1 })
+    return { ok: true, latencyMs: Date.now() - start }
+  } catch (err) {
+    console.error('[ADMIN] db ping failed', err)
+    return { ok: false, latencyMs: null }
+  }
 }
 
 /** All feed sources, most-productive first. */
