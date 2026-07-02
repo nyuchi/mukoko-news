@@ -229,7 +229,7 @@ export default function DiscoverPage() {
                       {meta.emoji}
                     </div>
                     <div className="min-w-0">
-                      <p className="font-medium text-foreground truncate group-hover:text-primary transition-colors">
+                      <p className="font-medium text-foreground truncate group-hover:underline decoration-2 underline-offset-2">
                         {category.name}
                       </p>
                       <p className="text-xs text-text-tertiary">
@@ -258,7 +258,7 @@ export default function DiscoverPage() {
                       {country.flag}
                     </div>
                     <div className="min-w-0">
-                      <p className="font-medium text-foreground truncate group-hover:text-primary transition-colors">
+                      <p className="font-medium text-foreground truncate group-hover:underline decoration-2 underline-offset-2">
                         {country.name}
                       </p>
                       <p className="text-xs text-text-tertiary">
@@ -313,7 +313,7 @@ function SourcesSection({ sources }: { sources: Source[] }) {
                 <Newspaper className="w-5 h-5 text-primary" />
               </div>
               <div className="min-w-0">
-                <p className="font-medium text-foreground truncate group-hover:text-primary transition-colors">
+                <p className="font-medium text-foreground truncate group-hover:underline decoration-2 underline-offset-2">
                   {source.name}
                 </p>
                 <p className="text-xs text-text-tertiary">

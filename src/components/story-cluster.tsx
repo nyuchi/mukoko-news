@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Clock, Layers, ChevronRight } from "lucide-react";
 import type { StoryCluster as StoryClusterType } from "@/lib/api";
 import { isValidImageUrl, safeCssUrl, formatTimeAgo } from "@/lib/utils";
+import { imageProxyUrl } from "@/lib/image";
 import { SourceIcon } from "@/components/ui/source-icon";
 
 interface StoryClusterProps {
@@ -25,7 +26,7 @@ export function StoryCluster({ cluster }: StoryClusterProps) {
           <div
             className="h-[200px] sm:h-[240px] relative bg-elevated"
             style={{
-              background: `linear-gradient(to bottom, transparent 50%, rgba(0,0,0,0.7)), ${safeCssUrl(primaryArticle.image_url!)} center/cover`,
+              background: `linear-gradient(to bottom, transparent 50%, rgba(0,0,0,0.7)), ${safeCssUrl(imageProxyUrl(primaryArticle.image_url!, { width: 800 }))} center/cover`,
             }}
           >
             {/* Category Badge */}
@@ -51,7 +52,7 @@ export function StoryCluster({ cluster }: StoryClusterProps) {
           </div>
 
           {/* Title */}
-          <h3 className="text-lg font-bold leading-tight line-clamp-2 group-hover:text-primary transition-colors">
+          <h3 className="text-lg font-bold leading-tight line-clamp-2 group-hover:underline decoration-2 underline-offset-2">
             {primaryArticle.title}
           </h3>
 
@@ -78,7 +79,7 @@ export function StoryCluster({ cluster }: StoryClusterProps) {
                 <div
                   className="w-16 h-16 flex-shrink-0 rounded-lg bg-elevated"
                   style={{
-                    background: `${safeCssUrl(article.image_url)} center/cover`,
+                    background: `${safeCssUrl(imageProxyUrl(article.image_url, { width: 400 }))} center/cover`,
                   }}
                 />
               )}
@@ -91,7 +92,7 @@ export function StoryCluster({ cluster }: StoryClusterProps) {
                 </div>
 
                 {/* Title */}
-                <h4 className="text-sm font-medium leading-snug line-clamp-2 hover:text-primary transition-colors">
+                <h4 className="text-sm font-medium leading-snug line-clamp-2 hover:underline decoration-2 underline-offset-2">
                   {article.title}
                 </h4>
 
@@ -137,7 +138,7 @@ export function StoryClusterCompact({ cluster }: StoryClusterProps) {
         <div
           className="h-[140px] relative"
           style={{
-            background: `${safeCssUrl(primaryArticle.image_url!)} center/cover`,
+            background: `${safeCssUrl(imageProxyUrl(primaryArticle.image_url!, { width: 800 }))} center/cover`,
           }}
         >
           {articleCount > 1 && (

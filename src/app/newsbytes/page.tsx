@@ -13,6 +13,7 @@ import {
 import { type Article } from "@/lib/api";
 import { getNewsBytesAction } from "@/lib/actions/feed";
 import { isValidImageUrl, safeCssUrl } from "@/lib/utils";
+import { imageProxyUrl } from "@/lib/image";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { NewsBytesSkeleton } from "@/components/ui/discover-skeleton";
 
@@ -273,7 +274,7 @@ export default function NewsBytesPage() {
               ref={(el) => setItemRef(el, index)}
               className="relative w-full h-full snap-start snap-always"
               style={{
-                backgroundImage: `linear-gradient(135deg, rgba(0,0,0,0.3), rgba(0,0,0,0.7)), ${safeCssUrl(byte.image_url ?? "")}`,
+                backgroundImage: `linear-gradient(135deg, rgba(0,0,0,0.3), rgba(0,0,0,0.7)), ${safeCssUrl(imageProxyUrl(byte.image_url ?? "", { width: 800 }))}`,
                 backgroundSize: "cover",
                 backgroundPosition: "center",
               }}

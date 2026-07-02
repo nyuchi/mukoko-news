@@ -7,6 +7,7 @@ import { type Article } from "@/lib/api";
 import { getArticlesAction } from "@/lib/actions/feed";
 import { getArticleUrl, BASE_URL, COUNTRIES } from "@/lib/constants";
 import { isValidImageUrl, formatTimeAgo, safeCssUrl } from "@/lib/utils";
+import { imageProxyUrl } from "@/lib/image";
 import { SourceIcon } from "@/components/ui/source-icon";
 
 const REFRESH_INTERVAL = 5 * 60 * 1000; // 5 minutes
@@ -45,7 +46,7 @@ function HeroEmbed({ article }: { article: Article }) {
         {hasImage ? (
           <div
             className="absolute inset-0 bg-cover bg-center"
-            style={{ backgroundImage: safeCssUrl(article.image_url!) }}
+            style={{ backgroundImage: safeCssUrl(imageProxyUrl(article.image_url!, { width: 600 })) }}
           />
         ) : (
           <div className="absolute inset-0 bg-gradient-to-br from-primary to-secondary" />
@@ -58,7 +59,7 @@ function HeroEmbed({ article }: { article: Article }) {
               {category}
             </span>
           )}
-          <h3 className="text-lg font-bold text-white leading-snug line-clamp-3 group-hover:text-primary transition-colors">
+          <h3 className="text-lg font-bold text-white leading-snug line-clamp-3 group-hover:underline decoration-2 underline-offset-2">
             {article.title}
           </h3>
           {article.description && (
@@ -92,7 +93,7 @@ function CardEmbed({ article }: { article: Article }) {
         {hasImage && (
           <div
             className="h-[120px] bg-elevated bg-cover bg-center"
-            style={{ backgroundImage: safeCssUrl(article.image_url!) }}
+            style={{ backgroundImage: safeCssUrl(imageProxyUrl(article.image_url!, { width: 600 })) }}
           />
         )}
         <div className="p-3">
@@ -101,7 +102,7 @@ function CardEmbed({ article }: { article: Article }) {
               {category}
             </span>
           )}
-          <h3 className="text-sm font-semibold leading-snug line-clamp-2 mt-0.5 group-hover:text-primary transition-colors">
+          <h3 className="text-sm font-semibold leading-snug line-clamp-2 mt-0.5 group-hover:underline decoration-2 underline-offset-2">
             {article.title}
           </h3>
           <div className="flex items-center gap-2 mt-2 text-text-tertiary">
@@ -136,7 +137,7 @@ function CompactEmbed({ article }: { article: Article }) {
               {category}
             </span>
           )}
-          <h3 className="text-sm font-semibold leading-snug line-clamp-2 group-hover:text-primary transition-colors">
+          <h3 className="text-sm font-semibold leading-snug line-clamp-2 group-hover:underline decoration-2 underline-offset-2">
             {article.title}
           </h3>
           <div className="flex items-center gap-2 mt-1 text-text-tertiary text-[11px]">
@@ -165,7 +166,7 @@ function ListEmbed({ article }: { article: Article }) {
         {hasImage && (
           <div
             className="w-20 h-20 rounded-lg bg-elevated bg-cover bg-center shrink-0"
-            style={{ backgroundImage: safeCssUrl(article.image_url!) }}
+            style={{ backgroundImage: safeCssUrl(imageProxyUrl(article.image_url!, { width: 600 })) }}
           />
         )}
         <div className="flex-1 min-w-0">
@@ -174,7 +175,7 @@ function ListEmbed({ article }: { article: Article }) {
               {category}
             </span>
           )}
-          <h3 className="text-sm font-semibold leading-snug line-clamp-2 group-hover:text-primary transition-colors">
+          <h3 className="text-sm font-semibold leading-snug line-clamp-2 group-hover:underline decoration-2 underline-offset-2">
             {article.title}
           </h3>
           <div className="flex items-center gap-2 mt-1 text-text-tertiary">
@@ -213,7 +214,7 @@ function TickerEmbed({ articles }: { articles: Article[] }) {
               {hasImage && (
                 <div
                   className="h-[100px] bg-elevated bg-cover bg-center"
-                  style={{ backgroundImage: safeCssUrl(article.image_url!) }}
+                  style={{ backgroundImage: safeCssUrl(imageProxyUrl(article.image_url!, { width: 600 })) }}
                 />
               )}
               <div className="p-2.5">
@@ -222,7 +223,7 @@ function TickerEmbed({ articles }: { articles: Article[] }) {
                     {category}
                   </span>
                 )}
-                <h3 className="text-xs font-semibold leading-snug line-clamp-2 mt-0.5 group-hover:text-primary transition-colors">
+                <h3 className="text-xs font-semibold leading-snug line-clamp-2 mt-0.5 group-hover:underline decoration-2 underline-offset-2">
                   {article.title}
                 </h3>
                 <span className="text-[10px] text-text-tertiary mt-1 block truncate">
