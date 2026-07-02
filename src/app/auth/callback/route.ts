@@ -22,6 +22,15 @@ import { NextResponse, type NextRequest } from 'next/server'
 
 export const dynamic = 'force-dynamic'
 
+/**
+ * Reduce a WorkOS/OAuth error param to a short safe slug for the sign-in URL —
+ * never reflect the raw request-controlled value into a response or a log.
+ */
+function sanitizeErrorCode(value: string): string {
+  const slug = value.toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 40)
+  return slug || 'oauth_error'
+}
+
 /** Send the user back to the inline sign-in form with an error marker. */
 function redirectToSignIn(request: NextRequest, reason: string): NextResponse {
   const url = new URL('/sign-in', request.nextUrl.origin)
@@ -32,8 +41,11 @@ function redirectToSignIn(request: NextRequest, reason: string): NextResponse {
 const authHandler = handleAuth({
   // Where verified users land if WorkOS did not carry a returnPathname.
   returnPathname: '/',
-  onError: ({ error, request }) => {
-    console.error('[AUTH] /auth/callback code exchange failed', error)
+  onError: ({ request }) => {
+    // Do NOT log the error object — WorkOS exchange errors can carry the
+    // authorization code / token material (clear-text-logging risk). The
+    // failure reason is surfaced to the user via the /sign-in?error marker.
+    console.error('[AUTH] /auth/callback code exchange failed')
     return redirectToSignIn(request, 'exchange_failed')
   },
 })
@@ -45,12 +57,11 @@ export async function GET(request: NextRequest): Promise<Response> {
   // there is no code to exchange, so don't hand it to handleAuth.
   const oauthError = params.get('error')
   if (oauthError) {
-    console.error(
-      '[AUTH] /auth/callback OAuth error',
-      oauthError,
-      params.get('error_description')
-    )
-    return redirectToSignIn(request, oauthError)
+    // Log only a static message — the `error`/`error_description` params are
+    // request-controlled and may carry sensitive detail (clear-text-logging
+    // risk). The specific code is passed to /sign-in via a sanitized marker.
+    console.error('[AUTH] /auth/callback received an OAuth error response')
+    return redirectToSignIn(request, sanitizeErrorCode(oauthError))
   }
 
   // No authorization code → nothing to exchange (stray/replayed callback hit).
