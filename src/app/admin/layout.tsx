@@ -1,8 +1,8 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { redirect } from 'next/navigation'
 import { ShieldAlert, LayoutDashboard, Radio, Newspaper } from 'lucide-react'
 import { withAuth, getSignInUrl } from '@workos-inc/authkit-nextjs'
+import { InlineSignIn } from '@/components/auth/inline-sign-in'
 import { resolveTier, canAccessAdmin, TIER_LABELS } from '@/lib/auth/roles'
 import { AdminSignOut } from '@/components/admin/admin-sign-out'
 
@@ -20,10 +20,28 @@ const ADMIN_NAV = [
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const { user, organizationId, role, permissions } = await withAuth()
 
-  // Not signed in → redirect to the WorkOS-hosted AuthKit sign-in page;
-  // the /auth/callback handler returns the user to /admin afterwards.
+  // Not signed in → render the INLINE sign-in form (owner doctrine 2026-07-02:
+  // users stay on-site). The WorkOS-hosted page is offered only as a fallback
+  // link; on success the form redirects back to /admin. Best-effort fallback URL.
   if (!user) {
-    redirect(await getSignInUrl({ returnTo: '/admin' }))
+    let fallbackUrl: string | undefined
+    try {
+      fallbackUrl = await getSignInUrl({ returnTo: '/admin' })
+    } catch (err) {
+      console.error('[AUTH] admin getSignInUrl() failed; hiding hosted fallback', err)
+    }
+    return (
+      <div className="min-h-[70vh] flex items-center justify-center px-6 py-12">
+        <div className="w-full max-w-sm rounded-[var(--radius-card)] bg-surface ring-1 ring-foreground/10 p-8">
+          <InlineSignIn
+            redirectTo="/admin"
+            title="Admin sign-in"
+            subtitle="Sign in with your Mukoko staff email to continue."
+            fallbackUrl={fallbackUrl}
+          />
+        </div>
+      </div>
+    )
   }
 
   const tier = resolveTier({ organizationId, role, permissions })
