@@ -7,6 +7,7 @@
 import type { Collection, Filter } from 'mongodb'
 import { getDb } from './client'
 import { stripHtml } from '@/lib/utils'
+import { clampInt, MAX_LIMIT, MAX_PAGE } from '@/lib/safety'
 import type { Article } from '@/lib/api'
 
 interface MongoArticle {
@@ -161,7 +162,11 @@ export async function getArticles(params: {
   sort?: 'latest' | 'trending' | 'popular'
 } = {}): Promise<{ articles: Article[]; total: number }> {
   const db = await getDb()
-  const { limit = 20, page = 1, category, categories, countries, sort = 'latest' } = params
+  const { category, categories, countries, sort = 'latest' } = params
+  // Defensive second layer: Server Actions clamp already, but never let an
+  // unbounded limit/skip reach the driver from any other call path.
+  const limit = clampInt(params.limit, 1, MAX_LIMIT, 20)
+  const page = clampInt(params.page, 1, MAX_PAGE, 1)
 
   const filter: Filter<MongoArticle> = {
     status: { $ne: 'rejected' },
@@ -228,6 +233,7 @@ export async function getArticleById(id: string): Promise<Article | null> {
 }
 
 export async function getRelatedArticles(articleId: string, limit = 5): Promise<Article[]> {
+  limit = clampInt(limit, 1, MAX_LIMIT, 5)
   const db = await getDb()
   const article = await db.collection<MongoArticle>('articles').findOne({ _id: articleId })
   if (!article) return []
@@ -278,6 +284,7 @@ export async function getRelatedArticles(articleId: string, limit = 5): Promise<
 }
 
 export async function getNewsByteArticles(limit = 10): Promise<Article[]> {
+  limit = clampInt(limit, 1, MAX_LIMIT, 10)
   const db = await getDb()
   const docs = await db.collection<MongoArticle>('articles')
     .find({
@@ -311,6 +318,7 @@ export async function searchArticles(
   limit = 20,
   filters: { category?: string; countryCode?: string } = {},
 ): Promise<Article[]> {
+  limit = clampInt(limit, 1, MAX_LIMIT, 20)
   const db = await getDb()
 
   const searchFilters: unknown[] = [{ in: { path: 'status', value: ['approved', 'published'] } }]

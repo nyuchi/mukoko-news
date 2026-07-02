@@ -4,6 +4,7 @@
  */
 
 import { getDb } from './client'
+import { clampInt, MAX_LIMIT } from '@/lib/safety'
 
 interface MongoFeedSource {
   _id: string
@@ -50,6 +51,7 @@ export async function getSources(): Promise<Array<{
 export async function getTrendingAuthors(limit = 5): Promise<{
   trending_authors: Array<{ id: string; name: string; article_count: number }>
 }> {
+  limit = clampInt(limit, 1, MAX_LIMIT, 5)
   const db = await getDb()
   const results = await db.collection('articles').aggregate<{ _id: string; count: number }>([
     { $match: { status: { $ne: 'rejected' }, author: { $exists: true, $nin: [null, ''] } } },
