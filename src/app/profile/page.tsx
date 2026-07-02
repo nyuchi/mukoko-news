@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import {
   User,
@@ -18,13 +17,11 @@ import {
 import { useTheme } from "@/components/theme-provider";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { useAuth } from "@workos-inc/authkit-nextjs/components";
-import { InlineSignIn } from "@/components/auth/inline-sign-in";
 
 function ProfileContent() {
   const { theme, setTheme, cycleTheme } = useTheme();
   const { user, loading, signOut } = useAuth();
   const isLoggedIn = !!user;
-  const [showSignIn, setShowSignIn] = useState(false);
 
   const getThemeIcon = () => {
     switch (theme) {
@@ -59,43 +56,33 @@ function ProfileContent() {
   if (!isLoggedIn) {
     return (
       <div className="max-w-[600px] mx-auto px-6 py-12">
-        {/* Sign In Prompt — inline AuthKit (no hosted redirect) */}
-        {showSignIn ? (
-          <div className="mb-12 rounded-2xl border border-elevated bg-surface p-8">
-            <InlineSignIn />
-            <button
-              onClick={() => setShowSignIn(false)}
-              className="mt-4 w-full text-center text-sm text-text-secondary hover:text-foreground transition-colors"
+        {/* Sign In Prompt — /sign-in redirects to the WorkOS-hosted AuthKit page */}
+        <div className="text-center mb-12">
+          <div className="w-24 h-24 bg-gradient-to-br from-primary to-secondary rounded-full flex items-center justify-center mx-auto mb-6">
+            <User className="w-12 h-12 text-white" />
+          </div>
+          <h1 className="font-serif text-2xl font-bold mb-2">Welcome to Mukoko</h1>
+          <p className="text-text-secondary mb-6">
+            Sign in to save articles, personalize your feed, and sync across
+            devices.
+          </p>
+          <div className="flex gap-3 justify-center">
+            {/* Plain anchors (not <Link>) — /sign-in issues a server redirect to
+                the external WorkOS-hosted page, so a full navigation is wanted. */}
+            <a
+              href="/sign-in?returnTo=/profile"
+              className="px-6 py-3 bg-primary text-on-primary font-medium rounded-xl hover:opacity-90 transition-opacity"
             >
-              Cancel
-            </button>
+              Sign In
+            </a>
+            <a
+              href="/sign-in?returnTo=/profile"
+              className="px-6 py-3 bg-surface border border-elevated text-foreground font-medium rounded-xl hover:bg-elevated transition-colors"
+            >
+              Create Account
+            </a>
           </div>
-        ) : (
-          <div className="text-center mb-12">
-            <div className="w-24 h-24 bg-gradient-to-br from-primary to-secondary rounded-full flex items-center justify-center mx-auto mb-6">
-              <User className="w-12 h-12 text-white" />
-            </div>
-            <h1 className="font-serif text-2xl font-bold mb-2">Welcome to Mukoko</h1>
-            <p className="text-text-secondary mb-6">
-              Sign in to save articles, personalize your feed, and sync across
-              devices.
-            </p>
-            <div className="flex gap-3 justify-center">
-              <button
-                onClick={() => setShowSignIn(true)}
-                className="px-6 py-3 bg-primary text-on-primary font-medium rounded-xl hover:opacity-90 transition-opacity"
-              >
-                Sign In
-              </button>
-              <button
-                onClick={() => setShowSignIn(true)}
-                className="px-6 py-3 bg-surface border border-elevated text-foreground font-medium rounded-xl hover:bg-elevated transition-colors"
-              >
-                Create Account
-              </button>
-            </div>
-          </div>
-        )}
+        </div>
 
         {/* Settings */}
         <div className="bg-surface border border-elevated rounded-2xl overflow-hidden">
