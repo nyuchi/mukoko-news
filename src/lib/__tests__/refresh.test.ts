@@ -46,8 +46,22 @@ describe('triggerFeedCollection', () => {
       {
         method: 'POST',
         headers: { Authorization: 'Bearer bf61a6184dbe6da192ffa0706e7666ec' },
+        signal: expect.any(AbortSignal),
       }
     );
+  });
+
+  it('bounds the request with an abort timeout signal', async () => {
+    vi.stubEnv('FLY_WORKER_URL', 'https://news-ingestion.fly-worker.nyuchi.dev');
+    vi.stubEnv('FLY_TRIGGER_TOKEN', 'tok');
+    const timeoutSpy = vi.spyOn(AbortSignal, 'timeout');
+    mockFetch.mockResolvedValueOnce(new Response('{}', { status: 202 }));
+
+    await triggerFeedCollection();
+
+    expect(timeoutSpy).toHaveBeenCalledWith(5000);
+    const { signal } = mockFetch.mock.calls[0][1] as RequestInit;
+    expect(signal).toBe(timeoutSpy.mock.results[0].value);
   });
 
   it('swallows network errors silently (fire-and-forget)', async () => {
