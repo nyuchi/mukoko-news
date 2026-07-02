@@ -53,4 +53,4 @@ const { user } = await withAuth()
 
 ## Engagement & rate limiting
 
-Engagement Route Handlers (`src/app/api/articles/[id]/{like,view,save}/route.ts`, `runtime = 'nodejs'`) are rate-limited via `checkRateLimit()` + `getRequestIp()` (`src/lib/rate-limit.ts`). Keep new public write endpoints behind the same rate-limit guard.
+Engagement Route Handlers (`src/app/api/articles/[id]/{like,view,save}/route.ts`, `runtime = 'nodejs'`) are rate-limited via `checkRateLimit()` + `getRequestIp()` (`src/lib/rate-limit.ts`). The limiter is in-memory per Vercel instance, so limits are enforced per-instance rather than globally — a shared store is the durable upgrade. Keep new public write endpoints behind the same rate-limit guard.

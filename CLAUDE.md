@@ -115,7 +115,7 @@ All news data reads go through Server Actions → MongoDB Atlas (`news` database
 
 ### Data Flow (writes / mutations)
 
-- **Engagement** (like / view / save) — Next.js **Route Handlers** under `src/app/api/articles/[id]/{like,view,save}/route.ts` (`POST`, `runtime = 'nodejs'`), rate-limited via `src/lib/rate-limit.ts` (`checkRateLimit`, `getRequestIp`). `src/app/api/health/route.ts` is the health probe.
+- **Engagement** (like / view / save) — Next.js **Route Handlers** under `src/app/api/articles/[id]/{like,view,save}/route.ts` (`POST`, `runtime = 'nodejs'`), rate-limited via `src/lib/rate-limit.ts` (`checkRateLimit`, `getRequestIp`). Note the limiter is in-memory per Vercel instance, so limits apply per-instance rather than globally — a shared store (e.g. Redis/Upstash) is the durable upgrade. `src/app/api/health/route.ts` is the health probe.
 - **Admin mutations** — `src/lib/admin/gateway.ts` proxies to the gateway Worker's WorkOS-gated `/api/admin/*` endpoints, forwarding the WorkOS access token as a Bearer header so the Worker re-verifies the same RBAC. **This is the only place the frontend touches the gateway.**
 - **Pipeline refresh** — `src/lib/actions/refresh.ts` `triggerFeedCollection()` fire-and-forget `POST`s to `FLY_WORKER_URL/trigger/collect` with `FLY_TRIGGER_TOKEN`.
 
