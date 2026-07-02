@@ -59,7 +59,7 @@ function HeroEmbed({ article }: { article: Article }) {
               {category}
             </span>
           )}
-          <h3 className="text-lg font-bold text-white leading-snug line-clamp-3 group-hover:text-primary transition-colors">
+          <h3 className="text-lg font-bold text-white leading-snug line-clamp-3 group-hover:underline decoration-2 underline-offset-2">
             {article.title}
           </h3>
           {article.description && (
@@ -102,7 +102,7 @@ function CardEmbed({ article }: { article: Article }) {
               {category}
             </span>
           )}
-          <h3 className="text-sm font-semibold leading-snug line-clamp-2 mt-0.5 group-hover:text-primary transition-colors">
+          <h3 className="text-sm font-semibold leading-snug line-clamp-2 mt-0.5 group-hover:underline decoration-2 underline-offset-2">
             {article.title}
           </h3>
           <div className="flex items-center gap-2 mt-2 text-text-tertiary">
@@ -137,7 +137,7 @@ function CompactEmbed({ article }: { article: Article }) {
               {category}
             </span>
           )}
-          <h3 className="text-sm font-semibold leading-snug line-clamp-2 group-hover:text-primary transition-colors">
+          <h3 className="text-sm font-semibold leading-snug line-clamp-2 group-hover:underline decoration-2 underline-offset-2">
             {article.title}
           </h3>
           <div className="flex items-center gap-2 mt-1 text-text-tertiary text-[11px]">
@@ -175,7 +175,7 @@ function ListEmbed({ article }: { article: Article }) {
               {category}
             </span>
           )}
-          <h3 className="text-sm font-semibold leading-snug line-clamp-2 group-hover:text-primary transition-colors">
+          <h3 className="text-sm font-semibold leading-snug line-clamp-2 group-hover:underline decoration-2 underline-offset-2">
             {article.title}
           </h3>
           <div className="flex items-center gap-2 mt-1 text-text-tertiary">
@@ -223,7 +223,7 @@ function TickerEmbed({ articles }: { articles: Article[] }) {
                     {category}
                   </span>
                 )}
-                <h3 className="text-xs font-semibold leading-snug line-clamp-2 mt-0.5 group-hover:text-primary transition-colors">
+                <h3 className="text-xs font-semibold leading-snug line-clamp-2 mt-0.5 group-hover:underline decoration-2 underline-offset-2">
                   {article.title}
                 </h3>
                 <span className="text-[10px] text-text-tertiary mt-1 block truncate">
