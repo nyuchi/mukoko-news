@@ -411,7 +411,7 @@ export default function ArticleDetailClient({
             onClick={handleShare}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-xl transition-all ml-auto ${
               copySuccess
-                ? "bg-success text-white"
+                ? "bg-success text-on-success"
                 : "bg-primary text-on-primary hover:opacity-90"
             }`}
           >
