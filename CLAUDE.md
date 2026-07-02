@@ -233,7 +233,7 @@ The MCP OAuth server (`news.mukoko.com/.well-known/oauth-authorization-server`, 
 
 **Spacing**: 12px border-radius buttons, 16px cards. WCAG AAA compliant (7:1 contrast).
 
-CSS variables in `src/app/globals.css`. Use Tailwind classes: `bg-primary`, `text-foreground`, `bg-surface`, and the mineral utilities `bg-tanzanite`, `text-cobalt`, `bg-container-sodalite`, etc. (`components.json` configures the shadcn-style component generator; `tailwind.config.ts` holds the theme.)
+CSS variables in `src/app/globals.css`. Use Tailwind classes: `bg-primary`, `text-foreground`, `bg-surface`, and the mineral utilities `bg-tanzanite`, `text-cobalt`, `bg-container-sodalite`, etc. (`components.json` configures the shadcn-style component generator; the theme lives entirely in `globals.css` via `@theme inline` — there is no `tailwind.config.ts`.)
 
 ## Code Conventions
 
