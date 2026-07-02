@@ -2,15 +2,19 @@
 
 The trust model for the frontend. Authentication is **WorkOS AuthKit**; authorization is the RBAC tiers in `src/lib/auth/roles.ts`. The authoritative gate is **server-side**, not middleware.
 
-## Sign-in: inline AuthKit (no hosted redirect)
+## Sign-in: WorkOS-hosted AuthKit page
 
-Web users sign in via the **embedded inline AuthKit form** on `news.mukoko.com` (`src/components/auth/inline-sign-in.tsx`). They are **never** redirected to the hosted `identity.nyuchi.com` page.
+Web users sign in via the **WorkOS-hosted AuthKit page** (`identity.nyuchi.com`): server code calls `getSignInUrl()` from `@workos-inc/authkit-nextjs` and `redirect()`s to it; users return through `/auth/callback` and land on the `returnTo` path.
 
-> Contrast with the gateway: the `mukoko-news-gateway` MCP/API uses the **hosted** WorkOS issuer (`identity.nyuchi.com`) for OAuth. Same WorkOS environment, different entry points — don't "fix" the frontend to redirect to the hosted page.
+> **Doctrine change (owner decision, 2026-07-02).** The frontend previously used an embedded inline Magic Auth form (`src/components/auth/inline-sign-in.tsx`, now deleted) and the rule was "never redirect to the hosted page". That is reversed: the hosted page is WorkOS-maintained UI (branding, new auth methods, security fixes land for free) and it removes the custom auth surface (the bespoke Magic Auth Server Actions) we had to own. The gateway MCP/API already used the hosted issuer — entry points are now consistent.
 
+- `src/app/sign-in/page.tsx` — the sign-in entry point: validates `returnTo` (root-relative only), then redirects to `getSignInUrl({ returnTo })`. Signed-in users skip straight to `returnTo`.
 - `src/app/layout.tsx` — wraps the app in `AuthKitProvider`.
 - `src/app/auth/callback/route.ts` — WorkOS OAuth callback (`handleAuth()`).
-- `src/middleware.ts` — AuthKit **session-refresh only**. `middlewareAuth` is intentionally **NOT** enabled (it would force a hosted redirect). The matcher excludes `_next/*`, `favicon.ico`, `embed`, `robots.txt`, `sitemap.xml`.
+- `src/lib/auth/actions.ts` — `signOutAction()` (AuthKit `signOut()`, clears the session cookie, returns on-site).
+- `src/middleware.ts` — AuthKit **session-refresh only**. `middlewareAuth` is still **NOT** enabled — not because hosted redirects are forbidden anymore, but because nearly every route (home, articles, discover, search, embed, health, engagement APIs) must stay publicly readable; a middleware-wide gate would need an allowlist of the whole site to protect only `/admin`. The page-level gates do that job. The matcher excludes `_next/*`, `favicon.ico`, `embed`, `robots.txt`, `sitemap.xml`.
+
+`WORKOS_REDIRECT_URI` (`https://news.mukoko.com/auth/callback`) must stay registered in the WorkOS dashboard — the hosted flow depends on it.
 
 ## The admin gate is the server component, not middleware
 
@@ -18,7 +22,7 @@ Web users sign in via the **embedded inline AuthKit form** on `news.mukoko.com` 
 
 1. `withAuth()` (server-side) returns verified WorkOS claims.
 2. `resolveTier({ organizationId, role, permissions })` computes the tier.
-3. Unauthenticated → render inline sign-in. `!canAccessAdmin(tier)` → render "Access denied". Otherwise render the admin app.
+3. Unauthenticated → redirect to the hosted sign-in (`getSignInUrl({ returnTo: '/admin' })`). `!canAccessAdmin(tier)` → render "Access denied". Otherwise render the admin app.
 
 Any new admin/privileged surface must perform its own server-side `withAuth()` + tier check. Never rely on the client or on middleware for authorization.
 

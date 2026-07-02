@@ -1,8 +1,8 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import { redirect } from 'next/navigation'
 import { ShieldAlert, LayoutDashboard, Radio, Newspaper } from 'lucide-react'
-import { withAuth } from '@workos-inc/authkit-nextjs'
-import { InlineSignIn } from '@/components/auth/inline-sign-in'
+import { withAuth, getSignInUrl } from '@workos-inc/authkit-nextjs'
 import { resolveTier, canAccessAdmin, TIER_LABELS } from '@/lib/auth/roles'
 import { AdminSignOut } from '@/components/admin/admin-sign-out'
 
@@ -20,20 +20,10 @@ const ADMIN_NAV = [
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const { user, organizationId, role, permissions } = await withAuth()
 
-  // Not signed in → inline sign-in (the middleware also redirects to /sign-in,
-  // but this covers direct render and keeps the prompt on-page).
+  // Not signed in → redirect to the WorkOS-hosted AuthKit sign-in page;
+  // the /auth/callback handler returns the user to /admin afterwards.
   if (!user) {
-    return (
-      <div className="min-h-[70vh] flex items-center justify-center px-6 py-12">
-        <div className="w-full max-w-sm rounded-2xl border border-elevated bg-surface p-8">
-          <InlineSignIn
-            redirectTo="/admin"
-            title="Admin sign-in"
-            subtitle="Sign in with your Mukoko staff email to continue."
-          />
-        </div>
-      </div>
-    )
+    redirect(await getSignInUrl({ returnTo: '/admin' }))
   }
 
   const tier = resolveTier({ organizationId, role, permissions })

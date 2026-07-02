@@ -1,7 +1,6 @@
 import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
-import { withAuth } from '@workos-inc/authkit-nextjs'
-import { InlineSignIn } from '@/components/auth/inline-sign-in'
+import { withAuth, getSignInUrl } from '@workos-inc/authkit-nextjs'
 
 export const metadata: Metadata = {
   title: 'Sign In',
@@ -21,19 +20,18 @@ function safeReturnTo(value: string | undefined): string | undefined {
   return undefined
 }
 
+/**
+ * Sign-in entry point — redirects to the WorkOS-hosted AuthKit page.
+ * (Owner decision 2026-07-02: hosted AuthKit replaces the old inline form.)
+ * Users return via /auth/callback, then land on `returnTo`.
+ */
 export default async function SignInPage({ searchParams }: SignInPageProps) {
   const { returnTo } = await searchParams
   const dest = safeReturnTo(returnTo) ?? '/profile'
 
-  // Already signed in? Skip the form.
+  // Already signed in? Skip the hosted page.
   const { user } = await withAuth()
   if (user) redirect(dest)
 
-  return (
-    <div className="min-h-[70vh] flex items-center justify-center px-6 py-12">
-      <div className="w-full max-w-sm rounded-2xl border border-elevated bg-surface p-8">
-        <InlineSignIn redirectTo={dest} />
-      </div>
-    </div>
-  )
+  redirect(await getSignInUrl({ returnTo: dest }))
 }

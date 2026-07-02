@@ -61,7 +61,7 @@ pnpm add <package>    # or: npm install <package>
 - **Radix UI** primitives for accessible components
 - **Lucide React** for icons, **next-themes** for dark mode
 - **MongoDB driver v7** — Server Actions in `src/lib/actions/*.ts` call `src/lib/mongodb/*.ts` → MongoDB Atlas directly
-- **WorkOS AuthKit** (`@workos-inc/authkit-nextjs`, `authkit-js`, `@workos-inc/node`) — authentication + RBAC
+- **WorkOS AuthKit** (`@workos-inc/authkit-nextjs`, `@workos-inc/node`) — authentication (hosted AuthKit sign-in page) + RBAC
 - **State**: React Context — `PreferencesContext` (`src/contexts/preferences-context.tsx`, country/category) and theme via `next-themes`
 - **Path alias**: `@/*` maps to `src/*`
 
@@ -80,7 +80,7 @@ src/
     sitemap.ts globals.css layout.tsx
   components/              # UI + feature components
     ui/                    # Primitives (button, card, skeleton, error-boundary, json-ld, …)
-    admin/ auth/ layout/   # Feature-scoped components
+    admin/ layout/         # Feature-scoped components
     article-card.tsx hero-card.tsx compact-card.tsx story-cluster.tsx share-modal.tsx …
   contexts/               # React Context providers
   lib/
@@ -167,7 +167,7 @@ NEXT_PUBLIC_BASE_URL=https://news.mukoko.com
 MONGODB_URI=mongodb+srv://<user>:<pass>@nyuchi-platform-doc-db.ge8d8qi.mongodb.net/?appName=nyuchi-platform-doc-db
 MONGODB_DATABASE=news
 
-# WorkOS AuthKit (inline sign-in on news.mukoko.com)
+# WorkOS AuthKit (hosted AuthKit sign-in page; users return via /auth/callback)
 WORKOS_CLIENT_ID=client_01KV2G41CHGBSH6HG57AQBFKDD
 WORKOS_API_KEY=sk_live_...
 WORKOS_REDIRECT_URI=https://news.mukoko.com/auth/callback
@@ -187,11 +187,13 @@ FLY_TRIGGER_TOKEN=...                              # must match the fly secret
 
 ## Authentication & RBAC (WorkOS AuthKit)
 
-**WorkOS AuthKit** handles all user authentication. Web users sign in via the **embedded inline AuthKit form** on `news.mukoko.com` (`src/components/auth/inline-sign-in.tsx`) — they are **never** redirected to the hosted `identity.nyuchi.com` page.
+**WorkOS AuthKit** handles all user authentication. Web users sign in via the **WorkOS-hosted AuthKit page** (`identity.nyuchi.com`): server code calls `getSignInUrl()` and redirects, and users return via `/auth/callback` to the `returnTo` path. (Owner decision 2026-07-02 — the hosted page replaced the old embedded inline form: WorkOS-maintained UI, less custom auth surface. See `auth.md`.)
 
-- `src/middleware.ts` — AuthKit **session-refresh only** (`middlewareAuth` intentionally NOT enabled; it would force a hosted redirect). `/admin` is NOT gated here — cookie presence is spoofable.
-- `src/app/admin/layout.tsx` — the **authoritative** admin gate: calls `withAuth()` and enforces RBAC via `src/lib/auth/roles.ts`, rendering inline sign-in for unauthenticated users.
+- `src/app/sign-in/page.tsx` — sign-in entry point: validates `returnTo` (root-relative only) and server-redirects to `getSignInUrl({ returnTo })`.
+- `src/middleware.ts` — AuthKit **session-refresh only** (`middlewareAuth` still NOT enabled — public reading of nearly every route must stay unauthenticated, so page-level gates protect the few private surfaces instead). `/admin` is NOT gated here — cookie presence is spoofable.
+- `src/app/admin/layout.tsx` — the **authoritative** admin gate: calls `withAuth()` and enforces RBAC via `src/lib/auth/roles.ts`, redirecting unauthenticated users to the hosted sign-in (`returnTo=/admin`).
 - `src/app/auth/callback/route.ts` — WorkOS OAuth callback handler.
+- `src/lib/auth/actions.ts` — `signOutAction()` clears the AuthKit session cookie.
 - `src/app/layout.tsx` — wraps the app in `AuthKitProvider`.
 
 **RBAC tiers** (`src/lib/auth/roles.ts`) — `resolveTier(claims)` → `'none' | 'moderator' | 'admin' | 'superadmin'`:
