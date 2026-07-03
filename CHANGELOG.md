@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [5.5.0] - 2026-07-03
+
+### Added
+
+- **Agent-readiness / AI-agent discovery.** Makes `news.mukoko.com` discoverable and usable by AI agents (tracks the isitagentready.com checklist). Shared values in `src/lib/agent-discovery.ts` mirror the gateway's real MCP/OAuth config. See `docs/agent-readiness.md`.
+  - **MCP Server Card** (SEP-1649) at `/.well-known/mcp/server-card.json` — points agents at the MCP server (`news.mukoko.dev/mcp`), tool capability, auth hint.
+  - **OAuth discovery** — `/.well-known/oauth-authorization-server` (RFC 8414, mirrors the WorkOS issuer `identity.nyuchi.com` + PKCE) and `/.well-known/oauth-protected-resource` (RFC 9728).
+  - **`/auth.md`** — agent authentication guide (served as `text/markdown`); honest about the flow (public MCP client + authorization-code/PKCE, no open DCR).
+  - **Markdown for Agents** — `src/middleware.ts` rewrites `GET` requests with `Accept: text/markdown` (and not `text/html`) for `/` and `/article/[id]` to `/api/agent-md`, which returns a clean markdown representation (`Content-Type: text/markdown` + `x-markdown-tokens`, `Vary: Accept`). Browsers keep the HTML page. Implemented in-app because the site runs on Vercel (Cloudflare's auto-markdown doesn't apply).
+  - **WebMCP** — `src/components/agent/webmcp-provider.tsx` registers in-browser tools (`search_mukoko_news`, `get_latest_headlines`, `open_article`) via `navigator.modelContext`, backed by the same Server Actions the UI uses (no secrets client-side).
+  - **`/llms.txt`** pointing agents at the above.
+  - **Infra (documented, not code)** in `docs/agent-readiness.md`: DNS-AID SVCB records + DNSSEC for the `mukoko.com` zone.
+
+## [5.4.0] - 2026-07-03
+
+### Added
+
+- **Verified-publisher dashboard (`/dashboard`).** A self-service home for approved media houses (gated to verified publishers; others are routed to the claim flow or a "claim under review" state). Server-rendered gate (`src/app/dashboard/page.tsx`) + client dashboard (`src/components/publisher/dashboard/publisher-dashboard.tsx`) backed by gateway Server Actions (`src/lib/publisher/dashboard.ts`):
+  - **Trust score breakdown** — the headline: average trust across the org's feeds plus the levers a publisher controls (share of articles with a cover image, with full content, and successfully processed), each with a progress bar and an actionable hint when it needs attention.
+  - **Your feeds** — per-source health, trust score, article counts, last-fetch errors, and a **"Submit a feed directly"** form (Google-News style): hand us a full-content feed URL and we ingest it automatically (staff-reviewed, marked pending) instead of scraping.
+  - **Organization profile** — inline edit of name/website/description (verification/trust fields are never editable).
+  - **Analytics** — article volume, last-30-days, and view/like/save totals.
+  - Reached from the `/profile` **Publisher dashboard** card (which now points at `/dashboard`).
+- **Publisher verification — claimant + admin surfaces (Tier 2).** The frontend half of the two-tier trust model (the gateway owns the engine + trust boost).
+  - **Claim your publication** (`/publishers/claim`, `src/components/publisher/publisher-claim-form.tsx`) — a signed-in user asserts they represent a news source. Submission is a Server Action (`src/lib/publisher/actions.ts`) that proxies to the gateway's authenticated `POST /api/user/publisher-claims` (the gateway resolves the claimant's identity and writes the `submitted` claim — the frontend never crosses the identity-domain boundary). Unauthenticated users see the inline sign-in first.
+  - **Admin review queue** (`/admin/publishers`, `src/components/admin/publisher-claims-review.tsx`) — reads pending claims from MongoDB (`getPublisherClaims` in `src/lib/mongodb/admin.ts`) and approves/rejects them through the gateway (`approvePublisherClaim`/`rejectPublisherClaim` in `src/lib/admin/gateway.ts`). New "Publishers" entry in the admin nav.
+  - **Verified-publisher badge on `/sources`** — `getSources` now `$lookup`s `newsMediaOrganizations` so the directory badges sources whose organization has passed Tier-2 verification.
+
+### Changed
+
+- **`/profile` redesign + de-duplication.** Collapsed the logged-out screen to a single inline sign-in flow (was two redundant buttons), replaced the gradient avatar with a brand-compliant solid `container-tanzanite` fill + initials (the brand forbids gradients on surfaces), and added a **Publisher** card linking to the claim flow.
+
 ## [5.3.0] - 2026-07-02
 
 ### Added
@@ -179,7 +211,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Version History
 
 | Version | Date | Summary |
-|---------|------|---------|
+| --- | --- | --- |
 | [5.1.0] | 2026-06-21 | Three-repo split — frontend only |
 | [5.0.0] | 2026-06-15 | newsdata.io ingestion, MCP v2, Sources page |
 | [4.0.2] | 2026-01-24 | Schema.org SEO, mobile nav, XSS fixes |

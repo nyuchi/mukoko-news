@@ -20,6 +20,11 @@ interface MongoFeedSource {
   trustScore?: number
 }
 
+interface MongoFeedSourceWithOrg extends MongoFeedSource {
+  mediaOrganizationId?: string
+  org?: { isVerified?: boolean; publisherTier?: string } | null
+}
+
 export async function getSources(): Promise<Array<{
   id: string
   name: string
@@ -29,14 +34,33 @@ export async function getSources(): Promise<Array<{
   last_fetched_at?: string
   error_count?: number
   last_error?: string
+  /** True when the org behind this source is a verified publisher (Tier-2). */
+  verified?: boolean
+  publisher_tier?: string
 }>> {
   const db = await getDb()
-  const docs = await db.collection<MongoFeedSource>('feedSources')
-    .find({ isActive: true })
-    .sort({ articleCount: -1 })
+  // $lookup the publisher (newsMediaOrganizations) so the directory can badge
+  // sources whose organization has passed Tier-2 verification. feedSources
+  // .mediaOrganizationId → newsMediaOrganizations._id (both string ids).
+  const docs = await db
+    .collection<MongoFeedSource>('feedSources')
+    .aggregate<MongoFeedSourceWithOrg>([
+      { $match: { isActive: true } },
+      { $sort: { articleCount: -1 } },
+      {
+        $lookup: {
+          from: 'newsMediaOrganizations',
+          localField: 'mediaOrganizationId',
+          foreignField: '_id',
+          as: 'org',
+          pipeline: [{ $project: { isVerified: 1, publisherTier: 1 } }],
+        },
+      },
+      { $set: { org: { $first: '$org' } } },
+    ])
     .toArray()
 
-  return docs.map(d => ({
+  return docs.map((d) => ({
     id: d._id,
     name: d.name,
     url: d.feedUrl,
@@ -45,6 +69,8 @@ export async function getSources(): Promise<Array<{
     last_fetched_at: d.lastFetchedAt?.toISOString(),
     error_count: d.consecutiveFailures,
     last_error: d.lastFetchError || undefined,
+    verified: d.org?.isVerified === true,
+    publisher_tier: d.org?.publisherTier || undefined,
   }))
 }
 

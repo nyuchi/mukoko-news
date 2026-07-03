@@ -1,0 +1,22 @@
+# Mukoko News
+
+> Pan-African news aggregation for Zimbabwe and 15 other African countries — briefings, search, source views and open-data analytics. "Mukoko" means "beehive" in Shona.
+
+## For AI agents
+
+- [MCP Server Card](https://news.mukoko.com/.well-known/mcp/server-card.json): discover the Model Context Protocol server (hosted at https://news.mukoko.dev/mcp). Most tools are public — no auth needed.
+- [Authentication guide](https://news.mukoko.com/auth.md): how agents authenticate for personalized/privileged actions (WorkOS OAuth 2.0 + PKCE).
+- [OAuth Authorization Server Metadata](https://news.mukoko.com/.well-known/oauth-authorization-server)
+- [OAuth Protected Resource Metadata](https://news.mukoko.com/.well-known/oauth-protected-resource)
+
+Any page also supports `Accept: text/markdown` — request `/` or `/article/<id>` with that header to get a clean markdown version. In-browser agents can use the WebMCP tools registered via `navigator.modelContext` (search, latest headlines, open article).
+
+## Open data
+
+- [Open-data export](https://news.mukoko.com/api/insights/export?format=json): aggregate analytics (publishing volume, sources, categories, country coverage).
+- [Insights dashboard](https://news.mukoko.com/insights)
+
+## Policies
+
+- [Privacy](https://news.mukoko.com/privacy)
+- [Terms](https://news.mukoko.com/terms)
