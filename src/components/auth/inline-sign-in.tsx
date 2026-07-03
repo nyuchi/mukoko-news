@@ -43,6 +43,7 @@ function OtpInput({
   disabled,
   autoFocus,
   ariaLabel,
+  oneTimeCode = true,
 }: {
   value: string
   onChange: (next: string) => void
@@ -50,6 +51,13 @@ function OtpInput({
   disabled?: boolean
   autoFocus?: boolean
   ariaLabel: string
+  /**
+   * Enable the OS `one-time-code` autofill (reads a code from SMS/Mail). Correct
+   * for the emailed Magic Auth code, but WRONG for an authenticator (TOTP) code —
+   * that comes from an app and isn't autofillable, and leaving it on makes iOS
+   * offer the stale email code. The MFA step passes `false`.
+   */
+  oneTimeCode?: boolean
 }) {
   const refs = useRef<Array<HTMLInputElement | null>>([])
   const digits = Array.from({ length: CODE_LENGTH }, (_, i) => value[i] ?? '')
@@ -102,7 +110,7 @@ function OtpInput({
           }}
           type="text"
           inputMode="numeric"
-          autoComplete={i === 0 ? 'one-time-code' : 'off'}
+          autoComplete={oneTimeCode && i === 0 ? 'one-time-code' : 'off'}
           maxLength={1}
           value={digit}
           disabled={disabled}
@@ -365,6 +373,7 @@ export function InlineSignIn({
             onComplete={(c) => confirmMfa(c)}
             disabled={isPending}
             autoFocus
+            oneTimeCode={false}
             ariaLabel="Authenticator code"
           />
           <Button
