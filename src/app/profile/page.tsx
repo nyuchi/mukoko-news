@@ -4,7 +4,6 @@ import { useState } from "react";
 import Link from "next/link";
 import {
   User,
-  Bell,
   Moon,
   Sun,
   Monitor,
@@ -14,14 +13,24 @@ import {
   Shield,
   Loader2,
   LogOut,
+  Bookmark,
+  BadgeCheck,
 } from "lucide-react";
 import { useTheme } from "@/components/theme-provider";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { useAuth } from "@workos-inc/authkit-nextjs/components";
 import { InlineSignIn } from "@/components/auth/inline-sign-in";
 
+/** Two-letter initials for the avatar, falling back to the email's first letter. */
+function initials(first?: string | null, last?: string | null, email?: string | null): string {
+  const a = (first ?? "").trim();
+  const b = (last ?? "").trim();
+  if (a || b) return `${a.charAt(0)}${b.charAt(0)}`.toUpperCase() || a.charAt(0).toUpperCase();
+  return (email ?? "?").charAt(0).toUpperCase();
+}
+
 function ProfileContent() {
-  const { theme, setTheme, cycleTheme } = useTheme();
+  const { theme, cycleTheme } = useTheme();
   const { user, loading, signOut } = useAuth();
   const isLoggedIn = !!user;
   const [showSignIn, setShowSignIn] = useState(false);
@@ -56,14 +65,12 @@ function ProfileContent() {
     );
   }
 
+  // ── Signed-out: a single inline sign-in flow (no duplicate entry points) ──
   if (!isLoggedIn) {
     return (
       <div className="max-w-[600px] mx-auto px-6 py-12">
-        {/* Sign In Prompt — INLINE AuthKit (owner doctrine 2026-07-02: the form
-            renders on-page, the user never leaves news.mukoko.com). The dedicated
-            /sign-in page is the full-screen equivalent. */}
         {showSignIn ? (
-          <div className="mb-12 rounded-[var(--radius-card)] bg-surface ring-1 ring-foreground/10 p-8">
+          <div className="mb-10 rounded-[var(--radius-card)] bg-surface ring-1 ring-foreground/10 p-8">
             <InlineSignIn redirectTo="/profile" />
             <button
               onClick={() => setShowSignIn(false)}
@@ -73,124 +80,67 @@ function ProfileContent() {
             </button>
           </div>
         ) : (
-          <div className="text-center mb-12">
-            <div className="w-24 h-24 bg-container-tanzanite rounded-full flex items-center justify-center mx-auto mb-6">
-              <User className="w-12 h-12 text-on-container-tanzanite" />
+          <div className="text-center mb-10">
+            <div className="w-20 h-20 bg-container-tanzanite rounded-full flex items-center justify-center mx-auto mb-6">
+              <User className="w-10 h-10 text-on-container-tanzanite" />
             </div>
             <h1 className="font-serif text-2xl font-bold mb-2">Welcome to mukoko</h1>
             <p className="text-text-secondary mb-6">
-              Sign in to save articles, personalize your feed, and sync across
-              devices.
+              Sign in to save articles, personalize your feed, and sync across devices.
             </p>
-            <div className="flex gap-3 justify-center">
-              <button
-                onClick={() => setShowSignIn(true)}
-                className="px-6 py-3 bg-primary text-on-primary font-medium rounded-xl hover:opacity-90 transition-opacity"
-              >
-                Sign In
-              </button>
-              <button
-                onClick={() => setShowSignIn(true)}
-                className="px-6 py-3 bg-surface border border-elevated text-foreground font-medium rounded-xl hover:bg-elevated transition-colors"
-              >
-                Create Account
-              </button>
-            </div>
+            <button
+              onClick={() => setShowSignIn(true)}
+              className="px-6 py-3 bg-primary text-on-primary font-medium rounded-xl hover:opacity-90 transition-opacity"
+            >
+              Sign in or create account
+            </button>
           </div>
         )}
 
-        {/* Settings */}
-        <div className="bg-surface border border-elevated rounded-2xl overflow-hidden">
-          <h2 className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-text-tertiary border-b border-elevated">
-            Settings
-          </h2>
-
-          {/* Theme Toggle */}
-          <button
-            onClick={cycleTheme}
-            className="w-full flex items-center justify-between px-4 py-4 hover:bg-elevated transition-colors border-b border-elevated"
-          >
-            <div className="flex items-center gap-3">
-              {getThemeIcon()}
-              <span className="font-medium">Appearance</span>
-            </div>
-            <div className="flex items-center gap-2 text-text-secondary">
-              <span>{getThemeLabel()}</span>
-              <ChevronRight className="w-4 h-4" />
-            </div>
-          </button>
-
-          {/* Notifications */}
-          <button className="w-full flex items-center justify-between px-4 py-4 hover:bg-elevated transition-colors">
-            <div className="flex items-center gap-3">
-              <Bell className="w-5 h-5" />
-              <span className="font-medium">Notifications</span>
-            </div>
-            <ChevronRight className="w-4 h-4 text-text-tertiary" />
-          </button>
-        </div>
-
-        {/* About */}
-        <div className="bg-surface border border-elevated rounded-2xl overflow-hidden mt-6">
-          <h2 className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-text-tertiary border-b border-elevated">
-            About
-          </h2>
-
-          <Link
-            href="/help"
-            className="flex items-center justify-between px-4 py-4 hover:bg-elevated transition-colors border-b border-elevated"
-          >
-            <div className="flex items-center gap-3">
-              <HelpCircle className="w-5 h-5" />
-              <span className="font-medium">Help Center</span>
-            </div>
-            <ChevronRight className="w-4 h-4 text-text-tertiary" />
-          </Link>
-
-          <Link
-            href="/terms"
-            className="flex items-center justify-between px-4 py-4 hover:bg-elevated transition-colors border-b border-elevated"
-          >
-            <div className="flex items-center gap-3">
-              <FileText className="w-5 h-5" />
-              <span className="font-medium">Terms of Service</span>
-            </div>
-            <ChevronRight className="w-4 h-4 text-text-tertiary" />
-          </Link>
-
-          <Link
-            href="/privacy"
-            className="flex items-center justify-between px-4 py-4 hover:bg-elevated transition-colors"
-          >
-            <div className="flex items-center gap-3">
-              <Shield className="w-5 h-5" />
-              <span className="font-medium">Privacy Policy</span>
-            </div>
-            <ChevronRight className="w-4 h-4 text-text-tertiary" />
-          </Link>
-        </div>
-
-        {/* Footer */}
-        <div className="text-center mt-8 text-sm text-text-tertiary">
-          <p>Mukoko News v1.0.0</p>
-          <p className="mt-1">A Mukoko Product by Nyuchi Africa</p>
-        </div>
+        <SettingsCard themeIcon={getThemeIcon()} themeLabel={getThemeLabel()} onTheme={cycleTheme} />
+        <AboutCard />
+        <Footer />
       </div>
     );
   }
 
-  // Signed-in view
+  // ── Signed-in ──
   const displayName =
     [user.firstName, user.lastName].filter(Boolean).join(" ") || user.email;
 
   return (
     <div className="max-w-[600px] mx-auto px-6 py-12">
       <div className="text-center mb-10">
-        <div className="w-24 h-24 bg-gradient-to-br from-primary to-secondary rounded-full flex items-center justify-center mx-auto mb-6">
-          <User className="w-12 h-12 text-white" />
+        {/* Solid container fill — the brand forbids gradients on surfaces. */}
+        <div className="w-20 h-20 bg-container-tanzanite rounded-full flex items-center justify-center mx-auto mb-5">
+          <span className="font-serif text-2xl font-semibold text-on-container-tanzanite">
+            {initials(user.firstName, user.lastName, user.email)}
+          </span>
         </div>
         <h1 className="font-serif text-2xl font-bold mb-1">{displayName}</h1>
         <p className="text-text-secondary">{user.email}</p>
+      </div>
+
+      {/* Publisher tools — the Tier-2 claim entry point. */}
+      <div className="bg-surface border border-elevated rounded-2xl overflow-hidden mb-6">
+        <h2 className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-text-tertiary border-b border-elevated">
+          Publisher
+        </h2>
+        <Link
+          href="/publishers/claim"
+          className="flex items-center justify-between px-4 py-4 hover:bg-elevated transition-colors"
+        >
+          <div className="flex items-center gap-3">
+            <BadgeCheck className="w-5 h-5 text-secondary" />
+            <div>
+              <span className="font-medium block">Claim your publication</span>
+              <span className="text-xs text-text-tertiary">
+                Verify that you represent a news source
+              </span>
+            </div>
+          </div>
+          <ChevronRight className="w-4 h-4 text-text-tertiary" />
+        </Link>
       </div>
 
       <div className="bg-surface border border-elevated rounded-2xl overflow-hidden">
@@ -217,7 +167,7 @@ function ProfileContent() {
           className="w-full flex items-center justify-between px-4 py-4 hover:bg-elevated transition-colors"
         >
           <div className="flex items-center gap-3">
-            <Bell className="w-5 h-5" />
+            <Bookmark className="w-5 h-5" />
             <span className="font-medium">Saved Articles</span>
           </div>
           <ChevronRight className="w-4 h-4 text-text-tertiary" />
@@ -232,10 +182,77 @@ function ProfileContent() {
         Sign out
       </button>
 
-      <div className="text-center mt-8 text-sm text-text-tertiary">
-        <p>Mukoko News v1.0.0</p>
-        <p className="mt-1">A Mukoko Product by Nyuchi Africa</p>
-      </div>
+      <Footer />
+    </div>
+  );
+}
+
+function SettingsCard({
+  themeIcon,
+  themeLabel,
+  onTheme,
+}: {
+  themeIcon: React.ReactNode;
+  themeLabel: string;
+  onTheme: () => void;
+}) {
+  return (
+    <div className="bg-surface border border-elevated rounded-2xl overflow-hidden">
+      <h2 className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-text-tertiary border-b border-elevated">
+        Settings
+      </h2>
+      <button
+        onClick={onTheme}
+        className="w-full flex items-center justify-between px-4 py-4 hover:bg-elevated transition-colors"
+      >
+        <div className="flex items-center gap-3">
+          {themeIcon}
+          <span className="font-medium">Appearance</span>
+        </div>
+        <div className="flex items-center gap-2 text-text-secondary">
+          <span>{themeLabel}</span>
+          <ChevronRight className="w-4 h-4" />
+        </div>
+      </button>
+    </div>
+  );
+}
+
+function AboutCard() {
+  const links = [
+    { href: "/help", label: "Help Center", icon: HelpCircle },
+    { href: "/terms", label: "Terms of Service", icon: FileText },
+    { href: "/privacy", label: "Privacy Policy", icon: Shield },
+  ];
+  return (
+    <div className="bg-surface border border-elevated rounded-2xl overflow-hidden mt-6">
+      <h2 className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-text-tertiary border-b border-elevated">
+        About
+      </h2>
+      {links.map((l, i) => (
+        <Link
+          key={l.href}
+          href={l.href}
+          className={`flex items-center justify-between px-4 py-4 hover:bg-elevated transition-colors ${
+            i < links.length - 1 ? "border-b border-elevated" : ""
+          }`}
+        >
+          <div className="flex items-center gap-3">
+            <l.icon className="w-5 h-5" />
+            <span className="font-medium">{l.label}</span>
+          </div>
+          <ChevronRight className="w-4 h-4 text-text-tertiary" />
+        </Link>
+      ))}
+    </div>
+  );
+}
+
+function Footer() {
+  return (
+    <div className="text-center mt-8 text-sm text-text-tertiary">
+      <p>Mukoko News v1.0.0</p>
+      <p className="mt-1">A Mukoko Product by Nyuchi Africa</p>
     </div>
   );
 }

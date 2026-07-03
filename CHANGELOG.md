@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [5.4.0] - 2026-07-03
+
+### Added
+
+- **Publisher verification — claimant + admin surfaces (Tier 2).** The frontend half of the two-tier trust model (the gateway owns the engine + trust boost).
+  - **Claim your publication** (`/publishers/claim`, `src/components/publisher/publisher-claim-form.tsx`) — a signed-in user asserts they represent a news source. Submission is a Server Action (`src/lib/publisher/actions.ts`) that proxies to the gateway's authenticated `POST /api/user/publisher-claims` (the gateway resolves the claimant's identity and writes the `submitted` claim — the frontend never crosses the identity-domain boundary). Unauthenticated users see the inline sign-in first.
+  - **Admin review queue** (`/admin/publishers`, `src/components/admin/publisher-claims-review.tsx`) — reads pending claims from MongoDB (`getPublisherClaims` in `src/lib/mongodb/admin.ts`) and approves/rejects them through the gateway (`approvePublisherClaim`/`rejectPublisherClaim` in `src/lib/admin/gateway.ts`). New "Publishers" entry in the admin nav.
+  - **Verified-publisher badge on `/sources`** — `getSources` now `$lookup`s `newsMediaOrganizations` so the directory badges sources whose organization has passed Tier-2 verification.
+
+### Changed
+
+- **`/profile` redesign + de-duplication.** Collapsed the logged-out screen to a single inline sign-in flow (was two redundant buttons), replaced the gradient avatar with a brand-compliant solid `container-tanzanite` fill + initials (the brand forbids gradients on surfaces), and added a **Publisher** card linking to the claim flow.
+
 ## [5.3.0] - 2026-07-02
 
 ### Added

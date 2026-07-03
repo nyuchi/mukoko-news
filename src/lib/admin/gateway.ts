@@ -88,3 +88,45 @@ export async function moderateArticle(
     body: JSON.stringify({ moderationStatus: safeStatus, reason: safeReason }),
   })
 }
+
+/**
+ * Approve a publisher claim — Tier-2 verification (gateway:
+ * POST /api/admin/publisher-claims/:id/approve). The gateway verifies the org,
+ * stacks the trust boosts, and audits the change; this is the only writer.
+ */
+export async function approvePublisherClaim(
+  id: string,
+  reviewNotes?: string,
+): Promise<GatewayResult> {
+  const safeId = parseOrDefault(idSchema, id, null)
+  if (!safeId) {
+    return { ok: false, status: 400, error: 'Invalid claim id' }
+  }
+  const safeNotes = parseOrDefault(boundedTextSchema(1000), reviewNotes, undefined)
+  return callGateway(`/api/admin/publisher-claims/${encodeURIComponent(safeId)}/approve`, {
+    method: 'POST',
+    body: JSON.stringify({ reviewNotes: safeNotes }),
+  })
+}
+
+/**
+ * Reject a publisher claim (gateway: POST /api/admin/publisher-claims/:id/reject).
+ * A reason is required — the gateway records it and leaves all trust state alone.
+ */
+export async function rejectPublisherClaim(
+  id: string,
+  rejectionReason: string,
+): Promise<GatewayResult> {
+  const safeId = parseOrDefault(idSchema, id, null)
+  if (!safeId) {
+    return { ok: false, status: 400, error: 'Invalid claim id' }
+  }
+  const safeReason = parseOrDefault(boundedTextSchema(1000), rejectionReason?.trim(), '')
+  if (!safeReason) {
+    return { ok: false, status: 400, error: 'A rejection reason is required.' }
+  }
+  return callGateway(`/api/admin/publisher-claims/${encodeURIComponent(safeId)}/reject`, {
+    method: 'POST',
+    body: JSON.stringify({ rejectionReason: safeReason }),
+  })
+}

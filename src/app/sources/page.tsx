@@ -9,6 +9,7 @@ import {
   CheckCircle,
   Clock,
   Search,
+  BadgeCheck,
 } from "lucide-react";
 import { SourceIcon } from "@/components/ui/source-icon";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
@@ -31,6 +32,8 @@ interface Source {
   last_error?: string;
   article_count?: number;
   latest_article_at?: string;
+  verified?: boolean;
+  publisher_tier?: string;
 }
 
 type SortKey = "articles" | "name" | "recent" | "errors";
@@ -275,6 +278,15 @@ function SourceRow({ source }: { source: Source }) {
           >
             {source.name}
           </Link>
+          {source.verified && (
+            <span
+              className="inline-flex items-center gap-1 shrink-0 rounded-full bg-container-sodalite px-1.5 py-0.5 text-[10px] font-medium text-on-container-sodalite"
+              title="Verified publisher"
+            >
+              <BadgeCheck className="w-3 h-3" />
+              Verified
+            </span>
+          )}
           {country && (
             <span className="text-sm shrink-0" title={country.name}>
               {country.flag}

@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { ShieldAlert, LayoutDashboard, Radio, Newspaper } from 'lucide-react'
+import { ShieldAlert, LayoutDashboard, Radio, Newspaper, BadgeCheck } from 'lucide-react'
 import { withAuth, getSignInUrl } from '@workos-inc/authkit-nextjs'
 import { InlineSignIn } from '@/components/auth/inline-sign-in'
 import { resolveTier, canAccessAdmin, TIER_LABELS } from '@/lib/auth/roles'
@@ -15,6 +15,7 @@ const ADMIN_NAV = [
   { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/admin/sources', label: 'Sources', icon: Radio },
   { href: '/admin/articles', label: 'Moderation', icon: Newspaper },
+  { href: '/admin/publishers', label: 'Publishers', icon: BadgeCheck },
 ]
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {

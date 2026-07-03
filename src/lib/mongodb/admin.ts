@@ -195,6 +195,77 @@ export async function getAdminSources(): Promise<AdminSource[]> {
   }))
 }
 
+export interface AdminPublisherClaim {
+  id: string
+  status: string
+  claimedRole: string
+  organizationName: string | null
+  mediaOrganizationId: string | null
+  proposedOrgUrl: string | null
+  evidenceUrl: string | null
+  evidenceNotes: string | null
+  createdAt?: string
+}
+
+interface MongoPublisherClaim {
+  _id: string
+  status?: string
+  claimedRole?: string
+  mediaOrganizationId?: string | null
+  proposedOrgName?: string | null
+  proposedOrgUrl?: string | null
+  evidenceUrl?: string | null
+  evidenceNotes?: string | null
+  createdAt?: Date
+}
+
+/** Actionable claim states — the review queue. */
+const REVIEWABLE_CLAIM_STATES = ['submitted', 'in_review']
+
+/**
+ * Publisher-verification claims for the admin review queue (read-only; approve/
+ * reject are gateway mutations — see src/lib/admin/gateway.ts). Reads
+ * `news.publisherVerifications` and resolves each claim's org display name from
+ * `newsMediaOrganizations` in one `$in` lookup.
+ */
+export async function getPublisherClaims(statuses?: string[]): Promise<AdminPublisherClaim[]> {
+  const db = await getDb()
+  const filter = statuses?.length ? statuses : REVIEWABLE_CLAIM_STATES
+  const docs = await db
+    .collection<MongoPublisherClaim>('publisherVerifications')
+    .find({ status: { $in: filter } })
+    .sort({ createdAt: 1 })
+    .limit(200)
+    .toArray()
+
+  const orgIds = [
+    ...new Set(
+      docs.map((d) => d.mediaOrganizationId).filter((v): v is string => typeof v === 'string'),
+    ),
+  ]
+  const orgNames = new Map<string, string>()
+  if (orgIds.length) {
+    const orgs = await db
+      .collection<{ _id: string; name?: string }>('newsMediaOrganizations')
+      .find({ _id: { $in: orgIds } }, { projection: { name: 1 } })
+      .toArray()
+    for (const o of orgs) if (typeof o.name === 'string') orgNames.set(o._id, o.name)
+  }
+
+  return docs.map((d) => ({
+    id: String(d._id),
+    status: d.status ?? 'submitted',
+    claimedRole: d.claimedRole ?? '',
+    mediaOrganizationId: d.mediaOrganizationId ?? null,
+    organizationName:
+      (d.mediaOrganizationId && orgNames.get(d.mediaOrganizationId)) || d.proposedOrgName || null,
+    proposedOrgUrl: d.proposedOrgUrl ?? null,
+    evidenceUrl: d.evidenceUrl ?? null,
+    evidenceNotes: d.evidenceNotes ?? null,
+    createdAt: d.createdAt?.toISOString(),
+  }))
+}
+
 /** Articles for the moderation queue, filtered by moderationStatus. */
 export async function getAdminArticles(moderationStatus?: string): Promise<AdminArticle[]> {
   const db = await getDb()
