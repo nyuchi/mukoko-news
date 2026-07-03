@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Verified-publisher dashboard (`/dashboard`).** A self-service home for approved media houses (gated to verified publishers; others are routed to the claim flow or a "claim under review" state). Server-rendered gate (`src/app/dashboard/page.tsx`) + client dashboard (`src/components/publisher/dashboard/publisher-dashboard.tsx`) backed by gateway Server Actions (`src/lib/publisher/dashboard.ts`):
+  - **Trust score breakdown** — the headline: average trust across the org's feeds plus the levers a publisher controls (share of articles with a cover image, with full content, and successfully processed), each with a progress bar and an actionable hint when it needs attention.
+  - **Your feeds** — per-source health, trust score, article counts, last-fetch errors, and a **"Submit a feed directly"** form (Google-News style): hand us a full-content feed URL and we ingest it automatically (staff-reviewed, marked pending) instead of scraping.
+  - **Organization profile** — inline edit of name/website/description (verification/trust fields are never editable).
+  - **Analytics** — article volume, last-30-days, and view/like/save totals.
+  - Reached from the `/profile` **Publisher dashboard** card (which now points at `/dashboard`).
 - **Publisher verification — claimant + admin surfaces (Tier 2).** The frontend half of the two-tier trust model (the gateway owns the engine + trust boost).
   - **Claim your publication** (`/publishers/claim`, `src/components/publisher/publisher-claim-form.tsx`) — a signed-in user asserts they represent a news source. Submission is a Server Action (`src/lib/publisher/actions.ts`) that proxies to the gateway's authenticated `POST /api/user/publisher-claims` (the gateway resolves the claimant's identity and writes the `submitted` claim — the frontend never crosses the identity-domain boundary). Unauthenticated users see the inline sign-in first.
   - **Admin review queue** (`/admin/publishers`, `src/components/admin/publisher-claims-review.tsx`) — reads pending claims from MongoDB (`getPublisherClaims` in `src/lib/mongodb/admin.ts`) and approves/rejects them through the gateway (`approvePublisherClaim`/`rejectPublisherClaim` in `src/lib/admin/gateway.ts`). New "Publishers" entry in the admin nav.

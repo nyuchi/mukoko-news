@@ -127,15 +127,15 @@ function ProfileContent() {
           Publisher
         </h2>
         <Link
-          href="/publishers/claim"
+          href="/dashboard"
           className="flex items-center justify-between px-4 py-4 hover:bg-elevated transition-colors"
         >
           <div className="flex items-center gap-3">
             <BadgeCheck className="w-5 h-5 text-secondary" />
             <div>
-              <span className="font-medium block">Claim your publication</span>
+              <span className="font-medium block">Publisher dashboard</span>
               <span className="text-xs text-text-tertiary">
-                Verify that you represent a news source
+                Manage your publication, feeds and verification
               </span>
             </div>
           </div>
