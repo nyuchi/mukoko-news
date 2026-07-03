@@ -1,0 +1,28 @@
+{
+  "serverInfo": {
+    "name": "mukoko-news",
+    "version": "2.0.0",
+    "title": "Mukoko News",
+    "description": "Pan-African news aggregation for Zimbabwe and 15 other African countries — briefings, search, source views and open-data analytics."
+  },
+  "transport": {
+    "type": "streamable-http",
+    "endpoint": "https://news.mukoko.dev/mcp"
+  },
+  "capabilities": {
+    "tools": true,
+    "resources": false,
+    "prompts": false
+  },
+  "authorization": {
+    "type": "oauth2",
+    "authorization_servers": ["https://identity.nyuchi.com"],
+    "required": false
+  },
+  "documentation": "https://news.mukoko.com/auth.md",
+  "website": "https://news.mukoko.com",
+  "provider": {
+    "name": "Nyuchi Africa",
+    "url": "https://news.mukoko.dev"
+  }
+}

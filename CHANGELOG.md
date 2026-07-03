@@ -211,7 +211,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Version History
 
 | Version | Date | Summary |
-|---------|------|---------|
+| --- | --- | --- |
 | [5.1.0] | 2026-06-21 | Three-repo split — frontend only |
 | [5.0.0] | 2026-06-15 | newsdata.io ingestion, MCP v2, Sources page |
 | [4.0.2] | 2026-01-24 | Schema.org SEO, mobile nav, XSS fixes |

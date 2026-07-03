@@ -7,7 +7,6 @@ import { SITE_URL, GATEWAY_URL, MCP_ENDPOINT, OAUTH_ISSUER, MCP_CLIENT_ID } from
 // advertise a dynamic-registration endpoint because the platform doesn't run
 // open DCR — agents use the fixed public client id below.
 export const runtime = 'edge'
-export const dynamic = 'force-static'
 
 const BODY = `# auth.md
 

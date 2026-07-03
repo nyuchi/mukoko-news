@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { NextRequest } from 'next/server';
 
-import { GET as serverCard } from '../.well-known/mcp/server-card.json/route';
 import { GET as protectedResource } from '../.well-known/oauth-protected-resource/route';
 import { GET as authServer } from '../.well-known/oauth-authorization-server/route';
 import { GET as authMd } from '../auth.md/route';
@@ -17,11 +18,13 @@ vi.mock('@/lib/actions/feed', () => ({
   searchArticlesAction: vi.fn(),
 }));
 
-describe('MCP server card', () => {
-  it('exposes serverInfo, the MCP transport endpoint and tool capability', async () => {
-    const res = serverCard();
-    expect(res.headers.get('content-type')).toContain('application/json');
-    const body = await res.json();
+describe('MCP server card (static /.well-known/mcp/server-card.json)', () => {
+  it('is valid JSON exposing serverInfo, the MCP transport endpoint and tool capability', () => {
+    const raw = readFileSync(
+      join(process.cwd(), 'public/.well-known/mcp/server-card.json'),
+      'utf-8'
+    );
+    const body = JSON.parse(raw); // also asserts it's valid JSON (matches the CI check)
     expect(body.serverInfo.name).toBe('mukoko-news');
     expect(body.serverInfo.version).toBeTruthy();
     expect(body.transport.endpoint).toBe('https://news.mukoko.dev/mcp');

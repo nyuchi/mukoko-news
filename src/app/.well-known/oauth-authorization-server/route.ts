@@ -5,7 +5,6 @@ import { oauthAuthorizationServerMetadata, AGENT_JSON_HEADERS } from '@/lib/agen
 // site at news.mukoko.com finds the same authorization server. Served at
 // /.well-known/oauth-authorization-server.
 export const runtime = 'edge'
-export const dynamic = 'force-static'
 
 export function GET() {
   return new Response(JSON.stringify(oauthAuthorizationServerMetadata(), null, 2), {

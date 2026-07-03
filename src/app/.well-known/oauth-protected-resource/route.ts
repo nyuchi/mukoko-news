@@ -5,7 +5,6 @@ import { SITE_URL, GATEWAY_URL, OAUTH_ISSUER, AGENT_JSON_HEADERS } from '@/lib/a
 // personalized MCP tools + the gateway's /api/user & /api/admin surfaces) and
 // what scopes exist. Served at /.well-known/oauth-protected-resource.
 export const runtime = 'edge'
-export const dynamic = 'force-static'
 
 export function GET() {
   const metadata = {

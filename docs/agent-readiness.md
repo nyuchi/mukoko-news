@@ -32,7 +32,7 @@ gateway's OAuth/MCP config changes.
   HTML page (`Vary: Accept`).
 - **auth.md is honest about registration.** The platform does **not** run open
   Dynamic Client Registration, so we advertise the fixed **public MCP client id**
-  + authorization-code/PKCE flow rather than a `register_uri` that would 404.
+  with the authorization-code/PKCE flow rather than a `register_uri` that would 404.
 - **OIDC discovery**: we publish `oauth-authorization-server` (RFC 8414), which
   the audit accepts in lieu of `openid-configuration`. We deliberately do *not*
   publish an `openid-configuration` we can't fully back (e.g. a guessed
