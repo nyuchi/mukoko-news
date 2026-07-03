@@ -414,10 +414,12 @@ function ProfileCard({ org }: { org: DashboardOrganization }) {
           <Row
             label="Website"
             value={
-              org.url ? (
+              org.url && /^https?:\/\//i.test(org.url) ? (
                 <a href={org.url} target="_blank" rel="noopener noreferrer" className="text-secondary hover:underline inline-flex items-center gap-1">
                   {org.url} <ExternalLink className="w-3 h-3" />
                 </a>
+              ) : org.url ? (
+                <span className="break-all">{org.url}</span>
               ) : (
                 <span className="text-text-tertiary">Not set</span>
               )
