@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [5.5.0] - 2026-07-03
+
+### Added
+
+- **Agent-readiness / AI-agent discovery.** Makes `news.mukoko.com` discoverable and usable by AI agents (tracks the isitagentready.com checklist). Shared values in `src/lib/agent-discovery.ts` mirror the gateway's real MCP/OAuth config. See `docs/agent-readiness.md`.
+  - **MCP Server Card** (SEP-1649) at `/.well-known/mcp/server-card.json` — points agents at the MCP server (`news.mukoko.dev/mcp`), tool capability, auth hint.
+  - **OAuth discovery** — `/.well-known/oauth-authorization-server` (RFC 8414, mirrors the WorkOS issuer `identity.nyuchi.com` + PKCE) and `/.well-known/oauth-protected-resource` (RFC 9728).
+  - **`/auth.md`** — agent authentication guide (served as `text/markdown`); honest about the flow (public MCP client + authorization-code/PKCE, no open DCR).
+  - **Markdown for Agents** — `src/middleware.ts` rewrites `GET` requests with `Accept: text/markdown` (and not `text/html`) for `/` and `/article/[id]` to `/api/agent-md`, which returns a clean markdown representation (`Content-Type: text/markdown` + `x-markdown-tokens`, `Vary: Accept`). Browsers keep the HTML page. Implemented in-app because the site runs on Vercel (Cloudflare's auto-markdown doesn't apply).
+  - **WebMCP** — `src/components/agent/webmcp-provider.tsx` registers in-browser tools (`search_mukoko_news`, `get_latest_headlines`, `open_article`) via `navigator.modelContext`, backed by the same Server Actions the UI uses (no secrets client-side).
+  - **`/llms.txt`** pointing agents at the above.
+  - **Infra (documented, not code)** in `docs/agent-readiness.md`: DNS-AID SVCB records + DNSSEC for the `mukoko.com` zone.
+
 ## [5.4.0] - 2026-07-03
 
 ### Added

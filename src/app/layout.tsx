@@ -8,6 +8,7 @@ import { Footer } from '@/components/layout/footer';
 import { BottomNav } from '@/components/layout/bottom-nav';
 import { OnboardingModal } from '@/components/onboarding-modal';
 import { ServiceWorkerRegister } from '@/components/pwa/sw-register';
+import { WebMcpProvider } from '@/components/agent/webmcp-provider';
 import { OrganizationJsonLd, WebSiteJsonLd } from '@/components/ui/json-ld';
 import { AuthKitProvider } from '@workos-inc/authkit-nextjs/components';
 
@@ -174,6 +175,9 @@ export default function RootLayout({
 
             {/* PWA: registers /sw.js (production only) + update banner */}
             <ServiceWorkerRegister />
+
+            {/* WebMCP: exposes search/headlines/open-article tools to in-page agents */}
+            <WebMcpProvider />
           </PreferencesProvider>
         </ThemeProvider>
         </AuthKitProvider>

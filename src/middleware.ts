@@ -1,4 +1,5 @@
 import { authkitMiddleware } from '@workos-inc/authkit-nextjs'
+import { NextRequest, NextResponse, type NextFetchEvent } from 'next/server'
 
 // WorkOS AuthKit middleware — session refresh only.
 //
@@ -15,15 +16,41 @@ import { authkitMiddleware } from '@workos-inc/authkit-nextjs'
 // (src/app/admin/layout.tsx) which calls withAuth() and enforces RBAC via
 // src/lib/auth/roles.ts, redirecting unauthenticated users to the hosted
 // sign-in page.
-export default authkitMiddleware({
+const authkit = authkitMiddleware({
   redirectUri: 'https://news.mukoko.com/auth/callback',
 })
 
+// Markdown for Agents: an agent that sends `Accept: text/markdown` gets a clean
+// markdown representation of `/` and `/article/[id]`, while browsers keep the
+// HTML page. We rewrite to the /api/agent-md responder (which sets
+// Content-Type: text/markdown). Runs BEFORE AuthKit so these responses stay
+// cookie-free and cacheable.
+const MARKDOWN_PATHS = /^\/(?:article\/[^/]+\/?)?$/
+
+export default function middleware(req: NextRequest, event: NextFetchEvent) {
+  if (req.method === 'GET') {
+    const accept = req.headers.get('accept') || ''
+    // Prefer markdown only when it's explicitly acceptable and HTML isn't (a
+    // browser sends `text/html,...`; an agent sends `text/markdown`).
+    if (/text\/markdown/i.test(accept) && !/text\/html/i.test(accept)) {
+      const { pathname } = req.nextUrl
+      if (MARKDOWN_PATHS.test(pathname)) {
+        const url = req.nextUrl.clone()
+        url.pathname = '/api/agent-md'
+        url.search = ''
+        url.searchParams.set('path', pathname)
+        return NextResponse.rewrite(url)
+      }
+    }
+  }
+  return authkit(req, event)
+}
+
 export const config = {
   matcher: [
-    // sw.js and manifest.json are static public assets fetched by the browser
-    // itself (service-worker update checks / install prompts) — no session to
-    // refresh, so they are excluded like the other static files.
-    '/((?!_next/static|_next/image|favicon.ico|embed|robots.txt|sitemap.xml|sw.js|manifest.json).*)',
+    // Static assets + the public agent-discovery documents are excluded: they
+    // carry no session and must stay cookie-free / cacheable for agents
+    // (.well-known/* = MCP server card + OAuth metadata; auth.md = auth guide).
+    '/((?!_next/static|_next/image|favicon.ico|embed|robots.txt|sitemap.xml|sw.js|manifest.json|\\.well-known|auth\\.md).*)',
   ],
 }
