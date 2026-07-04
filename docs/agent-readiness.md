@@ -9,7 +9,7 @@ for whoever manages the `mukoko.com` zone.
 
 | Capability | Where | URL |
 | --- | --- | --- |
-| **MCP Server Card** (SEP-1649) | `src/app/.well-known/mcp/server-card.json/route.ts` | `/.well-known/mcp/server-card.json` |
+| **MCP Server Card** (SEP-1649) | `public/.well-known/mcp/server-card.json` (static) | `/.well-known/mcp/server-card.json` |
 | **OAuth Authorization Server Metadata** (RFC 8414) | `src/app/.well-known/oauth-authorization-server/route.ts` | `/.well-known/oauth-authorization-server` |
 | **OAuth Protected Resource Metadata** (RFC 9728) | `src/app/.well-known/oauth-protected-resource/route.ts` | `/.well-known/oauth-protected-resource` |
 | **auth.md** (agent auth guide) | `src/app/auth.md/route.ts` | `/auth.md` |
@@ -38,39 +38,50 @@ gateway's OAuth/MCP config changes.
   publish an `openid-configuration` we can't fully back (e.g. a guessed
   `userinfo_endpoint`).
 
-## Infrastructure — needs DNS/registrar access (NOT in this repo)
+## DNS infrastructure (Cloudflare zone `mukoko.com`)
 
-### 1. DNS for AI Discovery (DNS-AID)
+### 1. DNS for AI Discovery (DNS-AID) — ✅ published
 
-Publish agent-discovery entrypoint records under the zone so resolvers can find
-the MCP (and any A2A) endpoints without an HTTP round-trip.
+ServiceMode SVCB entrypoint records under `_agents.news.mukoko.com` let resolvers
+find the MCP / A2A endpoints without an HTTP round-trip.
 Refs: [draft-mozleywilliams-dnsop-dnsaid](https://datatracker.ietf.org/doc/draft-mozleywilliams-dnsop-dnsaid/),
 [RFC 9460 (SVCB/HTTPS)](https://www.rfc-editor.org/rfc/rfc9460).
 
-Add **ServiceMode SVCB** records (the MCP server is hosted on the gateway host
-`news.mukoko.dev`):
+Live records (verified resolving via Cloudflare + Google DoH):
 
 ```
-; MCP discovery entrypoint
-_index._agents.news.mukoko.com. 3600 IN SVCB 1 news.mukoko.dev. (
-    alpn="h2,h3" port=443 )
-_mcp._agents.news.mukoko.com.   3600 IN SVCB 1 news.mukoko.dev. (
-    alpn="h2" port=443 )
+_index._agents.news.mukoko.com. 3600 IN SVCB 1 news.mukoko.dev. alpn="mcp" port=443 mandatory=alpn,port
+_mcp._agents.news.mukoko.com.   3600 IN SVCB 1 news.mukoko.dev. alpn="mcp" port=443 mandatory=alpn,port
+_a2a._agents.news.mukoko.com.   3600 IN SVCB 1 news.mukoko.com. alpn="a2a" port=443 mandatory=alpn,port
 ```
 
-- Point the endpoint at the host actually serving `/mcp` (`news.mukoko.dev`).
-- If/when an A2A endpoint exists, add `_a2a._agents.news.mukoko.com.` similarly.
-- Confirm with: `dig SVCB _index._agents.news.mukoko.com +dnssec`.
+- `_index` / `_mcp` → the gateway host serving `/mcp` (`news.mukoko.dev`).
+- `_a2a` → `news.mukoko.com` (repoint the target if the A2A endpoint moves to a
+  dedicated host).
+- Verify: `dig SVCB _index._agents.news.mukoko.com +dnssec`.
 
-### 2. DNSSEC on the discovery zone
+### 2. DNSSEC — ⏳ signed, pending the registrar DS
 
-Sign the `mukoko.com` zone (or the delegated `_agents` sub-zone) with **DNSSEC**
-so validating resolvers return authenticated discovery data.
+The zone is DNSSEC-signed at Cloudflare (DNSKEYs published). `mukoko.com` is
+registered at **GoDaddy** (DNS is on Cloudflare, but the registrar is GoDaddy),
+so the chain of trust is completed by adding the **DS record at GoDaddy** — it is
+**not** automatic (that only happens on Cloudflare Registrar).
 
-- Cloudflare: **DNS → Settings → DNSSEC → Enable**, then add the returned **DS
-  record** at the registrar. (If DNS is elsewhere, enable signing there and
-  publish the DS at the registrar.)
-- Verify: `dig DNSKEY mukoko.com +dnssec` and check the DS chain at the registrar.
+Add at **GoDaddy → mukoko.com → DNSSEC**:
+
+| Field | Value |
+| --- | --- |
+| Key Tag | `2371` |
+| Algorithm | `13` (ECDSA P-256 SHA-256) |
+| Digest Type | `2` (SHA-256) |
+| Digest | `06DF6D2D55147420459DB2E0FEC64F911A8E43E9D0105C059FDD06D83FFC6867` |
+
+Once GoDaddy publishes the DS, the `.com` parent gets it, RDAP
+`secureDNS.delegationSigned` flips to `true`, and Cloudflare's DNSSEC status goes
+`pending → active` (usually within an hour).
+
+- Verify: `dig DS mukoko.com +dnssec` (non-empty once live) and
+  `dig DNSKEY mukoko.com +dnssec`.
 
 ## Validate
 
@@ -84,5 +95,5 @@ curl -sI -H 'Accept: text/markdown' https://news.mukoko.com/           # Content
 ```
 
 Then re-run the isitagentready.com audit — every `checks.discovery.*.status`
-backed by the code above should read `"pass"`; the two DNS checks pass once the
-records + DNSSEC are live.
+backed by the code above should read `"pass"`. **DNS-AID** passes now (records
+resolve); **DNSSEC** passes once the GoDaddy DS is published (§2 above).
