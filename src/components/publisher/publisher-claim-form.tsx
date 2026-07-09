@@ -4,7 +4,6 @@ import { useState, useTransition } from 'react'
 import Link from 'next/link'
 import { BadgeCheck, CheckCircle2, Loader2 } from 'lucide-react'
 import { useAuth } from '@workos-inc/authkit-nextjs/components'
-import { InlineSignIn } from '@/components/auth/inline-sign-in'
 import { submitPublisherClaim, type PublisherClaimInput } from '@/lib/publisher/actions'
 
 const ROLES = [
@@ -36,11 +35,16 @@ export function PublisherClaimForm() {
 
   if (!user) {
     return (
-      <div className="rounded-[var(--radius-card)] bg-surface ring-1 ring-foreground/10 p-8">
-        <p className="mb-6 text-center text-text-secondary">
+      <div className="rounded-[var(--radius-card)] bg-surface ring-1 ring-foreground/10 p-8 text-center">
+        <p className="mb-6 text-text-secondary">
           Sign in to claim and verify your publication.
         </p>
-        <InlineSignIn redirectTo="/publishers/claim" />
+        <Link
+          href="/sign-in?returnTo=/publishers/claim"
+          className="inline-block px-6 py-3 bg-primary text-on-primary font-medium rounded-xl hover:opacity-90 transition-opacity"
+        >
+          Sign in to continue
+        </Link>
       </div>
     )
   }
