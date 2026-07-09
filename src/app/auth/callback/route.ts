@@ -31,7 +31,7 @@ function sanitizeErrorCode(value: string): string {
   return slug || 'oauth_error'
 }
 
-/** Send the user back to the inline sign-in form with an error marker. */
+/** Send the user to the sign-in error card with an error marker (no auto-retry loop). */
 function redirectToSignIn(request: NextRequest, reason: string): NextResponse {
   const url = new URL('/sign-in', request.nextUrl.origin)
   url.searchParams.set('error', reason)

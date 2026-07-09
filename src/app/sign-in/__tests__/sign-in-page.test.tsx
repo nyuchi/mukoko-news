@@ -2,10 +2,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import SignInPage from '../page';
 
-// Owner doctrine (2026-07-02, superseding the earlier hosted-redirect decision):
-// /sign-in renders the INLINE (embedded) AuthKit form — it must NOT redirect
-// unauthenticated users off-site. It only redirects when the user is already
-// signed in (straight to `returnTo`). next/navigation's redirect() throws.
+// Owner doctrine (2026-07-09, superseding the 2026-07-02 inline-form doctrine):
+// /sign-in redirects unauthenticated users to the WORKOS-HOSTED AuthKit page,
+// which owns the whole flow (Magic Auth, passwords, passkeys, required MFA) and
+// establishes the shared cross-app session. Already-signed-in users skip
+// straight to `returnTo`. A callback failure (?error=…) renders a manual-retry
+// error card instead of auto-redirecting (no redirect loop).
+// next/navigation's redirect() throws.
 
 const { mockWithAuth, mockGetSignInUrl, mockRedirect } = vi.hoisted(() => ({
   mockWithAuth: vi.fn(),
@@ -37,23 +40,6 @@ vi.mock('@/components/ui/app-icon', () => ({
   AppIcon: () => <div data-testid="app-icon" />,
 }));
 
-// The embedded form is covered by its own test; here we only assert the page
-// renders it (not a redirect) and wires the right props.
-vi.mock('@/components/auth/inline-sign-in', () => ({
-  InlineSignIn: (props: {
-    redirectTo?: string;
-    fallbackUrl?: string;
-    initialError?: string | null;
-  }) => (
-    <div
-      data-testid="inline-sign-in"
-      data-redirect-to={props.redirectTo ?? ''}
-      data-fallback-url={props.fallbackUrl ?? ''}
-      data-initial-error={props.initialError ?? ''}
-    />
-  ),
-}));
-
 const HOSTED_URL = 'https://identity.nyuchi.com/authorize?client_id=client_123';
 
 async function renderPage(returnTo?: string, error?: string) {
@@ -67,58 +53,59 @@ beforeEach(() => {
   mockGetSignInUrl.mockResolvedValue(HOSTED_URL);
 });
 
-describe('SignInPage (inline AuthKit form)', () => {
-  it('renders the embedded form for unauthenticated users — no off-site redirect', async () => {
-    await renderPage();
-    expect(screen.getByTestId('inline-sign-in')).toBeInTheDocument();
-    expect(mockRedirect).not.toHaveBeenCalled();
+describe('SignInPage (hosted AuthKit redirect)', () => {
+  it('redirects unauthenticated users to the hosted AuthKit page', async () => {
+    await expect(renderPage()).rejects.toThrow(`NEXT_REDIRECT:${HOSTED_URL}`);
+    expect(mockGetSignInUrl).toHaveBeenCalledWith({ returnTo: '/profile' });
   });
 
-  it('shows the brand header and a "Back to news" link', async () => {
-    await renderPage();
-    expect(screen.getByTestId('app-icon')).toBeInTheDocument();
-    expect(screen.getByText('mukoko')).toBeInTheDocument();
-    expect(screen.getByText(/Pan-African news/)).toBeInTheDocument();
-    const back = screen.getByRole('link', { name: /Back to news/i });
-    expect(back).toHaveAttribute('href', '/');
-  });
-
-  it('passes a safe returnTo through to the form as redirectTo', async () => {
-    await renderPage('/admin');
-    expect(screen.getByTestId('inline-sign-in')).toHaveAttribute('data-redirect-to', '/admin');
+  it('passes a safe returnTo through to the hosted URL', async () => {
+    await expect(renderPage('/admin')).rejects.toThrow(`NEXT_REDIRECT:${HOSTED_URL}`);
     expect(mockGetSignInUrl).toHaveBeenCalledWith({ returnTo: '/admin' });
   });
 
   it('falls back to /profile for a protocol-relative returnTo (//evil.example)', async () => {
-    await renderPage('//evil.example');
-    expect(screen.getByTestId('inline-sign-in')).toHaveAttribute('data-redirect-to', '/profile');
+    await expect(renderPage('//evil.example')).rejects.toThrow('NEXT_REDIRECT');
+    expect(mockGetSignInUrl).toHaveBeenCalledWith({ returnTo: '/profile' });
   });
 
   it('falls back to /profile for an absolute external returnTo', async () => {
-    await renderPage('https://evil.example/phish');
-    expect(screen.getByTestId('inline-sign-in')).toHaveAttribute('data-redirect-to', '/profile');
+    await expect(renderPage('https://evil.example/phish')).rejects.toThrow('NEXT_REDIRECT');
+    expect(mockGetSignInUrl).toHaveBeenCalledWith({ returnTo: '/profile' });
   });
 
-  it('surfaces a callback error to the form via initialError', async () => {
-    await renderPage(undefined, 'exchange_failed');
-    expect(screen.getByTestId('inline-sign-in').getAttribute('data-initial-error')).not.toBe('');
-  });
-
-  it('provides the hosted page as a fallback link URL', async () => {
-    await renderPage();
-    expect(screen.getByTestId('inline-sign-in')).toHaveAttribute('data-fallback-url', HOSTED_URL);
-  });
-
-  it('still renders the form (not a blank page) when withAuth() throws', async () => {
-    mockWithAuth.mockRejectedValue(new Error('WorkOS misconfigured'));
-    await renderPage();
-    expect(screen.getByTestId('inline-sign-in')).toBeInTheDocument();
-    expect(mockRedirect).not.toHaveBeenCalled();
-  });
-
-  it('redirects already signed-in users straight to returnTo (no form)', async () => {
+  it('redirects already signed-in users straight to returnTo (never the hosted page)', async () => {
     mockWithAuth.mockResolvedValue({ user: { id: 'user_123' } });
     await expect(renderPage('/saved')).rejects.toThrow('NEXT_REDIRECT:/saved');
     expect(mockGetSignInUrl).not.toHaveBeenCalled();
+  });
+
+  it('still redirects to the hosted page when withAuth() throws', async () => {
+    mockWithAuth.mockRejectedValue(new Error('WorkOS misconfigured'));
+    await expect(renderPage()).rejects.toThrow(`NEXT_REDIRECT:${HOSTED_URL}`);
+  });
+
+  it('renders a manual-retry error card for a callback error — no auto-redirect loop', async () => {
+    await renderPage(undefined, 'exchange_failed');
+    expect(mockRedirect).not.toHaveBeenCalled();
+    expect(screen.getByText('Sign-in interrupted')).toBeInTheDocument();
+    const retry = screen.getByRole('link', { name: /Try again/i });
+    expect(retry).toHaveAttribute('href', HOSTED_URL);
+  });
+
+  it('shows the brand header and a "Back to news" link on the error card', async () => {
+    await renderPage(undefined, 'exchange_failed');
+    expect(screen.getByTestId('app-icon')).toBeInTheDocument();
+    expect(screen.getByText('mukoko')).toBeInTheDocument();
+    const back = screen.getByRole('link', { name: /Back to news/i });
+    expect(back).toHaveAttribute('href', '/');
+  });
+
+  it('renders an unavailable card (not a blank page or a loop) when getSignInUrl() throws', async () => {
+    mockGetSignInUrl.mockRejectedValue(new Error('WorkOS misconfigured'));
+    await renderPage();
+    expect(mockRedirect).not.toHaveBeenCalled();
+    expect(screen.getByText('Sign-in unavailable')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Try again/i })).not.toBeInTheDocument();
   });
 });

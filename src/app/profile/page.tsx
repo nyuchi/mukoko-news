@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import {
   User,
@@ -19,7 +18,6 @@ import {
 import { useTheme } from "@/components/theme-provider";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { useAuth } from "@workos-inc/authkit-nextjs/components";
-import { InlineSignIn } from "@/components/auth/inline-sign-in";
 
 /** Two-letter initials for the avatar, falling back to the email's first letter. */
 function initials(first?: string | null, last?: string | null, email?: string | null): string {
@@ -33,7 +31,6 @@ function ProfileContent() {
   const { theme, cycleTheme } = useTheme();
   const { user, loading, signOut } = useAuth();
   const isLoggedIn = !!user;
-  const [showSignIn, setShowSignIn] = useState(false);
 
   const getThemeIcon = () => {
     switch (theme) {
@@ -65,37 +62,25 @@ function ProfileContent() {
     );
   }
 
-  // ── Signed-out: a single inline sign-in flow (no duplicate entry points) ──
+  // ── Signed-out: one entry point into the hosted AuthKit flow via /sign-in ──
   if (!isLoggedIn) {
     return (
       <div className="max-w-[600px] mx-auto px-6 py-12">
-        {showSignIn ? (
-          <div className="mb-10 rounded-[var(--radius-card)] bg-surface ring-1 ring-foreground/10 p-8">
-            <InlineSignIn redirectTo="/profile" />
-            <button
-              onClick={() => setShowSignIn(false)}
-              className="mt-4 w-full text-center text-sm text-text-secondary hover:text-foreground transition-colors focus-visible:outline-none focus-visible:underline"
-            >
-              Cancel
-            </button>
+        <div className="text-center mb-10">
+          <div className="w-20 h-20 bg-container-tanzanite rounded-full flex items-center justify-center mx-auto mb-6">
+            <User className="w-10 h-10 text-on-container-tanzanite" />
           </div>
-        ) : (
-          <div className="text-center mb-10">
-            <div className="w-20 h-20 bg-container-tanzanite rounded-full flex items-center justify-center mx-auto mb-6">
-              <User className="w-10 h-10 text-on-container-tanzanite" />
-            </div>
-            <h1 className="font-serif text-2xl font-bold mb-2">Welcome to mukoko</h1>
-            <p className="text-text-secondary mb-6">
-              Sign in to save articles, personalize your feed, and sync across devices.
-            </p>
-            <button
-              onClick={() => setShowSignIn(true)}
-              className="px-6 py-3 bg-primary text-on-primary font-medium rounded-xl hover:opacity-90 transition-opacity"
-            >
-              Sign in or create account
-            </button>
-          </div>
-        )}
+          <h1 className="font-serif text-2xl font-bold mb-2">Welcome to mukoko</h1>
+          <p className="text-text-secondary mb-6">
+            Sign in to save articles, personalize your feed, and sync across devices.
+          </p>
+          <Link
+            href="/sign-in?returnTo=/profile"
+            className="inline-block px-6 py-3 bg-primary text-on-primary font-medium rounded-xl hover:opacity-90 transition-opacity"
+          >
+            Sign in or create account
+          </Link>
+        </div>
 
         <SettingsCard themeIcon={getThemeIcon()} themeLabel={getThemeLabel()} onTheme={cycleTheme} />
         <AboutCard />

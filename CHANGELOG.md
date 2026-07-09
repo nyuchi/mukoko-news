@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Changed
+
+- **Sign-in is the WorkOS-HOSTED AuthKit page (owner correction 2026-07-09 — supersedes the 2026-07-02 inline-form doctrine).** Every sign-in entry point (`/sign-in`, `/admin`, `/dashboard`, `/profile`, the publisher claim form) now funnels through `/sign-in`, which redirects to `getSignInUrl({ returnTo })`. The hosted page owns the whole flow — Magic Auth, passwords, passkeys, and the environment-required **MFA step-up** — and maintains the shared AuthKit session on the auth domain, giving **continuous sign-in across the Mukoko/Nyuchi apps** (all AuthKit applications in one WorkOS environment). See `auth.md`.
+- `/sign-in` renders a manual-retry error card when the OAuth callback fails or `getSignInUrl()` errors (no auto-redirect loop); already-signed-in users still skip straight to `returnTo`.
+
+### Added
+
+- **AuthKit initiate-login endpoint** `GET /auth/login` (`src/app/auth/login/route.ts`) — the WorkOS application's `initiateLoginUri` points here; redirects into a fresh hosted sign-in (used by IdP-initiated flows and hosted-page restarts). Previously 404'd.
+
+### Fixed
+
+- **MFA sign-in failures.** The environment enforces `MFA = Required`, and the inline form's hand-rolled TOTP challenge/enrolment (`workos.multiFactorAuth`) on the critical path is what kept breaking sign-in. The hosted page handles MFA natively.
+
+### Removed
+
+- The embedded inline AuthKit sign-in form (`src/components/auth/inline-sign-in.tsx`) and its Magic Auth / MFA Server Actions (`requestEmailCode`, `verifyEmailCode`, `verifyMfaCode`, `MfaState`). `src/lib/auth/actions.ts` keeps `isSignedIn()` and `signOutAction()`.
+
 ## [5.5.0] - 2026-07-03
 
 ### Added

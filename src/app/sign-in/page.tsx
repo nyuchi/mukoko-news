@@ -1,10 +1,9 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, ShieldAlert } from 'lucide-react'
 import { withAuth, getSignInUrl } from '@workos-inc/authkit-nextjs'
 import { AppIcon } from '@/components/ui/app-icon'
-import { InlineSignIn } from '@/components/auth/inline-sign-in'
 
 export const metadata: Metadata = {
   title: 'Sign In',
@@ -12,9 +11,8 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 }
 
-// Auth reads a request-scoped session, and the hosted fallback URL is generated
-// per-request — never statically prerender this page (a blank prerender is one
-// way the page can render as an empty shell).
+// Auth reads a request-scoped session and the hosted AuthKit URL is generated
+// per-request — never statically prerender this page.
 export const dynamic = 'force-dynamic'
 
 interface SignInPageProps {
@@ -29,37 +27,43 @@ function safeReturnTo(value: string | undefined): string | undefined {
   return undefined
 }
 
-const CALLBACK_ERROR =
-  'We could not complete that sign-in. Please try again with your email below.'
-
 /**
- * Sign-in entry point — renders the INLINE (embedded) AuthKit form so users stay
- * on news.mukoko.com (owner doctrine 2026-07-02, superseding the earlier
- * hosted-redirect decision). The WorkOS-hosted authkit page is offered only as a
- * subtle fallback link. Already-signed-in users skip straight to `returnTo`.
+ * Sign-in entry point — redirects to the WORKOS-HOSTED AuthKit page (owner
+ * doctrine 2026-07-09, superseding the 2026-07-02 inline-form doctrine). The
+ * hosted page owns the whole flow — Magic Auth, passwords, passkeys, and the
+ * environment-required MFA step — and establishes the shared AuthKit session on
+ * identity.nyuchi.com, which is what gives continuous sign-in across the Mukoko
+ * and Nyuchi apps. Already-signed-in users skip straight to `returnTo`.
+ *
+ * When a callback failure sends the user back here with ?error=…, we render an
+ * error card with a manual "try again" link instead of auto-redirecting — an
+ * automatic bounce back to the hosted page would loop on a persistent failure.
  */
 export default async function SignInPage({ searchParams }: SignInPageProps) {
   const { returnTo, error } = await searchParams
   const dest = safeReturnTo(returnTo) ?? '/profile'
 
-  // Already signed in? Skip the form. `withAuth()` is wrapped so a WorkOS
-  // misconfig surfaces the form (below) rather than a blank 500 shell.
+  // Already signed in? Skip the hosted page. `withAuth()` is wrapped so a WorkOS
+  // misconfig degrades to the sign-in flow rather than a blank 500 shell.
   let user: unknown = null
   try {
     ;({ user } = await withAuth())
   } catch (err) {
-    console.error('[AUTH] /sign-in withAuth() failed; rendering form', err)
+    console.error('[AUTH] /sign-in withAuth() failed; continuing to hosted sign-in', err)
   }
   if (user) redirect(dest)
 
-  // The hosted page is a BACKUP only. Best-effort — never let a failure here
-  // blank the page; just omit the fallback link.
-  let fallbackUrl: string | undefined
+  // Best-effort — a failure here falls through to the error card below rather
+  // than a blank page. redirect() throws NEXT_REDIRECT, so it stays OUTSIDE the
+  // try/catch.
+  let hostedUrl: string | undefined
   try {
-    fallbackUrl = await getSignInUrl({ returnTo: dest })
+    hostedUrl = await getSignInUrl({ returnTo: dest })
   } catch (err) {
-    console.error('[AUTH] getSignInUrl() failed; hiding hosted fallback link', err)
+    console.error('[AUTH] getSignInUrl() failed; rendering sign-in error card', err)
   }
+
+  if (!error && hostedUrl) redirect(hostedUrl)
 
   return (
     <div className="min-h-[80vh] flex flex-col items-center justify-center px-6 py-12">
@@ -72,13 +76,27 @@ export default async function SignInPage({ searchParams }: SignInPageProps) {
         <p className="mt-1 text-sm text-text-secondary">Pan-African news, in one place</p>
       </div>
 
-      {/* Auth card */}
-      <div className="w-full max-w-sm rounded-[var(--radius-card)] bg-surface ring-1 ring-foreground/10 p-8">
-        <InlineSignIn
-          redirectTo={dest}
-          fallbackUrl={fallbackUrl}
-          initialError={error ? CALLBACK_ERROR : null}
-        />
+      {/* Error card — a failed callback exchange or a WorkOS misconfig. */}
+      <div className="w-full max-w-sm rounded-[var(--radius-card)] bg-surface ring-1 ring-foreground/10 p-8 text-center">
+        <div className="w-12 h-12 rounded-full bg-container-tanzanite flex items-center justify-center mx-auto mb-4">
+          <ShieldAlert className="w-6 h-6 text-on-container-tanzanite" aria-hidden="true" />
+        </div>
+        <h1 className="font-serif text-2xl font-semibold mb-2 text-foreground">
+          {hostedUrl ? 'Sign-in interrupted' : 'Sign-in unavailable'}
+        </h1>
+        <p className="text-sm text-text-secondary mb-6" role="alert">
+          {hostedUrl
+            ? 'We could not complete that sign-in. Please try again.'
+            : 'Sign-in is temporarily unavailable. Please try again in a few minutes.'}
+        </p>
+        {hostedUrl && (
+          <a
+            href={hostedUrl}
+            className="inline-block w-full px-6 py-3 bg-primary text-on-primary font-medium rounded-xl hover:opacity-90 transition-opacity"
+          >
+            Try again
+          </a>
+        )}
       </div>
 
       <Link

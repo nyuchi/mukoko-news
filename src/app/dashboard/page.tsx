@@ -1,8 +1,8 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import { redirect } from 'next/navigation'
 import { BadgeCheck, Clock, AlertCircle } from 'lucide-react'
-import { withAuth, getSignInUrl } from '@workos-inc/authkit-nextjs'
-import { InlineSignIn } from '@/components/auth/inline-sign-in'
+import { withAuth } from '@workos-inc/authkit-nextjs'
 import { getPublisherDashboard } from '@/lib/publisher/dashboard'
 import { PublisherDashboard } from '@/components/publisher/dashboard/publisher-dashboard'
 
@@ -14,31 +14,14 @@ export const metadata: Metadata = {
 
 export const dynamic = 'force-dynamic'
 
-// Verified-publisher dashboard. Signed-out → inline sign-in. Signed-in but not a
-// verified publisher → a claim/pending state (the feature is gated to approved
-// media houses). Verified → the full dashboard.
+// Verified-publisher dashboard. Signed-out → the hosted AuthKit flow via
+// /sign-in. Signed-in but not a verified publisher → a claim/pending state (the
+// feature is gated to approved media houses). Verified → the full dashboard.
 export default async function DashboardPage() {
   const { user } = await withAuth()
 
   if (!user) {
-    let fallbackUrl: string | undefined
-    try {
-      fallbackUrl = await getSignInUrl({ returnTo: '/dashboard' })
-    } catch {
-      // A misconfig should still show the form, just without the hosted link.
-    }
-    return (
-      <div className="min-h-[70vh] flex items-center justify-center px-6 py-12">
-        <div className="w-full max-w-sm rounded-[var(--radius-card)] bg-surface ring-1 ring-foreground/10 p-8">
-          <InlineSignIn
-            redirectTo="/dashboard"
-            title="Publisher sign-in"
-            subtitle="Sign in to manage your publication."
-            fallbackUrl={fallbackUrl}
-          />
-        </div>
-      </div>
-    )
+    redirect(`/sign-in?returnTo=${encodeURIComponent('/dashboard')}`)
   }
 
   const context = await getPublisherDashboard()
