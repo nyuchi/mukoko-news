@@ -11,8 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Sign-in is the WorkOS-HOSTED AuthKit page (owner correction 2026-07-09 — supersedes the 2026-07-02 inline-form doctrine).** Every sign-in entry point (`/sign-in`, `/admin`, `/dashboard`, `/profile`, the publisher claim form) now funnels through `/sign-in`, which redirects to `getSignInUrl({ returnTo })`. The hosted page owns the whole flow — Magic Auth, passwords, passkeys, and the environment-required **MFA step-up** — and maintains the shared AuthKit session on the auth domain, giving **continuous sign-in across the Mukoko/Nyuchi apps** (all AuthKit applications in one WorkOS environment). See `auth.md`.
-- `/sign-in` renders a manual-retry error card when the OAuth callback fails or `getSignInUrl()` errors (no auto-redirect loop); already-signed-in users still skip straight to `returnTo`.
+- **Sign-in is the WorkOS-HOSTED AuthKit page (owner correction 2026-07-09 — supersedes the 2026-07-02 inline-form doctrine).** Every sign-in entry point (`/sign-in`, `/admin`, `/dashboard`, `/profile`, the publisher claim form) now funnels through `/sign-in` → `/auth/login` → the hosted page. The hosted page owns the whole flow — Magic Auth, passwords, passkeys, and the environment-required **MFA step-up** — and maintains the shared AuthKit session on the auth domain, giving **continuous sign-in across the Mukoko/Nyuchi apps** (all AuthKit applications in one WorkOS environment). See `auth.md`.
+- `/sign-in` renders a manual-retry error card when the OAuth callback fails (no auto-redirect loop); already-signed-in users still skip straight to `returnTo`.
 
 ### Added
 
@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **MFA sign-in failures.** The environment enforces `MFA = Required`, and the inline form's hand-rolled TOTP challenge/enrolment (`workos.multiFactorAuth`) on the critical path is what kept breaking sign-in. The hosted page handles MFA natively.
+- **`getSignInUrl()` during page render.** `getSignInUrl()` writes the PKCE/state cookie, and Next.js only allows cookie writes in a Server Action or Route Handler — calling it while rendering `/sign-in` threw (`Cookies can only be modified in a Server Action or Route Handler`), leaving the page on its "Sign-in unavailable" fallback. `/sign-in` now delegates to the `/auth/login` Route Handler, the only `getSignInUrl()` call site. (This same constraint is why the old inline page's hosted fallback link silently never rendered.)
 
 ### Removed
 
