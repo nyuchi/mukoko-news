@@ -64,6 +64,10 @@ const { user } = await withAuth()
 - **None of these may reach a client component or the browser bundle.** Keep `withAuth()`, Server Actions, and Route Handlers server-side; pass only non-sensitive, resolved data to client components.
 - Admin mutations forward the user's WorkOS **access token** as a Bearer header to the gateway, which re-verifies the same RBAC — the frontend never trusts its own tier check alone for a mutation.
 
+## Engagement identity
+
+Likes/saves are keyed to an **engagement subject** (`src/lib/engagement.ts`): the signed-in WorkOS user (`user:<workos-user-id>`, resolved server-side via `withAuth()` — never trusted from the client) or the anonymous `mukoko_session` cookie. On the first signed-in interaction the cookie history is claimed for the user (user doc wins on overlap). `withAuth()` failures degrade to anonymous — auth must never break public engagement.
+
 ## Engagement & rate limiting
 
 Engagement Route Handlers (`src/app/api/articles/[id]/{like,view,save}/route.ts`, `runtime = 'nodejs'`) are rate-limited via `checkRateLimit()` + `getRequestIp()` (`src/lib/rate-limit.ts`). The limiter is in-memory per Vercel instance, so limits are enforced per-instance rather than globally — a shared store is the durable upgrade. Keep new public write endpoints behind the same rate-limit guard.

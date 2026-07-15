@@ -1,55 +1,118 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { checkRateLimit, getRequestIp } from '../rate-limit';
 
-describe('checkRateLimit', () => {
+// Without Upstash env vars the limiter is the original per-instance in-memory
+// sliding window; with them it becomes a global fixed window over the Upstash
+// REST API, failing OPEN (falling back to memory) on any Redis problem.
+
+describe('checkRateLimit (in-memory fallback)', () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    delete process.env.UPSTASH_REDIS_REST_URL;
+    delete process.env.UPSTASH_REDIS_REST_TOKEN;
   });
 
   afterEach(() => {
     vi.useRealTimers();
   });
 
-  it('allows requests within the limit', () => {
+  it('allows requests within the limit', async () => {
     // Use unique key per test to avoid shared-state interference
     const key = 'rl-allow-3';
-    expect(checkRateLimit(key, 3, 60_000)).toBe(true);
-    expect(checkRateLimit(key, 3, 60_000)).toBe(true);
-    expect(checkRateLimit(key, 3, 60_000)).toBe(true);
+    await expect(checkRateLimit(key, 3, 60_000)).resolves.toBe(true);
+    await expect(checkRateLimit(key, 3, 60_000)).resolves.toBe(true);
+    await expect(checkRateLimit(key, 3, 60_000)).resolves.toBe(true);
   });
 
-  it('blocks the request once the limit is reached', () => {
+  it('blocks the request once the limit is reached', async () => {
     const key = 'rl-block-after-2';
-    checkRateLimit(key, 2, 60_000);
-    checkRateLimit(key, 2, 60_000);
-    expect(checkRateLimit(key, 2, 60_000)).toBe(false);
+    await checkRateLimit(key, 2, 60_000);
+    await checkRateLimit(key, 2, 60_000);
+    await expect(checkRateLimit(key, 2, 60_000)).resolves.toBe(false);
   });
 
-  it('allows again after the sliding window expires', () => {
+  it('allows again after the sliding window expires', async () => {
     const key = 'rl-window-expire';
-    checkRateLimit(key, 1, 1_000);
-    expect(checkRateLimit(key, 1, 1_000)).toBe(false); // blocked
+    await checkRateLimit(key, 1, 1_000);
+    await expect(checkRateLimit(key, 1, 1_000)).resolves.toBe(false); // blocked
 
     vi.advanceTimersByTime(1_001); // advance past the 1 s window
-    expect(checkRateLimit(key, 1, 1_000)).toBe(true);  // allowed again
+    await expect(checkRateLimit(key, 1, 1_000)).resolves.toBe(true); // allowed again
   });
 
-  it('tracks different keys independently', () => {
+  it('tracks different keys independently', async () => {
     const keyA = 'rl-key-a-independent';
     const keyB = 'rl-key-b-independent';
-    checkRateLimit(keyA, 1, 60_000); // exhaust keyA
-    expect(checkRateLimit(keyA, 1, 60_000)).toBe(false);
-    expect(checkRateLimit(keyB, 1, 60_000)).toBe(true); // keyB is unaffected
+    await checkRateLimit(keyA, 1, 60_000); // exhaust keyA
+    await expect(checkRateLimit(keyA, 1, 60_000)).resolves.toBe(false);
+    await expect(checkRateLimit(keyB, 1, 60_000)).resolves.toBe(true); // keyB unaffected
   });
 
-  it('counts only calls inside the active window', () => {
+  it('counts only calls inside the active window', async () => {
     const key = 'rl-partial-window';
-    checkRateLimit(key, 2, 1_000);      // call at t=0
+    await checkRateLimit(key, 2, 1_000); // call at t=0
     vi.advanceTimersByTime(500);
-    checkRateLimit(key, 2, 1_000);      // call at t=500ms — both in window
+    await checkRateLimit(key, 2, 1_000); // call at t=500ms — both in window
 
-    vi.advanceTimersByTime(600);        // now at t=1100ms: t=0 call expired
-    expect(checkRateLimit(key, 2, 1_000)).toBe(true); // only 1 active call remains
+    vi.advanceTimersByTime(600); // now at t=1100ms: t=0 call expired
+    await expect(checkRateLimit(key, 2, 1_000)).resolves.toBe(true); // only 1 active call
+  });
+});
+
+describe('checkRateLimit (Upstash REST backend)', () => {
+  const fetchMock = vi.fn();
+
+  beforeEach(() => {
+    process.env.UPSTASH_REDIS_REST_URL = 'https://fake.upstash.io';
+    process.env.UPSTASH_REDIS_REST_TOKEN = 'test-token';
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock.mockReset();
+  });
+
+  afterEach(() => {
+    delete process.env.UPSTASH_REDIS_REST_URL;
+    delete process.env.UPSTASH_REDIS_REST_TOKEN;
+    vi.unstubAllGlobals();
+  });
+
+  function upstashResponse(count: number) {
+    return {
+      ok: true,
+      json: async () => [{ result: count }, { result: 1 }],
+    } as Response;
+  }
+
+  it('allows when the Redis count is within the limit', async () => {
+    fetchMock.mockResolvedValue(upstashResponse(3));
+    await expect(checkRateLimit('rl-redis-ok', 5, 60_000)).resolves.toBe(true);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('https://fake.upstash.io/pipeline');
+    expect((init as RequestInit).headers).toMatchObject({
+      Authorization: 'Bearer test-token',
+    });
+    const body = JSON.parse((init as RequestInit).body as string);
+    expect(body[0][0]).toBe('INCR');
+    expect(body[1][0]).toBe('PEXPIRE');
+  });
+
+  it('blocks when the Redis count exceeds the limit', async () => {
+    fetchMock.mockResolvedValue(upstashResponse(6));
+    await expect(checkRateLimit('rl-redis-block', 5, 60_000)).resolves.toBe(false);
+  });
+
+  it('fails open to the in-memory limiter when the request errors', async () => {
+    fetchMock.mockRejectedValue(new Error('redis down'));
+    await expect(checkRateLimit('rl-redis-down', 5, 60_000)).resolves.toBe(true);
+  });
+
+  it('fails open when Upstash returns a non-OK status', async () => {
+    fetchMock.mockResolvedValue({ ok: false, status: 500 } as Response);
+    await expect(checkRateLimit('rl-redis-500', 5, 60_000)).resolves.toBe(true);
+  });
+
+  it('fails open on an unexpected payload shape', async () => {
+    fetchMock.mockResolvedValue({ ok: true, json: async () => ({ nope: true }) } as Response);
+    await expect(checkRateLimit('rl-redis-shape', 5, 60_000)).resolves.toBe(true);
   });
 });
 

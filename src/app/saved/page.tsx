@@ -2,13 +2,15 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { Bookmark, Loader2, RefreshCw } from "lucide-react";
+import { Bookmark, Loader2, RefreshCw, CloudUpload } from "lucide-react";
+import { useAuth } from "@workos-inc/authkit-nextjs/components";
 import { ArticleCard } from "@/components/article-card";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { type Article } from "@/lib/api";
 import { getSavedArticlesAction } from "@/lib/actions/feed";
 
 function SavedContent() {
+  const { user, loading: authLoading } = useAuth();
   const [savedArticles, setSavedArticles] = useState<Article[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -49,6 +51,23 @@ function SavedContent() {
           Articles you&apos;ve bookmarked for later reading
         </p>
       </div>
+
+      {/* Anonymous saves live in this browser only — nudge toward the account. */}
+      {!authLoading && !user && (
+        <div className="mb-6 flex flex-wrap items-center gap-3 rounded-2xl border border-elevated bg-surface px-4 py-3 text-sm">
+          <CloudUpload className="w-4 h-4 text-secondary shrink-0" aria-hidden="true" />
+          <span className="text-text-secondary">
+            Saved articles are stored on this device.{" "}
+            <Link
+              href="/sign-in?returnTo=/saved"
+              className="font-medium text-secondary hover:underline"
+            >
+              Sign in
+            </Link>{" "}
+            to keep them across your devices.
+          </span>
+        </div>
+      )}
 
       {savedArticles.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

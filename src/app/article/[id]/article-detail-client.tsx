@@ -20,7 +20,7 @@ import { type Article } from "@/lib/api";
 import { getArticleAction } from "@/lib/actions/feed";
 import { getArticleUrl } from "@/lib/constants";
 import { imageProxyUrl } from "@/lib/image";
-import { isValidImageUrl } from "@/lib/utils";
+import { isValidImageUrl, topicSlug } from "@/lib/utils";
 import { ArticlePageSkeleton } from "@/components/ui/skeleton";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { ArticleJsonLd } from "@/components/ui/json-ld";
@@ -380,6 +380,31 @@ export default function ArticleDetailClient({
 
         {/* Divider */}
         <div className="border-t border-elevated my-8" />
+
+        {/* Follow the story — each tag opens its /topic timeline */}
+        {article.keywords && article.keywords.length > 0 && (
+          <div className="mb-8">
+            <p className="font-mono text-[13px] uppercase tracking-wide text-text-tertiary mb-3">
+              Follow the story
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {article.keywords.slice(0, 6).map((kw) => {
+                const slug = topicSlug(kw.slug || kw.name);
+                if (!slug) return null;
+                return (
+                  <Link
+                    key={kw.id}
+                    href={`/topic/${slug}`}
+                    className="inline-flex min-h-[var(--touch-chip)] items-center gap-1.5 rounded-full border border-elevated bg-surface px-3 py-1 text-sm text-foreground transition-colors hover:border-primary/30 hover:text-primary"
+                  >
+                    <Tag className="w-3.5 h-3.5" aria-hidden="true" />
+                    {kw.name}
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Action Buttons */}
         <div className="flex items-center gap-4 flex-wrap">

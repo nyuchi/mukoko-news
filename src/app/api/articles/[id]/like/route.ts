@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/mongodb/client'
 import { checkRateLimit, getRequestIp } from '@/lib/rate-limit'
+import { resolveEngagementSubject, claimSessionEngagement } from '@/lib/engagement'
 import { randomUUID } from 'crypto'
 
 export const runtime = 'nodejs'
@@ -8,14 +9,15 @@ export const runtime = 'nodejs'
 const RATE_LIMIT_MAX = 10
 const RATE_LIMIT_WINDOW_MS = 60_000
 
-// Session cookie + unique {articleId, sessionId} index prevents double-likes.
-// Replace sessionId with OIDC personId when auth is wired.
+// Unique {articleId, sessionId} index prevents double-likes. The subject key is
+// the signed-in user (`user:<id>`, follows the account across devices) or the
+// anonymous mukoko_session cookie — see src/lib/engagement.ts.
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const ip = getRequestIp(request)
-  if (!checkRateLimit(`like:${ip}`, RATE_LIMIT_MAX, RATE_LIMIT_WINDOW_MS)) {
+  if (!(await checkRateLimit(`like:${ip}`, RATE_LIMIT_MAX, RATE_LIMIT_WINDOW_MS))) {
     return NextResponse.json(
       { error: 'Too many requests' },
       { status: 429, headers: { 'Retry-After': String(RATE_LIMIT_WINDOW_MS / 1000) } }
@@ -30,9 +32,16 @@ export async function POST(
         { status: 400 }
       )
     }
-    const sessionId = request.cookies.get('mukoko_session')?.value || randomUUID()
+    const cookieSessionId = request.cookies.get('mukoko_session')?.value
+    const subject = await resolveEngagementSubject(cookieSessionId)
+    const sessionId = subject.key ?? randomUUID()
 
     const db = await getDb()
+
+    // First signed-in interaction after anonymous use: claim cookie history.
+    if (subject.isUser && cookieSessionId) {
+      await claimSessionEngagement(db, cookieSessionId, sessionId)
+    }
 
     // Validate article exists
     const article = await db.collection('articles').findOne(
@@ -79,7 +88,8 @@ export async function POST(
       count: likesCount,
     })
 
-    if (!request.cookies.get('mukoko_session')) {
+    // Only anonymous visitors need the session cookie minted.
+    if (!subject.isUser && !request.cookies.get('mukoko_session')) {
       response.cookies.set('mukoko_session', sessionId, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',

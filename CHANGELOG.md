@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Account-backed saves & likes.** Engagement is now keyed to the signed-in WorkOS user (`user:<id>` subject key) instead of only the anonymous `mukoko_session` cookie, so saved articles and likes follow the account across devices. On the first signed-in interaction (or `/saved` read), anonymous cookie history is claimed for the user — overlaps keep the user's copy (`src/lib/engagement.ts`). `/saved` shows a "sign in to sync" nudge to anonymous readers. The document field stays `sessionId` (an opaque subject key to the gateway/pipeline); counts and aggregation are unchanged.
+- **Developing-story timeline (`/topic/[slug]`).** The Mzizi `nyuchi-timeline` date-railed surface: everything published on a topic in the last 30 days, grouped by day (CAT) with time/title/source rows and thumbnails. Backed by `getTopicTimeline` (matches tag slugs/names, AI categories, and AI keywords) via `getTopicTimelineAction`, ISR-cached (`revalidate = 300`). Reached from new **"Follow the story" tag chips** on the article page and the Insights **trending topics** (previously a plain search link).
+- **Mzizi density system adopted** (`globals.css`): the prime-scale **touch targets** (`--touch-*`: 47px primary / 43px inputs / 37px dense / 31px chips / 56px hero-only), the **icon scale** (`--icon-*`), and density scopes — `comfortable` is the default; `/admin` and `/dashboard` opt into `compact` via `data-density`, which cascades through `--density-touch` and the card/input radii with no per-component changes. Button sizes now ride the touch tokens.
+- **Durable rate limiting.** `checkRateLimit` is now async and enforces a **global** fixed window via the Upstash Redis REST API when `UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN` are set (no SDK dependency, 1.5s timeout, fails OPEN to the in-memory limiter). Without them, behaviour is unchanged (per-instance in-memory window).
+
 ### Changed
 
 - **Sign-in is the WorkOS-HOSTED AuthKit page (owner correction 2026-07-09 — supersedes the 2026-07-02 inline-form doctrine).** Every sign-in entry point (`/sign-in`, `/admin`, `/dashboard`, `/profile`, the publisher claim form) now funnels through `/sign-in` → `/auth/login` → the hosted page. The hosted page owns the whole flow — Magic Auth, passwords, passkeys, and the environment-required **MFA step-up** — and maintains the shared AuthKit session on the auth domain, giving **continuous sign-in across the Mukoko/Nyuchi apps** (all AuthKit applications in one WorkOS environment). See `auth.md`.
@@ -26,6 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 
 - The embedded inline AuthKit sign-in form (`src/components/auth/inline-sign-in.tsx`) and its Magic Auth / MFA Server Actions (`requestEmailCode`, `verifyEmailCode`, `verifyMfaCode`, `MfaState`). `src/lib/auth/actions.ts` keeps `isSignedIn()` and `signOutAction()`.
+- The `TODO(on-primary)` markers in the error pages — the buttons now use the `text-on-primary` token instead of hardcoded white.
 
 ## [5.5.0] - 2026-07-03
 
