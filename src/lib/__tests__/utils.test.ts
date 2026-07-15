@@ -452,3 +452,12 @@ describe('Security - unicode and encoding attacks', () => {
     expect(result).toContain('url(');
   });
 });
+
+describe('topicSlug', () => {
+  it('normalises names and slugs to the /topic route contract', async () => {
+    const { topicSlug } = await import('../utils');
+    expect(topicSlug('Zimbabwe Elections')).toBe('zimbabwe-elections');
+    expect(topicSlug('  load--shedding! ')).toBe('load-shedding');
+    expect(topicSlug('---')).toBe('');
+  });
+});

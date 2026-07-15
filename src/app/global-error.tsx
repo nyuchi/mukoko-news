@@ -31,8 +31,7 @@ export default function GlobalError({
             <button
               type="button"
               onClick={() => reset()}
-              // TODO(on-primary): switch to text-on-primary when tokens land
-              className="mt-6 rounded-button bg-primary px-6 py-2.5 text-sm font-semibold text-white hover:bg-primary/90"
+              className="mt-6 rounded-button bg-primary px-6 py-2.5 text-sm font-semibold text-on-primary hover:bg-primary/90"
             >
               Try again
             </button>

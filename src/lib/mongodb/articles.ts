@@ -412,3 +412,55 @@ export async function getSavedArticles(sessionId: string): Promise<{ articles: A
   const articleMap = new Map(docs.map(d => [d._id, toArticle(d, sourceMap.get(d.feedSourceId))]))
   return { articles: articleIds.map(id => articleMap.get(id)).filter(Boolean) as Article[] }
 }
+
+// ── Topic timeline (developing-story surface) ────────────────────────────────
+
+/**
+ * Articles matching a topic slug across the enrichment surfaces — tag slugs
+ * (string or object elements), AI-classified categories, and AI keywords —
+ * within a recency window, newest first. Backs the /topic/[slug] timeline;
+ * day-grouping happens in the component layer.
+ */
+export async function getTopicTimeline(
+  slug: string,
+  params: { days?: number; limit?: number } = {}
+): Promise<{ articles: Article[]; total: number }> {
+  const db = await getDb()
+  const days = clampInt(params.days, 1, 90, 30)
+  const limit = clampInt(params.limit, 1, MAX_LIMIT, 100)
+
+  const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  // A slug like "zimbabwe-elections" should also match the tag/keyword name
+  // form "zimbabwe elections" regardless of how enrichment cased it.
+  const slugRe = new RegExp(`^${esc(slug)}$`, 'i')
+  const nameRe = new RegExp(`^${esc(slug.replace(/-/g, ' '))}$`, 'i')
+
+  const since = new Date(Date.now() - days * 86_400_000)
+  const filter: Filter<MongoArticle> = {
+    status: { $ne: 'rejected' },
+    moderationStatus: { $ne: 'removed' },
+    datePublished: { $gte: since },
+    $or: [
+      // engagement.tags elements are plain slugs/names or {slug, name} objects
+      { 'engagement.tags': { $in: [slugRe, nameRe] } },
+      { 'engagement.tags.slug': slugRe },
+      { 'engagement.tags.name': nameRe },
+      { 'engagement.interest_categories': slugRe },
+      { aiKeywords: { $in: [slugRe, nameRe] } },
+    ] as never,
+  }
+
+  const col = db.collection<MongoArticle>('articles')
+  const [docs, total] = await Promise.all([
+    col.find(filter).sort({ datePublished: -1 }).limit(limit).toArray(),
+    col.countDocuments(filter),
+  ])
+
+  const sourceIds = [...new Set(docs.map(d => d.feedSourceId))]
+  const sources = await db.collection<MongoFeedSource>('feedSources')
+    .find({ _id: { $in: sourceIds } })
+    .toArray()
+  const sourceMap = new Map(sources.map(s => [s._id, s]))
+
+  return { articles: docs.map(d => toArticle(d, sourceMap.get(d.feedSourceId))), total }
+}

@@ -14,7 +14,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const ip = getRequestIp(request)
-  if (!checkRateLimit(`view:${ip}`, RATE_LIMIT_MAX, RATE_LIMIT_WINDOW_MS)) {
+  if (!(await checkRateLimit(`view:${ip}`, RATE_LIMIT_MAX, RATE_LIMIT_WINDOW_MS))) {
     return NextResponse.json(
       { error: 'Too many requests' },
       { status: 429, headers: { 'Retry-After': String(RATE_LIMIT_WINDOW_MS / 1000) } }

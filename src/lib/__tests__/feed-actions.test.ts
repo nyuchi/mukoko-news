@@ -51,9 +51,27 @@ vi.mock('next/headers', () => ({
   cookies: vi.fn(async () => ({ get: mockCookieGet })),
 }));
 
+// The engagement subject module pulls in authkit (unresolvable in jsdom) — mock
+// it as anonymous by default; individual tests flip it to a signed-in user.
+const mockResolveSubject = vi.fn();
+const mockClaim = vi.fn();
+vi.mock('../engagement', () => ({
+  resolveEngagementSubject: (cookie: string | undefined) => mockResolveSubject(cookie),
+  claimSessionEngagement: (...args: unknown[]) => mockClaim(...args),
+}));
+
+vi.mock('../mongodb/client', () => ({
+  getDb: vi.fn().mockResolvedValue({}),
+}));
+
 beforeEach(() => {
   vi.clearAllMocks();
   mockCookieGet.mockReturnValue(undefined);
+  mockResolveSubject.mockImplementation(async (cookie: string | undefined) => ({
+    key: cookie ?? null,
+    isUser: false,
+  }));
+  mockClaim.mockResolvedValue(undefined);
 });
 
 describe('getArticlesAction input validation', () => {
@@ -251,5 +269,20 @@ describe('getSavedArticlesAction input validation', () => {
     mockCookieGet.mockReturnValue({ value: 'session-abc-123' });
     await getSavedArticlesAction();
     expect(getSavedArticles).toHaveBeenCalledWith('session-abc-123');
+  });
+
+  it('reads by the stable user key when signed in and claims cookie history', async () => {
+    mockCookieGet.mockReturnValue({ value: 'session-abc-123' });
+    mockResolveSubject.mockResolvedValue({ key: 'user:user_123', isUser: true });
+    await getSavedArticlesAction();
+    expect(mockClaim).toHaveBeenCalledWith(expect.anything(), 'session-abc-123', 'user:user_123');
+    expect(getSavedArticles).toHaveBeenCalledWith('user:user_123');
+  });
+
+  it('reads by the user key with no claim when signed in without a cookie', async () => {
+    mockResolveSubject.mockResolvedValue({ key: 'user:user_123', isUser: true });
+    await getSavedArticlesAction();
+    expect(mockClaim).not.toHaveBeenCalled();
+    expect(getSavedArticles).toHaveBeenCalledWith('user:user_123');
   });
 });

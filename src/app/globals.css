@@ -290,6 +290,56 @@
   --color-status-neutral: var(--status-neutral);
 }
 
+/* ── Mzizi density system (styling-density + touch-targets + icon-sizes) ──
+   Three densities. `comfortable` is the Nyuchi default — touch-first consumer
+   surfaces, and the values below are the :root defaults. Data-dense surfaces
+   (/admin, /dashboard) opt into `compact` with data-density="compact" on a
+   wrapper; hero/landing surfaces may request `spacious`. Touch targets are the
+   Bundu prime scale and are MINIMUMS for interactive elements, not fixed
+   heights. Density scopes work by overriding the same custom properties the
+   primitives already consume (--density-touch*, --radius-card, --radius-input),
+   so everything inside the scope inherits the density with no class changes. */
+:root {
+  /* Touch targets (brand_touch_targets — prime px) */
+  --touch-min: 41px; /* absolute minimum; needs ≥6px gap to neighbours */
+  --touch-a11y: 43px; /* inputs + secondary buttons */
+  --touch-default: 47px; /* primary buttons and major CTAs */
+  --touch-hero: 56px; /* hero CTAs ONLY — never in dense UI */
+  --touch-compact: 37px; /* dense toolbars + small inputs */
+  --touch-chip: 31px; /* chips, tags, pickers */
+  --touch-badge: 23px; /* badges/counters — non-interactive */
+
+  /* Icon sizes (brand_icon_sizes) */
+  --icon-xs: 12px;
+  --icon-sm: 16px;
+  --icon-default: 20px;
+  --icon-md: 24px;
+  --icon-lg: 32px;
+  --icon-xl: 40px;
+
+  /* Density knobs — comfortable defaults; scopes below override these */
+  --density-touch: var(--touch-default);
+  --density-touch-input: var(--touch-a11y);
+  --density-icon: var(--icon-default);
+}
+
+/* Data-dense surfaces: admin tables, dashboards, power-user tools. */
+[data-density='compact'] {
+  --density-touch: var(--touch-a11y);
+  --density-touch-input: var(--touch-compact);
+  --density-icon: var(--icon-sm);
+  --radius-card: 12px;
+  --radius-input: 7px;
+}
+
+/* Hero surfaces: landing, onboarding, large-format reading. */
+[data-density='spacious'] {
+  --density-touch: var(--touch-hero);
+  --density-touch-input: var(--touch-default);
+  --density-icon: var(--icon-md);
+  --radius-card: 20px;
+}
+
 /* ── Mzizi N1 semantic status tokens (theme-aware) ─────────────────
    Consumed by the nyuchi brand components (factcheck + credibility
    indicators). Mirrors the mineral roles: success=malachite,

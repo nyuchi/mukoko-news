@@ -141,3 +141,16 @@ export function stripHtml(input: string | undefined | null): string {
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
+
+/**
+ * Normalise a tag/keyword (display name or stored slug) into a /topic/[slug]
+ * path segment — lowercase words joined by single hyphens, matching the
+ * validation in getTopicTimelineAction.
+ */
+export function topicSlug(value: string): string {
+  return value
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}

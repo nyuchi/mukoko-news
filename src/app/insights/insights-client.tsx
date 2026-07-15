@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import { ErrorBoundary } from '@/components/ui/error-boundary'
 import { getCategoryEmoji } from '@/lib/constants'
+import { topicSlug } from '@/lib/utils'
 import type { InsightsBundle } from '@/lib/actions/insights'
 
 // ---------------------------------------------------------------------------
@@ -534,7 +535,7 @@ export default function InsightsClient({ data }: { data: InsightsBundle }) {
                   {topics.map((t) => (
                     <Link
                       key={t.tag}
-                      href={`/search?q=${encodeURIComponent(t.tag)}`}
+                      href={`/topic/${topicSlug(t.tag)}`}
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-container-tanzanite text-on-container-tanzanite text-sm hover:opacity-90 transition-opacity"
                     >
                       <TrendingUp className="w-3.5 h-3.5" aria-hidden="true" />

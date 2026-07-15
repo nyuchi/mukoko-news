@@ -15,11 +15,14 @@ const buttonVariants = cva(
         ghost: 'hover:bg-accent hover:text-on-accent',
         link: 'text-primary underline-offset-4 hover:underline',
       },
+      // Heights are the Mzizi touch-target minimums (globals.css). The default
+      // rides --density-touch, so a data-density="compact" ancestor (admin,
+      // dashboard) shrinks buttons without any per-component class changes.
       size: {
-        default: 'h-10 px-4 py-2',
-        sm: 'h-9 px-3',
-        lg: 'h-11 px-8',
-        icon: 'h-10 w-10',
+        default: 'min-h-[var(--density-touch)] px-4 py-2',
+        sm: 'min-h-[var(--touch-compact)] px-3',
+        lg: 'min-h-[var(--touch-hero)] px-8',
+        icon: 'min-h-[var(--density-touch)] min-w-[var(--density-touch)]',
       },
     },
     defaultVariants: {

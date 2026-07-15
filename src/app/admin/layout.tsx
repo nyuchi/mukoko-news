@@ -59,7 +59,8 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   }
 
   return (
-    <div className="max-w-[1200px] mx-auto px-4 sm:px-6 py-6">
+    // Mzizi density: admin is a data-dense surface — compact opt-in.
+    <div data-density="compact" className="max-w-[1200px] mx-auto px-4 sm:px-6 py-6">
       {/* Admin top bar */}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-6 pb-4 border-b border-elevated">
         <nav className="flex items-center gap-1">

@@ -11,7 +11,9 @@
  */
 
 import { cookies } from 'next/headers'
-import { getArticles, getArticleById, getNewsByteArticles, searchArticles, getSavedArticles } from '@/lib/mongodb/articles'
+import { getDb } from '@/lib/mongodb/client'
+import { resolveEngagementSubject, claimSessionEngagement } from '@/lib/engagement'
+import { getArticles, getArticleById, getNewsByteArticles, searchArticles, getSavedArticles, getTopicTimeline } from '@/lib/mongodb/articles'
 import { getCategories, getTrendingCategories } from '@/lib/mongodb/categories'
 import { getSources, getStats, getTrendingAuthors } from '@/lib/mongodb/sources'
 import {
@@ -160,6 +162,29 @@ export async function getSavedArticlesAction() {
   const cookieStore = await cookies()
   const sessionId = cookieStore.get('mukoko_session')?.value
   const safeSessionId = parseOrDefault(idSchema, sessionId, null)
+
+  // Signed-in users read by their stable user key (saves follow the account);
+  // any anonymous cookie history is claimed for the user on the way through.
+  const subject = await resolveEngagementSubject(safeSessionId ?? undefined)
+  if (subject.isUser && subject.key) {
+    if (safeSessionId) {
+      await claimSessionEngagement(await getDb(), safeSessionId, subject.key)
+    }
+    return getSavedArticles(subject.key)
+  }
+
   if (!safeSessionId) return { articles: [] as Article[] }
   return getSavedArticles(safeSessionId)
+}
+
+/** Topic slugs are enrichment-generated: lowercase words joined by hyphens. */
+const topicSlugRe = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
+
+export async function getTopicTimelineAction(slug: string, days = 30) {
+  const trimmed = typeof slug === 'string' ? slug.trim().toLowerCase().slice(0, 64) : ''
+  if (!topicSlugRe.test(trimmed)) {
+    return { topic: trimmed, articles: [] as Article[], total: 0 }
+  }
+  const result = await getTopicTimeline(trimmed, { days: clampInt(days, 1, 90, 30) })
+  return { topic: trimmed, ...result }
 }

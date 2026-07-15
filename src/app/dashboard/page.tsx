@@ -85,7 +85,12 @@ export default async function DashboardPage() {
     )
   }
 
-  return <PublisherDashboard context={context} />
+  return (
+    // Mzizi density: the publisher dashboard is a data-dense surface.
+    <div data-density="compact">
+      <PublisherDashboard context={context} />
+    </div>
+  )
 }
 
 function Centered({ children }: { children: React.ReactNode }) {

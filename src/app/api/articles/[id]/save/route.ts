@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/mongodb/client'
 import { checkRateLimit, getRequestIp } from '@/lib/rate-limit'
+import { resolveEngagementSubject, claimSessionEngagement } from '@/lib/engagement'
 import { randomUUID } from 'crypto'
 
 export const runtime = 'nodejs'
@@ -13,7 +14,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const ip = getRequestIp(request)
-  if (!checkRateLimit(`save:${ip}`, RATE_LIMIT_MAX, RATE_LIMIT_WINDOW_MS)) {
+  if (!(await checkRateLimit(`save:${ip}`, RATE_LIMIT_MAX, RATE_LIMIT_WINDOW_MS))) {
     return NextResponse.json(
       { error: 'Too many requests' },
       { status: 429, headers: { 'Retry-After': String(RATE_LIMIT_WINDOW_MS / 1000) } }
@@ -28,9 +29,18 @@ export async function POST(
         { status: 400 }
       )
     }
-    const sessionId = request.cookies.get('mukoko_session')?.value || randomUUID()
+    const cookieSessionId = request.cookies.get('mukoko_session')?.value
+    // Signed-in users get a stable user key so saves follow the account.
+    const subject = await resolveEngagementSubject(cookieSessionId)
+    const sessionId = subject.key ?? randomUUID()
 
     const db = await getDb()
+
+    // First signed-in interaction after anonymous use: claim cookie history.
+    if (subject.isUser && cookieSessionId) {
+      await claimSessionEngagement(db, cookieSessionId, sessionId)
+    }
+
     const savesCol = db.collection('articleSaves')
 
     const existing = await savesCol.findOne({ articleId, sessionId })
@@ -55,7 +65,8 @@ export async function POST(
       message: saved ? 'Article saved' : 'Article unsaved',
     })
 
-    if (!request.cookies.get('mukoko_session')) {
+    // Only anonymous visitors need the session cookie minted.
+    if (!subject.isUser && !request.cookies.get('mukoko_session')) {
       response.cookies.set('mukoko_session', sessionId, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
