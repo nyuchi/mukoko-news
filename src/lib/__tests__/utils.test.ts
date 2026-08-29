@@ -225,6 +225,36 @@ describe('safeCssUrl', () => {
     expect(result).toBe("url('https://example.com/image%20with%20spaces.jpg')");
   });
 
+  // Regression: every proxied article image was broken by double-encoding.
+  it('must NOT double-encode an already percent-encoded URL', () => {
+    const proxied =
+      'https://assets.mukoko.com/i/https%3A%2F%2Fpub.example.com%2Fa.jpg?w=800&fmt=webp';
+    const result = safeCssUrl(proxied);
+    expect(result).toContain('https%3A%2F%2Fpub.example.com%2Fa.jpg');
+    // %3A -> %253A is the exact regression: the image-worker's single
+    // decodeURIComponent then sees "https%3A%2F%2F..." and answers 400.
+    expect(result).not.toContain('%253A');
+    expect(result).not.toContain('%252F');
+  });
+
+  it('round-trips the real imageProxyUrl output unchanged', () => {
+    const original = 'https://pub.example.com/wp-content/uploads/2026/07/a b.jpg';
+    const proxied = `https://assets.mukoko.com/i/${encodeURIComponent(original)}?w=800`;
+    // Recovering the path segment must yield the original URL exactly.
+    const inner = safeCssUrl(proxied)
+      .replace(/^url\('/, '')
+      .replace(/'\)$/, '')
+      .replace('https://assets.mukoko.com/i/', '')
+      .split('?')[0];
+    expect(decodeURIComponent(inner)).toBe(original);
+  });
+
+  it('still encodes a bare percent that is not a valid escape', () => {
+    expect(safeCssUrl('https://example.com/100%off.jpg')).toBe(
+      "url('https://example.com/100%25off.jpg')"
+    );
+  });
+
   it('should handle relative paths', () => {
     expect(safeCssUrl('/images/logo.png')).toBe("url('/images/logo.png')");
   });
@@ -265,6 +295,12 @@ describe('safeCssUrl - CSS injection prevention', () => {
     const payload = "https://example.com/img'); background:url('https://evil.com/steal";
     const result = safeCssUrl(payload);
     expect(result).toMatch(/^url\('.*'\)$/);
+    // The old assertion above passed even with a RAW apostrophe in the middle,
+    // which terminates the CSS string early — encodeURI does not escape it.
+    // Assert the quote is actually gone, not merely that the shape still matches.
+    const inner = result.slice("url('".length, -"')".length);
+    expect(inner).not.toContain("'");
+    expect(inner).toContain('%27');
   });
 
   it('should encode newlines that could break CSS context', () => {

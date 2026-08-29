@@ -47,17 +47,32 @@ export function formatTimeAgo(dateString: string): string {
  * incomplete sequences like "%2". In these cases, we fall back to encoding as-is.
  */
 export function safeCssUrl(src: string): string {
-  try {
-    // Decode first to handle already-encoded URLs, then encode fresh
-    // This prevents double-encoding (e.g., %20 becoming %2520)
-    // decodeURI throws URIError for malformed sequences like "%GG" or "%2"
-    const decoded = decodeURI(src);
-    return `url('${encodeURI(decoded)}')`;
-  } catch {
-    // If decodeURI fails (malformed % sequences), encode as-is
-    // This handles edge cases like "%GG" which isn't valid percent-encoding
-    return `url('${encodeURI(src)}')`;
-  }
+  // encodeURI, but leave EXISTING valid %XX escapes alone instead of escaping
+  // their '%' to '%25'.
+  //
+  // The previous decodeURI -> encodeURI round-trip double-encoded every proxied
+  // image URL and broke them all. decodeURI deliberately does NOT decode escapes
+  // for *reserved* characters, so '%3A' survived step one unchanged and then
+  // encodeURI escaped its '%'. Since imageProxyUrl() percent-encodes the whole
+  // publisher URL into the path, `safeCssUrl(imageProxyUrl(x))` produced
+  // `.../i/https%253A%252F%252F...`; the image-worker's single decodeURIComponent
+  // then yielded the non-URL "https%3A%2F%2F..." and answered 400. The
+  // round-trip only ever worked for unreserved characters like %20.
+  //
+  // Splitting on a capturing group puts the escapes at odd indices, so they pass
+  // through verbatim while everything else is encoded normally. A lone '%' that
+  // is not a valid escape (e.g. "100%off") has no match and is still encoded.
+  const encoded = src
+    .split(/(%[0-9A-Fa-f]{2})/)
+    .map((part, i) => (i % 2 === 1 ? part : encodeURI(part)))
+    .join('')
+    // encodeURI does not escape an apostrophe, so a URL containing one used to
+    // terminate this very string early:
+    //   url('https://x/img'); background:url('https://evil/steal')
+    // Backslash IS escaped by encodeURI (to %5C), so the quote is the only gap.
+    .replace(/'/g, '%27');
+
+  return `url('${encoded}')`;
 }
 
 /**
