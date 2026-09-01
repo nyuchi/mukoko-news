@@ -122,6 +122,44 @@ describe('/api/analytics/export', () => {
     })
   })
 
+  describe('facets with no on-page consumer', () => {
+    // The classifier's category cut and the mean quality score are computed by
+    // every query. The console has no room for them, so the export is where
+    // they are available — otherwise they are payload nobody can reach.
+    it('emits the category breakdown', async () => {
+      mockRunCorpusQuery.mockResolvedValue(
+        result({ byCategory: [{ term: 'transport', count: 88 }] })
+      )
+      const body = await csv('http://x/api/analytics/export?format=csv')
+      expect(body).toContain('## categories')
+      expect(body).toContain('transport,88')
+    })
+
+    it('emits the quality score with its coverage', async () => {
+      const body = await csv('http://x/api/analytics/export?format=csv')
+      expect(body).toContain('## quality')
+      expect(body).toContain('0.6,2,100')
+    })
+
+    it('forwards a numeric minQuality floor and records it in the header', async () => {
+      mockRunCorpusQuery.mockResolvedValue(
+        result({ query: { ...result().query, minQuality: 0.6 } })
+      )
+      const body = await csv('http://x/api/analytics/export?format=csv&minQuality=0.6')
+      expect(mockRunCorpusQuery).toHaveBeenCalledWith(
+        expect.objectContaining({ minQuality: 0.6 })
+      )
+      expect(body).toContain('# min_quality,0.6')
+    })
+
+    it('does not send a floor when the param is absent', async () => {
+      await csv('http://x/api/analytics/export?format=csv')
+      expect(mockRunCorpusQuery).toHaveBeenCalledWith(
+        expect.objectContaining({ minQuality: undefined })
+      )
+    })
+  })
+
   describe('provenance header', () => {
     it('records every filter that was applied, including sources and sentiments', async () => {
       // A file that omits filters from its own header misreports what it holds.

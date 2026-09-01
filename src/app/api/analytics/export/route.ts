@@ -78,6 +78,7 @@ function toCsv(data: Result): string {
   // own provenance header misreports what it contains.
   lines.push(`# sources,${csvCell(q.sources.join('|') || '(all)')}`)
   lines.push(`# sentiments,${csvCell(q.sentiments.join('|') || '(all)')}`)
+  lines.push(`# min_quality,${q.minQuality ?? '(none)'}`)
   lines.push(`# from,${q.from}`)
   lines.push(`# to,${q.to}`)
   lines.push(`# total_articles,${data.total}`)
@@ -103,6 +104,15 @@ function toCsv(data: Result): string {
   }
   lines.push('')
 
+  // The console ranks AI keywords under "topics"; the classifier's own category
+  // labels are a coarser, controlled vocabulary and answer a different question
+  // ("how much transport coverage?"). The page has no room for both, so the
+  // export is where the category cut is available.
+  lines.push('## categories')
+  lines.push(csvRow(['category', 'article_count']))
+  for (const c of data.byCategory) lines.push(csvRow([c.term, c.count]))
+  lines.push('')
+
   lines.push('## topics')
   lines.push(csvRow(['keyword', 'article_count']))
   for (const t of data.byKeyword) lines.push(csvRow([t.term, t.count]))
@@ -120,6 +130,11 @@ function toCsv(data: Result): string {
   for (const k of ['positive', 'neutral', 'negative', 'mixed'] as const) {
     lines.push(csvRow([k, data.sentiment[k], data.sentiment.coverage]))
   }
+  lines.push('')
+
+  lines.push('## quality')
+  lines.push(csvRow(['mean_quality_score', 'scored_articles', 'coverage_pct_of_match']))
+  lines.push(csvRow([data.quality.avg, data.quality.covered, data.quality.coverage]))
   lines.push('')
 
   lines.push('## bylines')
@@ -162,6 +177,11 @@ export async function GET(request: NextRequest) {
       sentiments: readList(sp, 'sentiment'),
       from: sp.get('from') ?? undefined,
       to: sp.get('to') ?? undefined,
+      // Not a control on the page, but the export is the surface an analyst
+      // scripts against — `?minQuality=0.6` drops the enrichment model's
+      // low-confidence tail from a downloaded dataset. A non-numeric value
+      // becomes NaN, which the action's validation rejects back to "no floor".
+      minQuality: sp.has('minQuality') ? Number(sp.get('minQuality')) : undefined,
       sampleLimit: 100,
     })
 

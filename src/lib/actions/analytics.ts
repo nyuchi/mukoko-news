@@ -14,6 +14,7 @@
  */
 
 import { z } from 'zod'
+import { unstable_cache } from 'next/cache'
 import {
   runCorpusQuery,
   getCoverageConcentration,
@@ -98,14 +99,43 @@ export async function runCorpusQueryAction(params: unknown): Promise<CorpusQuery
 }
 
 /**
+ * Cache window for the two query-INDEPENDENT reads below.
+ *
+ * `/analytics` is `force-dynamic` because the corpus query answers an arbitrary
+ * URL, but the facet list and the concentration table do not depend on the
+ * query at all — every visitor gets the same numbers. Without this, one public
+ * unauthenticated page view ran three aggregations over `news.articles`, two of
+ * them recomputing an identical answer. Ten minutes matches `/insights`
+ * (`revalidate = 600`): these are day-scale corpus shape metrics, not a live
+ * feed, and the console's own result stays uncached and current.
+ */
+const FACET_CACHE_SECONDS = 600
+
+/**
+ * `unstable_cache` keys on the arguments, so the clamped day count is passed in
+ * rather than read inside — two different windows must not share an entry.
+ */
+const cachedConcentration = unstable_cache(
+  (days: number) => getCoverageConcentration({ days }),
+  ['analytics-coverage-concentration'],
+  { revalidate: FACET_CACHE_SECONDS, tags: ['analytics-facets'] }
+)
+
+const cachedFacets = unstable_cache(
+  (days: number) => getQueryFacets({ days }),
+  ['analytics-query-facets'],
+  { revalidate: FACET_CACHE_SECONDS, tags: ['analytics-facets'] }
+)
+
+/**
  * Per-country source concentration over the recent window — how many outlets
  * actually serve each country, and what share the largest one holds.
  */
 export async function getCoverageConcentrationAction(days = 30): Promise<CoverageConcentration> {
-  return getCoverageConcentration({ days: clampInt(days, 1, 365, 30) })
+  return cachedConcentration(clampInt(days, 1, 365, 30))
 }
 
 /** The filter values the corpus can actually answer for, to populate the console's controls. */
 export async function getQueryFacetsAction(days = 90): Promise<QueryFacets> {
-  return getQueryFacets({ days: clampInt(days, 1, 365, 90) })
+  return cachedFacets(clampInt(days, 1, 365, 90))
 }

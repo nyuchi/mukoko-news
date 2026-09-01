@@ -41,7 +41,10 @@ export default async function AnalyticsPage({
   }
 
   // All three reads are fail-soft (each returns an empty-but-typed result), so
-  // a degraded cluster renders an empty console rather than a 500.
+  // a degraded cluster renders an empty console rather than a 500. Only the
+  // corpus query actually depends on `params` — the facet list and the
+  // concentration table are query-independent and cached inside their actions,
+  // so a page view costs one aggregation, not three.
   const [result, facets, concentration] = await Promise.all([
     runCorpusQueryAction(params),
     getQueryFacetsAction(90),
