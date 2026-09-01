@@ -1,13 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { runCorpusQueryAction } from '@/lib/actions/analytics'
+import { isViewerSignedIn } from '@/lib/auth/guard'
 import { checkRateLimit, getRequestIp } from '@/lib/rate-limit'
 
 /**
  * Export the result of one /analytics query.
  *
- * Public and read-only, like the Insights export — but the response depends on
- * the caller's filters, so it is NOT edge-cached across callers: two analysts
- * running different queries must not share a CDN entry. Rate-limited instead.
+ * SIGNED-IN ONLY, unlike `/api/insights/export`. That one emits a fixed
+ * open-data bundle; this one emits whatever slice the caller's filters select,
+ * including matched sample articles — so it is the bulk-extraction path for the
+ * corpus and carries the same bar as the console itself.
+ *
+ * The response depends on the caller's filters and their session, so it is NOT
+ * edge-cached across callers: two analysts running different queries must not
+ * share a CDN entry. Rate-limited per caller instead.
  */
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -155,6 +161,13 @@ function readList(sp: URLSearchParams, key: string): string[] {
 }
 
 export async function GET(request: NextRequest) {
+  // Checked before the rate limit so an anonymous caller cannot consume another
+  // IP's budget, and answered as 401 rather than a redirect: this is a data
+  // endpoint, and an HTML sign-in page would be a confusing response to `curl`.
+  if (!(await isViewerSignedIn())) {
+    return NextResponse.json({ error: 'Sign in required' }, { status: 401 })
+  }
+
   const ip = getRequestIp(request)
   if (!(await checkRateLimit(`analytics-export:${ip}`, RATE_LIMIT_MAX, RATE_LIMIT_WINDOW_MS))) {
     return NextResponse.json(

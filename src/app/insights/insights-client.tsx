@@ -17,11 +17,13 @@ import {
   ArrowUpDown,
   BadgeCheck,
   TrendingUp,
+  Lock,
 } from 'lucide-react'
 import { ErrorBoundary } from '@/components/ui/error-boundary'
 import { getCategoryEmoji } from '@/lib/constants'
 import { topicSlug } from '@/lib/utils'
 import type { InsightsBundle } from '@/lib/actions/insights'
+import type { CorpusSummary } from '@/lib/mongodb/insights'
 
 // ---------------------------------------------------------------------------
 // Formatting helpers (pure — unit-testable)
@@ -330,15 +332,64 @@ function Section({
 // Main
 // ---------------------------------------------------------------------------
 
-export default function InsightsClient({ data }: { data: InsightsBundle }) {
-  const { summary, volume, leaderboard, categories, countries, sentiment, topics } = data
+/**
+ * Shown in place of the breakdowns for an anonymous visitor.
+ *
+ * Names what is behind the gate rather than teasing vaguely — a reader deciding
+ * whether to sign in should know what they get for it.
+ */
+function SignInToSeeMore() {
+  return (
+    <div className="mt-8 rounded-2xl border border-elevated bg-surface p-8 text-center">
+      <div className="w-14 h-14 bg-container-tanzanite rounded-full flex items-center justify-center mx-auto mb-4">
+        <Lock className="w-7 h-7 text-on-container-tanzanite" aria-hidden="true" />
+      </div>
+      <h2 className="font-serif text-2xl font-bold mb-2">Sign in for the full picture</h2>
+      <p className="text-text-secondary max-w-lg mx-auto mb-6">
+        The corpus figures above are open. Publishing volume over time, the source
+        leaderboard, category and country coverage, sentiment and trending topics — plus
+        the data export and the query console — are available to signed-in accounts.
+      </p>
+      <div className="flex items-center justify-center gap-3">
+        <Link
+          href="/sign-in?returnTo=%2Finsights"
+          className="inline-flex items-center gap-2 px-5 py-2.5 bg-primary text-on-primary font-medium rounded-xl hover:opacity-90 transition-opacity"
+        >
+          Sign in
+        </Link>
+        <Link
+          href="/"
+          className="px-5 py-2.5 bg-surface border border-elevated text-foreground font-medium rounded-xl hover:bg-elevated transition-colors"
+        >
+          Back to news
+        </Link>
+      </div>
+    </div>
+  )
+}
+
+export default function InsightsClient({
+  summary,
+  detail,
+  signedIn,
+}: {
+  summary: CorpusSummary
+  detail: InsightsBundle | null
+  signedIn: boolean
+}) {
+  const volume = detail?.volume
+  const leaderboard = detail?.leaderboard ?? []
+  const categories = detail?.categories
+  const countries = detail?.countries
+  const sentiment = detail?.sentiment
+  const topics = detail?.topics ?? []
 
   const isEmpty =
     summary.totalArticles === 0 &&
-    volume.total === 0 &&
+    !volume?.total &&
     leaderboard.length === 0 &&
-    categories.categories.length === 0 &&
-    countries.countries.length === 0
+    !categories?.categories.length &&
+    !countries?.countries.length
 
   return (
     <ErrorBoundary
@@ -356,7 +407,7 @@ export default function InsightsClient({ data }: { data: InsightsBundle }) {
           <p className="text-text-secondary max-w-2xl">
             A live, public analytics view of the Mukoko News corpus — every figure is computed
             directly from the articles we aggregate across African newsrooms. Open data, free to
-            download.
+            download. The deeper query console is available to signed-in accounts.
           </p>
           <div className="mt-4 flex flex-wrap gap-3">
             <a
@@ -373,6 +424,10 @@ export default function InsightsClient({ data }: { data: InsightsBundle }) {
             >
               <LineChart className="w-4 h-4" aria-hidden="true" />
               Query the corpus
+              {/* Said up front rather than discovered at the redirect: the
+                  published figures on this page are open, the query console
+                  behind them is not. */}
+              <span className="text-xs text-text-secondary font-normal">(sign in)</span>
             </Link>
             <a
               href="/api/insights/export?format=csv"
@@ -435,8 +490,11 @@ export default function InsightsClient({ data }: { data: InsightsBundle }) {
               <StatTile icon={CalendarRange} label="Latest" value={formatDay(summary.latest)} />
             </div>
 
+            {/* Everything below the summary is signed-in only. */}
+            {!signedIn && <SignInToSeeMore />}
+
             {/* Publishing volume */}
-            {volume.total > 0 && (
+            {volume && volume.total > 0 && (
               <Section
                 deepDive={{ href: '/analytics', label: 'Query this' }}
                 title="Publishing volume"
@@ -477,7 +535,7 @@ export default function InsightsClient({ data }: { data: InsightsBundle }) {
 
             <div className="grid md:grid-cols-2 gap-10">
               {/* Category distribution */}
-              {categories.categories.length > 0 && (
+              {categories && categories.categories.length > 0 && (
                 <Section
                   title="Topic distribution"
                   caption={`Share of ${formatNumber(
@@ -499,7 +557,7 @@ export default function InsightsClient({ data }: { data: InsightsBundle }) {
               )}
 
               {/* Country coverage */}
-              {countries.countries.length > 0 && (
+              {countries && countries.countries.length > 0 && (
                 <Section
                   deepDive={{ href: '/analytics', label: 'Coverage concentration' }}
                   title="Country coverage"
@@ -520,7 +578,7 @@ export default function InsightsClient({ data }: { data: InsightsBundle }) {
             </div>
 
             {/* Sentiment breakdown */}
-            {sentiment.breakdown.length > 0 && (
+            {sentiment && sentiment.breakdown.length > 0 && (
               <Section
                 title="Sentiment"
                 caption={`AI-assessed tone. Coverage: ${sentiment.coverage}% of the corpus is enriched with a sentiment label (${formatNumber(
@@ -578,7 +636,7 @@ export default function InsightsClient({ data }: { data: InsightsBundle }) {
             <footer className="mt-8 pt-6 border-t border-elevated text-xs text-text-tertiary">
               Figures are computed live from the Mukoko News corpus and cached for up to 10 minutes.
               Metrics over enriched subsets (sentiment, quality) are labelled with their coverage.
-              Data generated {formatDay(data.generatedAt)}.
+              {detail ? `Data generated ${formatDay(detail.generatedAt)}.` : ''}
             </footer>
           </>
         )}

@@ -114,7 +114,7 @@ describe('pure helpers', () => {
 
 describe('InsightsClient', () => {
   it('renders the corpus summary, sections and open-data links', () => {
-    render(<InsightsClient data={bundle} />)
+    render(<InsightsClient summary={bundle.summary} detail={bundle} signedIn />)
 
     expect(screen.getByRole('heading', { name: /Open Data/i })).toBeInTheDocument()
     expect(screen.getByText('18,081')).toBeInTheDocument()
@@ -130,12 +130,12 @@ describe('InsightsClient', () => {
   })
 
   it('labels sentiment with its coverage percentage (honest thin-data caveat)', () => {
-    render(<InsightsClient data={bundle} />)
+    render(<InsightsClient summary={bundle.summary} detail={bundle} signedIn />)
     expect(screen.getByText(/Coverage: 25% of the corpus/i)).toBeInTheDocument()
   })
 
   it('sorts the leaderboard when a column header is clicked', () => {
-    render(<InsightsClient data={bundle} />)
+    render(<InsightsClient summary={bundle.summary} detail={bundle} signedIn />)
     const table = screen.getByRole('table')
     const rowNames = () =>
       within(table)
@@ -156,7 +156,7 @@ describe('InsightsClient', () => {
   })
 
   it('renders the empty state when the corpus has no data', () => {
-    render(<InsightsClient data={emptyBundle} />)
+    render(<InsightsClient summary={emptyBundle.summary} detail={emptyBundle} signedIn />)
     expect(screen.getByText('No data available yet')).toBeInTheDocument()
     // Download affordances remain available even when empty.
     expect(screen.getByRole('link', { name: /Download open data \(JSON\)/i })).toBeInTheDocument()

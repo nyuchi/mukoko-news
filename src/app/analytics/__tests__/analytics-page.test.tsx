@@ -15,10 +15,22 @@ vi.mock('next/link', () => ({
   ),
 }))
 
+const mockRedirect = vi.fn((url: string) => {
+  // Mirrors next/navigation: redirect() throws to halt rendering.
+  throw new Error(`NEXT_REDIRECT:${url}`)
+})
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
   useSearchParams: () => new URLSearchParams(),
   usePathname: () => '/analytics',
+  redirect: (url: string) => mockRedirect(url),
+}))
+
+// The console is signed-in only. The guard wraps WorkOS, which cannot resolve
+// under jsdom, so it is mocked here and the access rules are asserted directly.
+const mockSignedIn = vi.fn()
+vi.mock('@/lib/auth/guard', () => ({
+  isViewerSignedIn: () => mockSignedIn(),
 }))
 
 // The page reads via Server Actions, so mock the action module (not mongodb/).
@@ -134,6 +146,7 @@ async function renderPage(sp: Record<string, string | string[]> = {}) {
 describe('AnalyticsPage (query console)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockSignedIn.mockResolvedValue(true)
     mockRunCorpusQuery.mockResolvedValue(baseResult)
     mockGetQueryFacets.mockResolvedValue(baseFacets)
     mockGetCoverageConcentration.mockResolvedValue(baseConcentration)
@@ -263,6 +276,32 @@ describe('AnalyticsPage (query console)', () => {
     await renderPage({ q: 'zzzzz' })
     expect(screen.getByText('Nothing matched')).toBeInTheDocument()
     expect(screen.queryByText('Export CSV')).not.toBeInTheDocument()
+  })
+
+  describe('access', () => {
+    beforeEach(() => mockSignedIn.mockResolvedValue(false))
+
+    it('redirects an anonymous visitor to sign-in', async () => {
+      await expect(renderPage({})).rejects.toThrow(/NEXT_REDIRECT/)
+      expect(mockRedirect).toHaveBeenCalledWith('/sign-in?returnTo=%2Fanalytics')
+    })
+
+    it('preserves the query across the sign-in round trip', async () => {
+      // A shared console link must survive the redirect, or the analyst lands
+      // on a blank console instead of the query they were sent.
+      await expect(
+        renderPage({ q: 'accident', country: 'ZW' })
+      ).rejects.toThrow(/NEXT_REDIRECT/)
+      const target = mockRedirect.mock.calls[0][0] as string
+      const returnTo = decodeURIComponent(target.split('returnTo=')[1])
+      expect(returnTo).toContain('q=accident')
+      expect(returnTo).toContain('country=ZW')
+    })
+
+    it('never runs the corpus query for an anonymous visitor', async () => {
+      await expect(renderPage({ q: 'accident' })).rejects.toThrow(/NEXT_REDIRECT/)
+      expect(mockRunCorpusQuery).not.toHaveBeenCalled()
+    })
   })
 
   it('links back to the insights headline view', async () => {

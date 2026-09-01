@@ -17,8 +17,15 @@ vi.mock('@/components/ui/error-boundary', () => ({
 
 // Pages read via Server Actions — mock the insights action module (Rule 4).
 const mockBundle = vi.fn()
+const mockPublic = vi.fn()
 vi.mock('@/lib/actions/insights', () => ({
   getInsightsBundleAction: () => mockBundle(),
+  getPublicInsightsAction: () => mockPublic(),
+}))
+
+const mockSignedIn = vi.fn()
+vi.mock('@/lib/auth/guard', () => ({
+  isViewerSignedIn: () => mockSignedIn(),
 }))
 
 const bundle: InsightsBundle = {
@@ -43,6 +50,8 @@ const bundle: InsightsBundle = {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  mockSignedIn.mockResolvedValue(true)
+  mockPublic.mockResolvedValue({ summary: bundle.summary, generatedAt: bundle.generatedAt })
 })
 
 describe('InsightsPage (server component)', () => {
@@ -54,8 +63,32 @@ describe('InsightsPage (server component)', () => {
     expect(mockBundle).toHaveBeenCalledOnce()
   })
 
-  it('is configured for ISR with a 10-minute revalidate window', async () => {
+  it('renders per request so the response can vary by session', async () => {
+    // Regression guard: this page used ISR (`revalidate = 600`). Now that the
+    // breakdowns are gated, a cached HTML page would serve one visitor's access
+    // level to the next. The 10-minute window moved onto the DATA instead.
     const mod = await import('../page')
-    expect(mod.revalidate).toBe(600)
+    expect(mod.dynamic).toBe('force-dynamic')
+    expect((mod as Record<string, unknown>).revalidate).toBeUndefined()
+  })
+
+  describe('anonymous visitor', () => {
+    beforeEach(() => mockSignedIn.mockResolvedValue(false))
+
+    it('never fetches the gated bundle', async () => {
+      render(await InsightsPage())
+      expect(mockBundle).not.toHaveBeenCalled()
+      expect(mockPublic).toHaveBeenCalledOnce()
+    })
+
+    it('still shows the public corpus summary', async () => {
+      render(await InsightsPage())
+      expect(screen.getByText('1,234')).toBeInTheDocument()
+    })
+
+    it('prompts for sign-in instead of the breakdowns', async () => {
+      render(await InsightsPage())
+      expect(screen.getByText(/Sign in for the full picture/i)).toBeInTheDocument()
+    })
   })
 })
