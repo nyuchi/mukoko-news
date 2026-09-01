@@ -4,19 +4,19 @@ import { getFullUrl } from "@/lib/constants";
 export const metadata: Metadata = {
   title: "Analytics",
   description:
-    "Open data analytics from Mukoko News — trending topics, surge alerts, and content breakdowns across 16 African countries.",
+    "Query the Mukoko News corpus directly — any topic, any African country, any window. Volume over time, who is covering it, topics, named entities, sentiment and source concentration, computed live and exportable as CSV.",
   alternates: { canonical: getFullUrl("/analytics") },
   openGraph: {
-    title: "Open Analytics | Mukoko News",
+    title: "Analytics | Mukoko News",
     description:
-      "Trending topics, surge detection, and content breakdowns across African news.",
+      "Query African news coverage by topic, country and date. Volume, sources, topics, entities, sentiment and coverage concentration.",
     url: getFullUrl("/analytics"),
     type: "website",
   },
   twitter: {
     card: "summary",
-    title: "Open Analytics | Mukoko News",
-    description: "Trending topics and surge alerts from Mukoko News.",
+    title: "Analytics | Mukoko News",
+    description: "Query African news coverage by topic, country and date — live from the Mukoko News corpus.",
     creator: "@mukokoafrica",
   },
 };

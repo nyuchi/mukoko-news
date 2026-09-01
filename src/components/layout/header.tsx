@@ -3,7 +3,7 @@
 import { useState, useEffect, useSyncExternalStore, useMemo, useRef } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Search, Zap, User, ChevronDown, Compass, Bookmark, BarChart3, HelpCircle, Settings } from "lucide-react";
+import { Search, Zap, User, ChevronDown, Compass, Bookmark, BarChart3, LineChart, HelpCircle, Settings } from "lucide-react";
 import { AppIcon } from "@/components/ui/app-icon";
 
 const navLinks = [
@@ -19,6 +19,7 @@ const allPages = [
   { href: "/newsbytes", label: "NewsBytes", icon: Zap },
   { href: "/categories", label: "Categories", icon: BarChart3 },
   { href: "/insights", label: "Insights", icon: BarChart3 },
+  { href: "/analytics", label: "Analytics", icon: LineChart },
   { href: "/saved", label: "Saved", icon: Bookmark },
   { href: "/search", label: "Search", icon: Search },
   { href: "/profile", label: "Profile", icon: Settings },
@@ -31,6 +32,8 @@ const pageTitles: Record<string, string> = {
   "/discover": "Discover",
   "/newsbytes": "NewsBytes",
   "/categories": "Categories",
+  "/insights": "Open Data & Insights",
+  "/analytics": "Analytics",
   "/search": "Search",
   "/saved": "Saved Articles",
   "/profile": "Profile",
