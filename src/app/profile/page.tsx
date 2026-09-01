@@ -18,14 +18,8 @@ import {
 import { useTheme } from "@/components/theme-provider";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { useAuth } from "@workos-inc/authkit-nextjs/components";
-
-/** Two-letter initials for the avatar, falling back to the email's first letter. */
-function initials(first?: string | null, last?: string | null, email?: string | null): string {
-  const a = (first ?? "").trim();
-  const b = (last ?? "").trim();
-  if (a || b) return `${a.charAt(0)}${b.charAt(0)}`.toUpperCase() || a.charAt(0).toUpperCase();
-  return (email ?? "?").charAt(0).toUpperCase();
-}
+import { ProfileIdentity } from "@/components/profile/profile-identity";
+import { ProfilePreferences } from "@/components/profile/profile-preferences";
 
 function ProfileContent() {
   const { theme, cycleTheme } = useTheme();
@@ -90,21 +84,17 @@ function ProfileContent() {
   }
 
   // ── Signed-in ──
-  const displayName =
-    [user.firstName, user.lastName].filter(Boolean).join(" ") || user.email;
-
   return (
     <div className="max-w-[600px] mx-auto px-6 py-12">
-      <div className="text-center mb-10">
-        {/* Solid container fill — the brand forbids gradients on surfaces. */}
-        <div className="w-20 h-20 bg-container-tanzanite rounded-full flex items-center justify-center mx-auto mb-5">
-          <span className="font-serif text-2xl font-semibold text-on-container-tanzanite">
-            {initials(user.firstName, user.lastName, user.email)}
-          </span>
-        </div>
-        <h1 className="font-serif text-2xl font-bold mb-1">{displayName}</h1>
-        <p className="text-text-secondary">{user.email}</p>
-      </div>
+      <ProfileIdentity
+        firstName={user.firstName}
+        lastName={user.lastName}
+        email={user.email}
+        pictureUrl={user.profilePictureUrl}
+      />
+
+      {/* The settings that were missing entirely: countries + interests. */}
+      <ProfilePreferences />
 
       {/* Publisher tools — the Tier-2 claim entry point. */}
       <div className="bg-surface border border-elevated rounded-2xl overflow-hidden mb-6">

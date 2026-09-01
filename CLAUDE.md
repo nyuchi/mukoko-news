@@ -62,7 +62,7 @@ pnpm add <package>    # or: npm install <package>
 - **Lucide React** for icons, **next-themes** for dark mode
 - **MongoDB driver v7** — Server Actions in `src/lib/actions/*.ts` call `src/lib/mongodb/*.ts` → MongoDB Atlas directly
 - **WorkOS AuthKit** (`@workos-inc/authkit-nextjs`, `@workos-inc/authkit-js`, `@workos-inc/node`) — authentication (WorkOS-hosted AuthKit page — owns MFA + the shared cross-app session) + RBAC
-- **State**: React Context — `PreferencesContext` (`src/contexts/preferences-context.tsx`, country/category) and theme via `next-themes`
+- **State**: React Context — `PreferencesContext` (`src/contexts/preferences-context.tsx`, country/category; edited from the onboarding modal, the home feed picker, and `/profile` via `components/profile/profile-preferences.tsx` — **localStorage only**, so it is per-device and does NOT follow the account across the Mukoko apps yet) and theme via `next-themes`
 - **Path alias**: `@/*` maps to `src/*`
 
 ### Directory Map
@@ -122,6 +122,7 @@ All news data reads go through Server Actions → MongoDB Atlas (`news` database
 
 - **Engagement** (like / view / save) — Next.js **Route Handlers** under `src/app/api/articles/[id]/{like,view,save}/route.ts` (`POST`, `runtime = 'nodejs'`), rate-limited via `src/lib/rate-limit.ts` (`checkRateLimit` — **async** — and `getRequestIp`). When `UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN` are set the limit is enforced globally via the Upstash REST API (fixed window, fails open); otherwise it's the in-memory per-instance window. Likes/saves are keyed to an **engagement subject** (`src/lib/engagement.ts`): the signed-in WorkOS user (`user:<id>` — follows the account across devices; anonymous cookie history is claimed on first signed-in interaction) or the `mukoko_session` cookie. The stored field remains `sessionId` — an opaque subject key to the gateway/pipeline. `src/app/api/health/route.ts` is the health probe.
 - **Admin mutations** — `src/lib/admin/gateway.ts` proxies to the gateway Worker's WorkOS-gated `/api/admin/*` endpoints, forwarding the WorkOS access token as a Bearer header so the Worker re-verifies the same RBAC. **This is the only place the frontend touches the gateway.**
+- **Own-profile edits** — `src/lib/actions/profile.ts` `updateProfileAction()` writes the signed-in user's name to **WorkOS** (`@workos-inc/node` `userManagement.updateUser`), never to MongoDB. `identity.persons` is owned by the gateway, which is its only writer, so the frontend updates the source instead: WorkOS fires `user.updated` → the gateway's `POST /api/webhooks/workos` → `IdentityService` upserts `identity.persons` (`givenName`/`familyName`/`picture`/`name`) → every Mukoko app sees the change. The action takes **no user id** — it reads it from the verified session, so it cannot be retargeted at another account.
 - **Pipeline refresh** — `src/lib/actions/refresh.ts` `triggerFeedCollection()` fire-and-forget `POST`s to `FLY_WORKER_URL/trigger/collect` with `FLY_TRIGGER_TOKEN`.
 - **Open-data export** (read-only, public) — `src/app/api/insights/export/route.ts` (`GET`, `runtime = 'nodejs'`, `revalidate = 600`) returns the aggregated Insights bundle. `?format=json` (default) emits the full `InsightsBundle`; `?format=csv` emits one CSV with three labelled tables — `## media_organizations`, `## topic_distribution`, `## country_coverage` (RFC-4180 quoted). Rate-limited via `checkRateLimit`/`getRequestIp` (20 req/min/IP → `429` + `Retry-After`); edge-cached (`Cache-Control: public, s-maxage=600, stale-while-revalidate=1800`). Linked from the `/insights` page ("Download open data"). This is a plain Route Handler → MongoDB, not a gateway call.
 
@@ -202,6 +203,7 @@ FLY_TRIGGER_TOKEN=...                              # must match the fly secret
 - `src/app/auth/callback/route.ts` — WorkOS OAuth callback handler; hardened with `handleAuth({ returnPathname, onError })` so a bad/missing `code` or a failed exchange redirects to `/sign-in?error=…` instead of a 500.
 - `src/lib/auth/actions.ts` — `isSignedIn()`, `signOutAction()` (clears the AuthKit session cookie).
 - `src/app/layout.tsx` — wraps the app in `AuthKitProvider`.
+- `src/components/layout/user-avatar.tsx` — the header account control, and the only chrome that shows whether a session exists. Reads `useAuth()` (the client hook `AuthKitProvider` supplies) rather than `withAuth()` in the root layout: reading cookies in the root layout would opt **every** route into dynamic rendering to decorate one control. Signed out → `/sign-in`; signed in → the WorkOS `profilePictureUrl` (validated with `isValidImageUrl`, monogram on failure) linking to `/profile`.
 
 **RBAC tiers** (`src/lib/auth/roles.ts`) — `resolveTier(claims)` → `'none' | 'moderator' | 'admin' | 'superadmin'`:
 

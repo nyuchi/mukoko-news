@@ -169,3 +169,20 @@ export function topicSlug(value: string): string {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
 }
+
+/**
+ * Two-letter initials for an avatar, falling back to the email's first letter.
+ *
+ * Shared by the header avatar and the profile page so a signed-in user sees the
+ * same monogram in both places — they were drifting as separate copies.
+ */
+export function userInitials(
+  first?: string | null,
+  last?: string | null,
+  email?: string | null
+): string {
+  const a = (first ?? '').trim();
+  const b = (last ?? '').trim();
+  if (a || b) return `${a.charAt(0)}${b.charAt(0)}`.toUpperCase() || a.charAt(0).toUpperCase();
+  return (email ?? '?').charAt(0).toUpperCase();
+}

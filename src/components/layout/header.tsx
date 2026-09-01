@@ -3,7 +3,8 @@
 import { useState, useEffect, useSyncExternalStore, useMemo, useRef } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Search, Zap, User, ChevronDown, Compass, Bookmark, BarChart3, LineChart, HelpCircle, Settings } from "lucide-react";
+import { Search, Zap, ChevronDown, Compass, Bookmark, BarChart3, LineChart, HelpCircle, Settings } from "lucide-react";
+import { UserAvatar } from "./user-avatar";
 import { AppIcon } from "@/components/ui/app-icon";
 
 const navLinks = [
@@ -285,17 +286,7 @@ export function Header() {
           >
             <Zap className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
           </Link>
-          <Link
-            href="/profile"
-            className={`flex items-center justify-center w-9 h-9 sm:w-11 sm:h-11 rounded-full transition-colors overflow-hidden ${
-              isNewsBytes
-                ? "bg-white/10 hover:bg-white/20"
-                : "bg-background/20 hover:bg-background/30"
-            }`}
-            aria-label="Profile"
-          >
-            <User className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
-          </Link>
+          <UserAvatar onDark={isNewsBytes} />
         </div>
       </div>
     </header>
