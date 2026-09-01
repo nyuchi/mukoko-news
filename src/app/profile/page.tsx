@@ -17,20 +17,37 @@ import {
 } from "lucide-react";
 import { useTheme } from "@/components/theme-provider";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
+import { useEffect, useState } from "react";
 import { useAuth } from "@workos-inc/authkit-nextjs/components";
-
-/** Two-letter initials for the avatar, falling back to the email's first letter. */
-function initials(first?: string | null, last?: string | null, email?: string | null): string {
-  const a = (first ?? "").trim();
-  const b = (last ?? "").trim();
-  if (a || b) return `${a.charAt(0)}${b.charAt(0)}`.toUpperCase() || a.charAt(0).toUpperCase();
-  return (email ?? "?").charAt(0).toUpperCase();
-}
+import { getMyProfileAction } from "@/lib/actions/profile";
+import type { MyProfile } from "@/lib/mongodb/identity";
+import { ProfileIdentity } from "@/components/profile/profile-identity";
+import { ProfilePreferences } from "@/components/profile/profile-preferences";
 
 function ProfileContent() {
   const { theme, cycleTheme } = useTheme();
   const { user, loading, signOut } = useAuth();
   const isLoggedIn = !!user;
+  // The canonical profile record — richer than the session claims (the picture
+  // lives on profile-images.mukoko.com and interests are not in the token).
+  const [profile, setProfile] = useState<MyProfile | null>(null);
+
+  useEffect(() => {
+    if (!user) {
+      setProfile(null);
+      return;
+    }
+    let active = true;
+    getMyProfileAction()
+      .then((p) => {
+        if (active) setProfile(p);
+      })
+      // Fail-soft: the page still renders from the session claims.
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [user]);
 
   const getThemeIcon = () => {
     switch (theme) {
@@ -90,21 +107,19 @@ function ProfileContent() {
   }
 
   // ── Signed-in ──
-  const displayName =
-    [user.firstName, user.lastName].filter(Boolean).join(" ") || user.email;
-
   return (
     <div className="max-w-[600px] mx-auto px-6 py-12">
-      <div className="text-center mb-10">
-        {/* Solid container fill — the brand forbids gradients on surfaces. */}
-        <div className="w-20 h-20 bg-container-tanzanite rounded-full flex items-center justify-center mx-auto mb-5">
-          <span className="font-serif text-2xl font-semibold text-on-container-tanzanite">
-            {initials(user.firstName, user.lastName, user.email)}
-          </span>
-        </div>
-        <h1 className="font-serif text-2xl font-bold mb-1">{displayName}</h1>
-        <p className="text-text-secondary">{user.email}</p>
-      </div>
+      {/* Name and picture come from identity.persons, falling back to the
+          session claims until the record is populated. */}
+      <ProfileIdentity
+        firstName={profile?.givenName ?? user.firstName}
+        lastName={profile?.familyName ?? user.lastName}
+        email={user.email}
+        pictureUrl={profile?.picture ?? user.profilePictureUrl}
+      />
+
+      {/* The settings that were missing entirely: countries + interests. */}
+      <ProfilePreferences signedIn initialInterests={profile?.interests} />
 
       {/* Publisher tools — the Tier-2 claim entry point. */}
       <div className="bg-surface border border-elevated rounded-2xl overflow-hidden mb-6">
