@@ -79,9 +79,21 @@ export async function getTrendingAuthors(limit = 5): Promise<{
 }> {
   limit = clampInt(limit, 1, MAX_LIMIT, 5)
   const db = await getDb()
+  // `author` is a Schema.org sub-document ({ '@type': 'Person', name }) written
+  // by both ingestion paths — NOT a string. Grouping on `$author` grouped by the
+  // whole object and then rendered it through String(), so every entry showed as
+  // "[object Object]"; group on the name instead. The `$type: 'string'` match
+  // also skips any legacy document that stored a bare string or a malformed
+  // sub-document, rather than letting it become a bogus author row.
   const results = await db.collection('articles').aggregate<{ _id: string; count: number }>([
-    { $match: { status: { $ne: 'rejected' }, author: { $exists: true, $nin: [null, ''] } } },
-    { $group: { _id: '$author', count: { $sum: 1 } } },
+    {
+      $match: {
+        status: { $ne: 'rejected' },
+        moderationStatus: { $ne: 'removed' },
+        'author.name': { $type: 'string', $ne: '' },
+      },
+    },
+    { $group: { _id: '$author.name', count: { $sum: 1 } } },
     { $sort: { count: -1 } },
     { $limit: limit },
   ]).toArray()
