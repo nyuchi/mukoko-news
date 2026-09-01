@@ -516,7 +516,56 @@ export interface TopTopic {
 }
 
 /**
- * Trending `engagement.tags` over the last 7 days, ranked by article count.
+ * Boilerplate that dominates a naive topic ranking.
+ *
+ * `engagement.tags` carries the raw RSS <category>/<dc:subject> terms, whose
+ * most frequent values across the corpus are feed section names ("News",
+ * "Featured", "National") and the publication's own country. Ranking them
+ * produced a "Trending topics" list whose top entries carried no information,
+ * which is why this now ranks `aiKeywords` — but the enrichment model echoes
+ * the same words back from the article text, so they are filtered here too.
+ */
+const TOPIC_STOPWORDS = new Set<string>([
+  'news',
+  'featured',
+  'national',
+  'general',
+  'latest',
+  'headlines',
+  'breaking',
+  'breaking news',
+  'top stories',
+  'uncategorized',
+  'uncategorised',
+  'home',
+  'local',
+  'world',
+  'africa',
+  'opinion',
+  'article',
+  'articles',
+  'updates',
+])
+
+/** Country names and codes are a facet of the corpus, not a topic within it. */
+const COUNTRY_TOKENS = new Set<string>(
+  COUNTRIES.flatMap((c) => [c.name.toLowerCase(), c.code.toLowerCase()])
+)
+
+function isMeaningfulTopic(raw: string): boolean {
+  const t = raw.trim().toLowerCase()
+  if (t.length < 2 || t.length > 60) return false
+  return !TOPIC_STOPWORDS.has(t) && !COUNTRY_TOKENS.has(t)
+}
+
+/**
+ * Trending topics over the last 7 days, ranked by article count.
+ *
+ * Reads `aiKeywords` (the enrichment model's extracted keywords), NOT
+ * `engagement.tags`: tags are feed-supplied section labels, so ranking them
+ * surfaced "News" and "Featured" above every real subject. Because aiKeywords
+ * only exists on enriched articles, the ranking covers a subset of the window —
+ * the shape of what is trending, not an exhaustive count.
  */
 export async function getTopTopics({
   limit = 10,
@@ -528,16 +577,26 @@ export async function getTopTopics({
     const rows = await db
       .collection('articles')
       .aggregate<{ _id: string; count: number }>([
-        { $match: { ...BASE_MATCH, datePublished: { $gte: since } } },
-        { $unwind: '$engagement.tags' },
-        { $group: { _id: '$engagement.tags', count: { $sum: 1 } } },
+        {
+          $match: {
+            ...BASE_MATCH,
+            datePublished: { $gte: since },
+            aiKeywords: { $type: 'array' },
+          },
+        },
+        { $unwind: '$aiKeywords' },
+        { $group: { _id: '$aiKeywords', count: { $sum: 1 } } },
         { $match: { _id: { $type: 'string', $ne: '' } } },
         { $sort: { count: -1 } },
-        { $limit: max },
+        // Over-fetch so the stopword filter cannot leave the list short.
+        { $limit: max * 4 },
       ])
       .toArray()
 
-    return rows.map((r) => ({ tag: String(r._id).trim(), count: r.count }))
+    return rows
+      .filter((r) => isMeaningfulTopic(String(r._id)))
+      .slice(0, max)
+      .map((r) => ({ tag: String(r._id).trim(), count: r.count }))
   } catch (error) {
     console.error('[insights.getTopTopics]', error)
     return []

@@ -3,7 +3,9 @@
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import {
+  ArrowRight,
   BarChart3,
+  LineChart,
   Newspaper,
   Radio,
   Building2,
@@ -293,17 +295,31 @@ function SourceLeaderboard({ rows }: { rows: LeaderRow[] }) {
 function Section({
   title,
   caption,
+  deepDive,
   children,
 }: {
   title: string
   caption?: string
+  /** Link into /analytics pre-filtered to this section's slice of the corpus. */
+  deepDive?: { href: string; label: string }
   children: React.ReactNode
 }) {
   return (
     <section className="mb-10">
-      <div className="mb-4">
-        <h2 className="text-xl font-bold text-foreground">{title}</h2>
-        {caption && <p className="text-sm text-text-secondary mt-1">{caption}</p>}
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-bold text-foreground">{title}</h2>
+          {caption && <p className="text-sm text-text-secondary mt-1">{caption}</p>}
+        </div>
+        {deepDive && (
+          <Link
+            href={deepDive.href}
+            className="inline-flex shrink-0 items-center gap-1.5 min-h-[var(--touch-chip)] rounded-full border border-elevated px-3 text-xs font-medium text-primary transition-colors hover:bg-elevated/50"
+          >
+            {deepDive.label}
+            <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
+          </Link>
+        )}
       </div>
       {children}
     </section>
@@ -351,6 +367,13 @@ export default function InsightsClient({ data }: { data: InsightsBundle }) {
               <Download className="w-4 h-4" aria-hidden="true" />
               Download open data (JSON)
             </a>
+            <Link
+              href="/analytics"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-surface border border-elevated text-foreground rounded-full text-sm font-medium hover:bg-elevated/50 transition-colors"
+            >
+              <LineChart className="w-4 h-4" aria-hidden="true" />
+              Query the corpus
+            </Link>
             <a
               href="/api/insights/export?format=csv"
               className="inline-flex items-center gap-2 px-4 py-2 bg-surface border border-elevated text-foreground rounded-full text-sm font-medium hover:bg-elevated/50 transition-colors"
@@ -415,6 +438,7 @@ export default function InsightsClient({ data }: { data: InsightsBundle }) {
             {/* Publishing volume */}
             {volume.total > 0 && (
               <Section
+                deepDive={{ href: '/analytics', label: 'Query this' }}
                 title="Publishing volume"
                 caption={`${formatNumber(volume.total)} articles over the last ${volume.days} days (${formatDay(
                   volume.from
@@ -443,6 +467,7 @@ export default function InsightsClient({ data }: { data: InsightsBundle }) {
             {/* Source / organization leaderboard */}
             {leaderboard.length > 0 && (
               <Section
+                deepDive={{ href: '/analytics', label: 'Filter by source' }}
                 title="Media organizations"
                 caption="Sources ranked by output, with average article quality and length, countries covered and last-published time. Click a column to sort."
               >
@@ -476,11 +501,13 @@ export default function InsightsClient({ data }: { data: InsightsBundle }) {
               {/* Country coverage */}
               {countries.countries.length > 0 && (
                 <Section
+                  deepDive={{ href: '/analytics', label: 'Coverage concentration' }}
                   title="Country coverage"
                   caption={`Articles by country of publication, across ${countries.countries.length} countries.`}
                 >
                   <BarList
                     colorClass="bg-malachite"
+                    href={(code) => `/analytics?country=${encodeURIComponent(code)}`}
                     items={countries.countries.slice(0, 15).map((c) => ({
                       key: c.code,
                       label: c.name,
@@ -529,7 +556,8 @@ export default function InsightsClient({ data }: { data: InsightsBundle }) {
             {topics.length > 0 && (
               <Section
                 title="Trending topics"
-                caption="Most-tagged topics across the last 7 days."
+                caption="Ranked from AI-extracted keywords over the last 7 days — not raw feed categories, which are mostly section boilerplate. Covers the enriched share of the window."
+                deepDive={{ href: '/analytics', label: 'Analyse a topic' }}
               >
                 <div className="flex flex-wrap gap-2">
                   {topics.map((t) => (

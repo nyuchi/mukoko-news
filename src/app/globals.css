@@ -70,6 +70,20 @@
   --container-copper: #3A1A0E;
   --on-container-copper: #FFCCBC;
 
+  /* Data-visualisation marks (charts only — NOT UI surfaces).
+     The mineral palette is tuned for text and UI chrome: on a chart surface its
+     light steps fall below the chroma floor and its dark steps glow. These are
+     the same hues re-stepped into the band a chart mark needs, validated for
+     lightness, chroma, colour-vision separation and contrast against the mode's
+     own surface. Sentiment slots additionally carry direct labels + a legend, so
+     identity never rests on hue alone. Re-validate before changing a value. */
+  --chart-primary: #8B5CF6;    /* tanzanite — single-series volume + magnitude bars */
+  --chart-positive: #0D9488;   /* malachite */
+  --chart-neutral: #9CA3AF;    /* deliberate neutral midpoint, not an identity hue */
+  --chart-negative: #E11D48;
+  --chart-mixed: #A88C00;
+  --chart-grid: #2E2E2E;
+
   /* UI Elements */
   --muted: #141414;
   --muted-foreground: #B8B8B3;
@@ -136,6 +150,20 @@
   --container-copper: #3A1A0E;
   --on-container-copper: #FFCCBC;
 
+  /* Data-visualisation marks (charts only — NOT UI surfaces).
+     The mineral palette is tuned for text and UI chrome: on a chart surface its
+     light steps fall below the chroma floor and its dark steps glow. These are
+     the same hues re-stepped into the band a chart mark needs, validated for
+     lightness, chroma, colour-vision separation and contrast against the mode's
+     own surface. Sentiment slots additionally carry direct labels + a legend, so
+     identity never rests on hue alone. Re-validate before changing a value. */
+  --chart-primary: #8B5CF6;    /* tanzanite — single-series volume + magnitude bars */
+  --chart-positive: #0D9488;   /* malachite */
+  --chart-neutral: #9CA3AF;    /* deliberate neutral midpoint, not an identity hue */
+  --chart-negative: #E11D48;
+  --chart-mixed: #A88C00;
+  --chart-grid: #2E2E2E;
+
   /* UI Elements */
   --muted: #141414;
   --muted-foreground: #B8B8B3;
@@ -201,6 +229,14 @@
   --container-copper: #FBE4DA;
   --on-container-copper: #5A2310;
 
+  /* Data-visualisation marks — see the note in the dark block above. */
+  --chart-primary: #6D28D9;    /* tanzanite */
+  --chart-positive: #00897B;   /* malachite */
+  --chart-neutral: #6B7280;    /* deliberate neutral midpoint, not an identity hue */
+  --chart-negative: #C2410C;   /* copper */
+  --chart-mixed: #CA8A04;      /* gold */
+  --chart-grid: #E0E0E0;
+
   /* UI Elements */
   --muted: #F0F0ED;
   --muted-foreground: #404040;
@@ -242,6 +278,14 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+
+  /* Chart marks (theme-aware) */
+  --color-chart-primary: var(--chart-primary);
+  --color-chart-positive: var(--chart-positive);
+  --color-chart-neutral: var(--chart-neutral);
+  --color-chart-negative: var(--chart-negative);
+  --color-chart-mixed: var(--chart-mixed);
+  --color-chart-grid: var(--chart-grid);
 
   /* African Minerals palette (theme-aware via .light/.dark) */
   --color-cobalt: var(--color-cobalt);
