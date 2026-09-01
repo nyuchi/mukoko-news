@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useRef, useState, useTransition } from 'react'
+import { useCallback, useMemo, useRef, useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
@@ -288,11 +288,11 @@ function SentimentBar({ sentiment }: { sentiment: CorpusQueryResult['sentiment']
             style={{ width: `${s.pct}%`, backgroundColor: s.color }}
             title={`${s.label}: ${formatNumber(s.count)} (${s.pct.toFixed(1)}%)`}
           >
-            {s.pct >= 12 && (
-              <span className="px-1 font-mono text-[11px] font-semibold text-white">
-                {s.pct.toFixed(0)}%
-              </span>
-            )}
+            {/* No text on the fill: 11px white measured 2.5-4.2:1 against these
+                segment colours in both themes — below AA's 4.5:1, in a repo
+                that targets AAA. The share is carried by the legend below,
+                which sits on the page surface at full contrast, so identity
+                and value are still never colour-alone. */}
           </div>
         ))}
       </div>
@@ -308,6 +308,11 @@ function SentimentBar({ sentiment }: { sentiment: CorpusQueryResult['sentiment']
             <span className="text-text-secondary">{slot.label}</span>
             <span className="font-mono text-text-tertiary">
               {formatNumber(sentiment[slot.key])}
+              {covered > 0 && (
+                <span className="ml-1">
+                  ({((sentiment[slot.key] / covered) * 100).toFixed(0)}%)
+                </span>
+              )}
             </span>
           </li>
         ))}
@@ -542,27 +547,53 @@ export default function AnalyticsClient({
   const [from, setFrom] = useState(query.from)
   const [to, setTo] = useState(query.to)
 
+  /**
+   * Serialize the ACTIVE query back to a query string.
+   *
+   * `sources` and `sentiments` must be carried even though the form has no
+   * control for them: the "Who is covering it" panel links to
+   * `/analytics?source=<id>`, and the page reads and applies both. Omitting
+   * them made "Run" silently discard the filter the user had arrived with, and
+   * made "Export CSV" download the *unfiltered* corpus under a filename
+   * implying it was the query on screen — the file even misreported itself,
+   * since the CSV's provenance header is built from the same params.
+   */
+  const buildParams = useCallback(
+    (overrides?: { q?: string; country?: string; category?: string; from?: string; to?: string }) => {
+      const sp = new URLSearchParams()
+      const term = overrides?.q ?? query.q ?? ''
+      if (term.trim()) sp.set('q', term.trim())
+
+      const countries = overrides ? (overrides.country ? [overrides.country] : []) : query.countries
+      for (const c of countries) sp.append('country', c)
+
+      const categories = overrides ? (overrides.category ? [overrides.category] : []) : query.categories
+      for (const c of categories) sp.append('category', c)
+
+      // Not editable in the form, so they always come from the active query.
+      for (const s of query.sources) sp.append('source', s)
+      for (const s of query.sentiments) sp.append('sentiment', s)
+
+      const fromValue = overrides?.from ?? query.from
+      const toValue = overrides?.to ?? query.to
+      if (fromValue) sp.set('from', fromValue)
+      if (toValue) sp.set('to', toValue)
+      return sp
+    },
+    [query]
+  )
+
   function submit(e: React.FormEvent) {
     e.preventDefault()
-    const sp = new URLSearchParams()
-    if (q.trim()) sp.set('q', q.trim())
-    if (country) sp.set('country', country)
-    if (category) sp.set('category', category)
-    if (from) sp.set('from', from)
-    if (to) sp.set('to', to)
+    const sp = buildParams({ q, country, category, from, to })
     startTransition(() => router.push(`/analytics?${sp.toString()}`))
   }
 
   const exportHref = useMemo(() => {
-    const sp = new URLSearchParams()
-    if (query.q) sp.set('q', query.q)
-    for (const c of query.countries) sp.append('country', c)
-    for (const c of query.categories) sp.append('category', c)
-    sp.set('from', query.from)
-    sp.set('to', query.to)
+    const sp = buildParams()
     sp.set('format', 'csv')
     return `/api/analytics/export?${sp.toString()}`
-  }, [query])
+  }, [buildParams])
 
   const describeQuery = [
     query.q ? `“${query.q}”` : 'all articles',

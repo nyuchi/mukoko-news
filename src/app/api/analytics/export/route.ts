@@ -12,12 +12,45 @@ import { checkRateLimit, getRequestIp } from '@/lib/rate-limit'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const RATE_LIMIT_MAX = 20
+/**
+ * Tighter than the Insights export's 20/min, because this endpoint costs more
+ * per call and cannot be shared.
+ *
+ * `/api/insights/export` is one fixed aggregate behind `s-maxage=600`, so the
+ * CDN absorbs repeats. This one is per-caller by design (two analysts running
+ * different queries must not share a CDN entry), so every request is a real
+ * `$search`/`$match` + `$facet` over the matched slice.
+ *
+ * NOTE for operators: `checkRateLimit` enforces this globally only when
+ * `UPSTASH_REDIS_REST_URL`/`_TOKEN` are set. Without them it is an in-memory
+ * per-instance window that FAILS OPEN, which on a multi-instance deployment is
+ * a much weaker bound than this number suggests.
+ */
+const RATE_LIMIT_MAX = 10
 const RATE_LIMIT_WINDOW_MS = 60_000
 
-/** Quote a CSV cell per RFC 4180 (wrap + double embedded quotes when needed). */
+/**
+ * A cell a spreadsheet would execute as a formula.
+ *
+ * Excel, Sheets and LibreOffice evaluate a cell beginning `= + - @` (and, in
+ * some locales, a leading tab/CR) as a formula on open. This export carries
+ * text this platform does not control — source names, bylines, and `aiKeywords`
+ * / `aiNamedEntities`, which the enrichment model extracts from article bodies.
+ * A publisher who writes `=HYPERLINK("http://evil","x")` into an article can
+ * therefore get it into a public CSV that fires when a reader opens it.
+ */
+const FORMULA_LEAD = /^[=+\-@\t\r]/
+
+/**
+ * Quote a CSV cell per RFC 4180, and neutralise spreadsheet formulas.
+ *
+ * The leading apostrophe is the conventional defence: spreadsheets treat the
+ * rest as literal text and do not display the quote itself. Applied before
+ * quoting so the apostrophe lands inside the quoted field.
+ */
 function csvCell(value: unknown): string {
-  const s = value === null || value === undefined ? '' : String(value)
+  let s = value === null || value === undefined ? '' : String(value)
+  if (FORMULA_LEAD.test(s)) s = `'${s}`
   return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
 }
 
@@ -41,6 +74,10 @@ function toCsv(data: Result): string {
   lines.push(`# term,${csvCell(q.q ?? '(none)')}`)
   lines.push(`# countries,${csvCell(q.countries.join('|') || '(all)')}`)
   lines.push(`# categories,${csvCell(q.categories.join('|') || '(all)')}`)
+  // Sources and sentiments are filters too — a file that omits them from its
+  // own provenance header misreports what it contains.
+  lines.push(`# sources,${csvCell(q.sources.join('|') || '(all)')}`)
+  lines.push(`# sentiments,${csvCell(q.sentiments.join('|') || '(all)')}`)
   lines.push(`# from,${q.from}`)
   lines.push(`# to,${q.to}`)
   lines.push(`# total_articles,${data.total}`)

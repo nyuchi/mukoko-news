@@ -97,7 +97,6 @@ const baseFacets: QueryFacets = {
     { code: 'NG', name: 'Nigeria', articles: 4729 },
   ],
   categories: [{ slug: 'transport', articles: 300 }],
-  sources: [{ id: 'src-herald', name: 'The Herald', country: 'ZW', articles: 220 }],
 }
 
 const baseConcentration: CoverageConcentration = {
@@ -228,6 +227,26 @@ describe('AnalyticsPage (query console)', () => {
     expect(link?.getAttribute('href')).toContain('q=accident')
     expect(link?.getAttribute('href')).toContain('country=ZW')
     expect(link?.getAttribute('href')).toContain('format=csv')
+  })
+
+  it('carries source and sentiment filters into the export link', async () => {
+    // Regression: exportHref appended only q/country/category/from/to, so
+    // arriving via a "Who is covering it" bar (/analytics?source=…) produced an
+    // Export CSV link that downloaded the UNFILTERED corpus under a filename
+    // implying it was the query on screen. The old test only asserted q and
+    // country, so it could not see this.
+    mockRunCorpusQuery.mockResolvedValue({
+      ...baseResult,
+      query: {
+        ...baseResult.query,
+        sources: ['newsdata-herald'],
+        sentiments: ['negative'],
+      },
+    })
+    await renderPage({ source: 'newsdata-herald', sentiment: 'negative' })
+    const href = screen.getByText('Export CSV').closest('a')?.getAttribute('href') ?? ''
+    expect(href).toContain('source=newsdata-herald')
+    expect(href).toContain('sentiment=negative')
   })
 
   it('shows an empty state, and no export link, when nothing matched', async () => {

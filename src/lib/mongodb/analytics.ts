@@ -271,13 +271,20 @@ export function normalizeQuery(params: CorpusQueryParams): NormalizedQuery {
   const q = params.q?.trim() ?? ''
 
   const today = new Date()
-  const toDate = parseDay(params.to) ?? today
+  let toDate = parseDay(params.to) ?? today
   const requestedFrom = parseDay(params.from)
   const defaultFrom = new Date(toDate.getTime() - (DEFAULT_WINDOW_DAYS - 1) * 86_400_000)
   let fromDate = requestedFrom ?? defaultFrom
 
-  // A reversed range is a UI slip, not an error — swap rather than return nothing.
-  if (fromDate > toDate) fromDate = defaultFrom
+  // A reversed range is a UI slip, not an error — swap rather than return
+  // nothing. This used to reset to the default window instead, so a request for
+  // Aug 1-15 silently returned Jul 3 - Aug 1: not the range asked for, and not
+  // obviously wrong on screen either.
+  if (fromDate > toDate) {
+    const swapped = fromDate
+    fromDate = toDate
+    toDate = swapped
+  }
 
   // Cap the span so one query can never scan an unbounded slice of the corpus.
   const spanDays = Math.floor((toDate.getTime() - fromDate.getTime()) / 86_400_000) + 1
@@ -781,10 +788,9 @@ export async function getCoverageConcentration({
 export interface QueryFacets {
   countries: Array<{ code: string; name: string; articles: number }>
   categories: Array<{ slug: string; articles: number }>
-  sources: Array<{ id: string; name: string; country: string | null; articles: number }>
 }
 
-const EMPTY_FACETS: QueryFacets = { countries: [], categories: [], sources: [] }
+const EMPTY_FACETS: QueryFacets = { countries: [], categories: [] }
 
 /**
  * The filter values worth offering — drawn from what the corpus actually
@@ -805,7 +811,6 @@ export async function getQueryFacets({
       .aggregate<{
         countries: Array<{ _id: string; n: number }>
         categories: Array<{ _id: string; n: number }>
-        sources: Array<{ _id: string; n: number; country: string | null }>
       }>([
         { $match: match },
         {
@@ -822,17 +827,6 @@ export async function getQueryFacets({
               { $sort: { n: -1 } },
               { $limit: 40 },
             ],
-            sources: [
-              {
-                $group: {
-                  _id: '$feedSourceId',
-                  n: { $sum: 1 },
-                  country: { $first: '$countryCode' },
-                },
-              },
-              { $sort: { n: -1 } },
-              { $limit: 200 },
-            ],
           },
         },
       ])
@@ -840,15 +834,11 @@ export async function getQueryFacets({
 
     if (!rows) return EMPTY_FACETS
 
-    const sourceIds = rows.sources.map((s) => s._id)
-    const sourceDocs = sourceIds.length
-      ? await db
-          .collection<{ _id: string; name?: string }>('feedSources')
-          .find({ _id: { $in: sourceIds } }, { projection: { name: 1 } })
-          .toArray()
-      : []
-    const sourceNames = new Map(sourceDocs.map((s) => [s._id, s.name ?? s._id]))
-
+    // Sources are deliberately NOT a facet here. The console has no source
+    // <select> — a source filter is arrived at by clicking a bar in "Who is
+    // covering it" — so fetching the top 200 plus a feedSources name lookup
+    // only to serialize them into the RSC payload unread was a round trip and a
+    // payload for nothing.
     return {
       countries: rows.countries.map((c) => ({
         code: c._id,
@@ -856,12 +846,6 @@ export async function getQueryFacets({
         articles: c.n,
       })),
       categories: rows.categories.map((c) => ({ slug: c._id, articles: c.n })),
-      sources: rows.sources.map((s) => ({
-        id: s._id,
-        name: sourceNames.get(s._id) ?? s._id,
-        country: s.country ?? null,
-        articles: s.n,
-      })),
     }
   } catch (error) {
     console.error('[analytics.getQueryFacets]', error)
