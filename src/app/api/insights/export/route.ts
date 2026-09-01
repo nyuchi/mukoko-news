@@ -1,18 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getInsightsBundleAction } from '@/lib/actions/insights'
+import { isViewerSignedIn } from '@/lib/auth/guard'
 import { checkRateLimit, getRequestIp } from '@/lib/rate-limit'
 
-// Public, read-only open-data endpoint. Node runtime (MongoDB driver via the
-// Server Action) and edge-cached: a fresh aggregate every 10 minutes matches
-// the /insights page's ISR window.
+// Read-only data export, SIGNED-IN ONLY (owner decision 2026-09-01): it carries
+// the same source leaderboard / topic / country tables that are now gated on
+// /insights, so leaving it open would make that gate decorative.
+//
+// It was previously `revalidate = 600` with a shared `s-maxage` edge cache. Both
+// are gone, and their removal is the load-bearing part of this change: a shared
+// cache in front of an authenticated response lets the CDN store one signed-in
+// caller's payload and hand it to the next ANONYMOUS caller, which is a worse
+// leak than no gate at all because it looks gated. Responses are now per-caller
+// and explicitly uncacheable.
 export const runtime = 'nodejs'
-export const revalidate = 600
+export const dynamic = 'force-dynamic'
 
 const RATE_LIMIT_MAX = 20
 const RATE_LIMIT_WINDOW_MS = 60_000
 
+// `private` keeps it out of shared caches; `no-store` keeps it out of the
+// browser's disk cache on a shared machine. The 10-minute freshness window now
+// lives on the underlying aggregation (`unstable_cache` in the actions), so the
+// database cost is unchanged — only the HTTP caching is.
 const CACHE_HEADERS = {
-  'Cache-Control': 'public, s-maxage=600, stale-while-revalidate=1800',
+  'Cache-Control': 'private, no-store',
 } as const
 
 /** Quote a CSV cell per RFC 4180 (wrap + double embedded quotes when needed). */
@@ -87,6 +99,13 @@ function toCsv(data: Bundle): string {
 }
 
 export async function GET(request: NextRequest) {
+  if (!(await isViewerSignedIn())) {
+    return NextResponse.json(
+      { error: 'Sign in required' },
+      { status: 401, headers: CACHE_HEADERS }
+    )
+  }
+
   const ip = getRequestIp(request)
   if (!(await checkRateLimit(`insights-export:${ip}`, RATE_LIMIT_MAX, RATE_LIMIT_WINDOW_MS))) {
     return NextResponse.json(

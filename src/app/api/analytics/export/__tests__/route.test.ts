@@ -16,6 +16,11 @@ vi.mock('@/lib/actions/analytics', () => ({
   runCorpusQueryAction: (...args: unknown[]) => mockRunCorpusQuery(...args),
 }))
 
+const mockSignedIn = vi.fn()
+vi.mock('@/lib/auth/guard', () => ({
+  isViewerSignedIn: () => mockSignedIn(),
+}))
+
 vi.mock('@/lib/rate-limit', () => ({
   checkRateLimit: vi.fn().mockResolvedValue(true),
   getRequestIp: vi.fn().mockReturnValue('127.0.0.1'),
@@ -62,6 +67,7 @@ async function csv(url: string): Promise<string> {
 describe('/api/analytics/export', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockSignedIn.mockResolvedValue(true)
     mockRunCorpusQuery.mockResolvedValue(result())
   })
 
@@ -185,6 +191,15 @@ describe('/api/analytics/export', () => {
           sentiments: ['negative'],
         })
       )
+    })
+  })
+
+  describe('access', () => {
+    it('401s an anonymous caller instead of exporting', async () => {
+      mockSignedIn.mockResolvedValue(false)
+      const res = await GET(new NextRequest('http://x/api/analytics/export?format=csv'))
+      expect(res.status).toBe(401)
+      expect(mockRunCorpusQuery).not.toHaveBeenCalled()
     })
   })
 

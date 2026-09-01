@@ -7,6 +7,13 @@ vi.mock('@/lib/actions/insights', () => ({
   getInsightsBundleAction: vi.fn(),
 }))
 
+// The bundle is signed-in only now, so the route is too. The guard wraps WorkOS,
+// which cannot resolve under jsdom.
+const mockSignedIn = vi.fn()
+vi.mock('@/lib/auth/guard', () => ({
+  isViewerSignedIn: () => mockSignedIn(),
+}))
+
 const bundle = {
   summary: {
     totalArticles: 1000,
@@ -58,18 +65,42 @@ function makeRequest(ip: string, query = ''): NextRequest {
 }
 
 beforeEach(() => {
+  mockSignedIn.mockReset()
+  mockSignedIn.mockResolvedValue(true)
   vi.mocked(getInsightsBundleAction).mockReset()
   vi.mocked(getInsightsBundleAction).mockResolvedValue(bundle as never)
 })
 
 describe('GET /api/insights/export', () => {
-  it('returns the full bundle as JSON with a public cache header by default', async () => {
+  it('returns the full bundle as JSON to a signed-in caller', async () => {
     const res = await GET(makeRequest(nextIp()))
     expect(res.status).toBe(200)
     expect(res.headers.get('content-type')).toContain('application/json')
-    expect(res.headers.get('cache-control')).toContain('s-maxage=600')
     const body = await res.json()
     expect(body).toEqual(bundle)
+  })
+
+  it('401s an anonymous caller instead of exporting', async () => {
+    mockSignedIn.mockResolvedValue(false)
+    const res = await GET(makeRequest(nextIp()))
+    expect(res.status).toBe(401)
+    expect(getInsightsBundleAction).not.toHaveBeenCalled()
+  })
+
+  it('is never stored in a shared cache', async () => {
+    // Regression guard, and the most dangerous line in this change. The route
+    // used to send `public, s-maxage=600`. Now that the response is
+    // session-dependent, a shared cache would let the CDN store a signed-in
+    // caller's payload and serve it to the next ANONYMOUS one — a gate that
+    // leaks is worse than no gate, because it looks closed.
+    for (const signedIn of [true, false]) {
+      mockSignedIn.mockResolvedValue(signedIn)
+      const res = await GET(makeRequest(nextIp()))
+      const cc = res.headers.get('cache-control') ?? ''
+      expect(cc).not.toContain('s-maxage')
+      expect(cc).not.toContain('public')
+      expect(cc).toContain('private')
+    }
   })
 
   it('returns CSV with the three labelled tables when format=csv', async () => {

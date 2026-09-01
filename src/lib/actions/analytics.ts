@@ -11,10 +11,18 @@
  * `@/lib/safety` schemas here before it reaches the MongoDB layer. Reads degrade
  * to safe defaults rather than throwing: a malformed filter yields an
  * unfiltered-but-bounded query, not a 500.
+ *
+ * ACCESS: every action here requires a signed-in viewer. Unlike `/insights`,
+ * which publishes a fixed set of aggregates, the console answers an arbitrary
+ * query over the corpus and returns sample articles — a queryable database, not
+ * a published dataset. The guard lives in each action rather than only on the
+ * page because an action id can be POSTed directly by anyone who has seen it
+ * once; a page-only redirect would protect nothing.
  */
 
 import { z } from 'zod'
 import { unstable_cache } from 'next/cache'
+import { requireViewer } from '@/lib/auth/guard'
 import {
   runCorpusQuery,
   getCoverageConcentration,
@@ -95,6 +103,7 @@ function safeQueryParams(raw: unknown): CorpusQueryParams {
  * than the ones that were requested.
  */
 export async function runCorpusQueryAction(params: unknown): Promise<CorpusQueryResult> {
+  await requireViewer()
   return runCorpusQuery(safeQueryParams(params))
 }
 
@@ -132,10 +141,12 @@ const cachedFacets = unstable_cache(
  * actually serve each country, and what share the largest one holds.
  */
 export async function getCoverageConcentrationAction(days = 30): Promise<CoverageConcentration> {
+  await requireViewer()
   return cachedConcentration(clampInt(days, 1, 365, 30))
 }
 
 /** The filter values the corpus can actually answer for, to populate the console's controls. */
 export async function getQueryFacetsAction(days = 90): Promise<QueryFacets> {
+  await requireViewer()
   return cachedFacets(clampInt(days, 1, 365, 90))
 }
