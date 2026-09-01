@@ -1,9 +1,11 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { User } from 'lucide-react';
 import { useAuth } from '@workos-inc/authkit-nextjs/components';
+import { getMyProfileAction } from '@/lib/actions/profile';
+import type { MyProfile } from '@/lib/mongodb/identity';
 import { isValidImageUrl, userInitials } from '@/lib/utils';
 
 /**
@@ -20,12 +22,36 @@ import { isValidImageUrl, userInitials } from '@/lib/utils';
  * supplies — deliberately NOT from `withAuth()` in the root layout. Reading
  * cookies in the root layout would opt every route in the app into dynamic
  * rendering to decorate one 36px control; this keeps the static pages static.
+ *
+ * The picture and name come from `identity.persons`, not from the session: the
+ * platform's profile pictures live on `profile-images.mukoko.com` and are not in
+ * the WorkOS token, so a header built from the claims alone would show a
+ * monogram for users who do have a picture everywhere else.
  */
 export function UserAvatar({ onDark = false }: { onDark?: boolean }) {
   const { user, loading } = useAuth();
+  const [profile, setProfile] = useState<MyProfile | null>(null);
   // A profile picture is a remote URL that can 404 or be blocked; fall through
   // to the monogram rather than showing a broken-image glyph.
   const [imageFailed, setImageFailed] = useState(false);
+
+  useEffect(() => {
+    if (!user) {
+      setProfile(null);
+      return;
+    }
+    let active = true;
+    getMyProfileAction()
+      .then((p) => {
+        if (active) setProfile(p);
+      })
+      // The session still identifies the user, so a failed profile read
+      // degrades to the monogram rather than blanking the control.
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [user]);
 
   const ring = onDark
     ? 'bg-white/10 hover:bg-white/20'
@@ -46,9 +72,11 @@ export function UserAvatar({ onDark = false }: { onDark?: boolean }) {
     );
   }
 
-  const picture = user.profilePictureUrl;
+  const first = profile?.givenName ?? user.firstName;
+  const last = profile?.familyName ?? user.lastName;
+  const picture = profile?.picture ?? user.profilePictureUrl;
   const showPicture = !imageFailed && isValidImageUrl(picture);
-  const name = [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email;
+  const name = profile?.name || [first, last].filter(Boolean).join(' ') || user.email;
 
   return (
     <Link
@@ -58,9 +86,9 @@ export function UserAvatar({ onDark = false }: { onDark?: boolean }) {
       title={name}
     >
       {showPicture ? (
-        // Plain <img>: the URL is on a WorkOS-controlled host that is not in the
-        // Next image config, and adding a remote pattern for it would let any
-        // path on that host be proxied through our optimizer.
+        // Plain <img>: the picture host is not in the Next image config, and
+        // adding a remote pattern for it would let any path on that host be
+        // proxied through our optimizer.
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={picture as string}
@@ -71,7 +99,7 @@ export function UserAvatar({ onDark = false }: { onDark?: boolean }) {
         />
       ) : (
         <span className="text-xs sm:text-sm font-bold text-white">
-          {userInitials(user.firstName, user.lastName, user.email)}
+          {userInitials(first, last, user.email)}
         </span>
       )}
     </Link>

@@ -8,14 +8,15 @@ import { isValidImageUrl, userInitials } from '@/lib/utils';
 /**
  * The signed-in user's name, picture and the control to change them.
  *
- * The name is edited here and written to WorkOS (see `lib/actions/profile.ts`),
- * which is what makes the change reach the OTHER Mukoko apps rather than just
- * this one: WorkOS emits `user.updated`, the gateway's webhook syncs it into
- * `identity.persons`, and every app reading identity picks it up. Writing
- * MongoDB from here would update News alone and violate the domain boundary.
+ * Values come from `identity.persons` (see `lib/actions/profile.ts`), not from
+ * the session claims — that record is what every Mukoko app renders, and it
+ * holds the `profile-images.mukoko.com` picture the token does not carry.
  *
- * The picture is display-only for now — it comes from the WorkOS profile and
- * changing it needs an upload target, which is a separate piece of work.
+ * Saving writes that record and then mirrors the name to WorkOS, so the change
+ * is live for the platform immediately and the IdP does not drift from it.
+ *
+ * The picture is display-only for now: changing it needs an upload target,
+ * which is a separate piece of work.
  */
 export function ProfileIdentity({
   firstName,

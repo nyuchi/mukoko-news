@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Check, Globe2, Loader2, Tag } from 'lucide-react';
+import { updateInterestsAction } from '@/lib/actions/profile';
 import { usePreferences } from '@/contexts/preferences-context';
 import { COUNTRIES, getCategoryEmoji } from '@/lib/constants';
 import { getCategoriesAction } from '@/lib/actions/feed';
@@ -16,12 +17,25 @@ import type { Category } from '@/lib/api';
  * was no way back to them, which is why the profile page read as empty: the
  * data was there, the surface was not.
  *
- * Scope note: this is still per-device (localStorage). Carrying interests to the
- * signed-in account so they follow the user across devices and across the other
- * Mukoko apps means writing `identity.persons.interests`, and the gateway is the
- * only writer of that domain — see the note on the profile page.
+ * Interests persist to `identity.persons.interests` for a signed-in user, so
+ * they follow the account across devices and across the other Mukoko apps, and
+ * are mirrored into the local context so the feed reacts immediately. For a
+ * signed-out reader they stay in localStorage, which is the only place they can
+ * live without an account.
+ *
+ * Countries remain local-only: the person record has no country field, and
+ * inventing one in another domain's schema is the exact failure mode this
+ * platform's SSOT rules exist to prevent (the validators are `moderate` and
+ * would accept it silently). Where a feed-country preference should live is a
+ * schema decision, not one to make from a settings form.
  */
-export function ProfilePreferences() {
+export function ProfilePreferences({
+  signedIn = false,
+  initialInterests,
+}: {
+  signedIn?: boolean;
+  initialInterests?: string[];
+}) {
   const {
     selectedCountries,
     primaryCountry,
@@ -33,6 +47,41 @@ export function ProfilePreferences() {
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
+  const [savingInterests, setSavingInterests] = useState(false);
+  const [interestError, setInterestError] = useState<string | null>(null);
+
+  // Seed the local context from the account record on first load so a user who
+  // set interests on another device sees them here rather than an empty set.
+  const seeded = useRef(false);
+  useEffect(() => {
+    if (seeded.current || !signedIn || !initialInterests) return;
+    seeded.current = true;
+    for (const slug of initialInterests) {
+      if (!selectedCategories.includes(slug)) toggleCategory(slug);
+    }
+  }, [signedIn, initialInterests, selectedCategories, toggleCategory]);
+
+  /**
+   * Toggle locally first so the chip responds immediately, then persist the
+   * resulting set for a signed-in user. The context is the source for what the
+   * feed renders; the account record is what survives the device.
+   */
+  async function onToggleCategory(id: string) {
+    const next = selectedCategories.includes(id)
+      ? selectedCategories.filter((c) => c !== id)
+      : [...selectedCategories, id];
+    toggleCategory(id);
+    if (!signedIn) return;
+
+    setSavingInterests(true);
+    setInterestError(null);
+    const result = await updateInterestsAction(next);
+    setSavingInterests(false);
+    if (!result.ok) {
+      // Say so rather than leaving a chip that looks saved but is not.
+      setInterestError('Saved on this device only — could not reach your account.');
+    }
+  }
 
   useEffect(() => {
     let active = true;
@@ -104,7 +153,18 @@ export function ProfilePreferences() {
         </div>
         <p className="text-xs text-text-tertiary mb-3">
           Topics to surface first. Choosing none shows you everything.
+          {signedIn && ' Saved to your Mukoko account, so they follow you across devices.'}
         </p>
+        {interestError && (
+          <p role="alert" className="text-xs text-warning mb-3">
+            {interestError}
+          </p>
+        )}
+        {savingInterests && (
+          <p role="status" className="text-xs text-text-tertiary mb-3">
+            Saving…
+          </p>
+        )}
         {loading ? (
           <div className="flex items-center gap-2 text-text-tertiary text-sm py-2">
             <Loader2 className="w-4 h-4 animate-spin" aria-label="Loading interests" />
@@ -120,7 +180,7 @@ export function ProfilePreferences() {
                 <button
                   key={category.id}
                   type="button"
-                  onClick={() => toggleCategory(category.id)}
+                  onClick={() => onToggleCategory(category.id)}
                   aria-pressed={active}
                   className={`inline-flex items-center gap-1.5 px-3 min-h-[var(--touch-chip,31px)] rounded-full text-sm border transition-colors ${
                     active

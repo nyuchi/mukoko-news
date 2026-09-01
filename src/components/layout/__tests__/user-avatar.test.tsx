@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { UserAvatar } from '../user-avatar';
 
 vi.mock('next/link', () => ({
@@ -15,6 +15,11 @@ vi.mock('@workos-inc/authkit-nextjs/components', () => ({
   useAuth: () => mockUseAuth(),
 }));
 
+const mockGetProfile = vi.fn();
+vi.mock('@/lib/actions/profile', () => ({
+  getMyProfileAction: () => mockGetProfile(),
+}));
+
 const user = {
   id: 'user_1',
   email: 'joshua@example.com',
@@ -24,7 +29,11 @@ const user = {
 };
 
 describe('UserAvatar', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // Default: no person record yet, so the session claims are used.
+    mockGetProfile.mockResolvedValue(null);
+  });
 
   it('sends a signed-out visitor to sign-in, not to the profile page', () => {
     // The old header linked everyone to /profile, which for an anonymous
@@ -62,6 +71,27 @@ describe('UserAvatar', () => {
     const { container } = render(<UserAvatar />);
     expect(container.querySelector('img')).toBeNull();
     expect(screen.getByText('JJ')).toBeInTheDocument();
+  });
+
+  it('prefers the identity.persons picture over the session claim', async () => {
+    // The platform hosts avatars on profile-images.mukoko.com; that URL is not
+    // in the WorkOS token, so a header built from claims alone shows a monogram
+    // for users who have a picture everywhere else.
+    mockUseAuth.mockReturnValue({ user, loading: false });
+    mockGetProfile.mockResolvedValue({
+      personId: 'p1',
+      givenName: 'Bryan',
+      familyName: 'Fawcett',
+      name: 'Bryan Fawcett',
+      preferredUsername: 'bryanfawcett',
+      picture: 'https://profile-images.mukoko.com/bryan.jpg',
+      interests: [],
+    });
+    const { container } = render(<UserAvatar />);
+    await waitFor(() => {
+      const img = container.querySelector('img') as HTMLImageElement;
+      expect(img.src).toBe('https://profile-images.mukoko.com/bryan.jpg');
+    });
   });
 
   it('renders a neutral shape while the session resolves', () => {
