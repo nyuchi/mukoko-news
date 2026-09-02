@@ -23,6 +23,7 @@ import { getMyProfileAction } from "@/lib/actions/profile";
 import type { MyProfile } from "@/lib/mongodb/identity";
 import { ProfileIdentity } from "@/components/profile/profile-identity";
 import { ProfilePreferences } from "@/components/profile/profile-preferences";
+import { ProfileOrganizations } from "@/components/profile/profile-organizations";
 
 function ProfileContent() {
   const { theme, cycleTheme } = useTheme();
@@ -120,6 +121,10 @@ function ProfileContent() {
 
       {/* The settings that were missing entirely: countries + interests. */}
       <ProfilePreferences signedIn initialInterests={profile?.interests} />
+
+      {/* Entity memberships, shown as the entity-scoped capabilities they are.
+          Renders nothing when there are none. */}
+      <ProfileOrganizations />
 
       {/* Publisher tools — the Tier-2 claim entry point. */}
       <div className="bg-surface border border-elevated rounded-2xl overflow-hidden mb-6">
