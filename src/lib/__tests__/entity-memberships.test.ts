@@ -48,9 +48,10 @@ describe('getActiveMemberships', () => {
       {
         entityId: 'e1',
         entityName: 'The Herald',
+        entityType: 'organization',
         role: 'founder',
         title: 'Founder',
-        permissions: ['platform:admin'],
+        permissions: ['herald:publish'],
         joinedAt: new Date('2026-07-14T00:00:00Z'),
       },
     ]);
@@ -59,12 +60,35 @@ describe('getActiveMemberships', () => {
       {
         entityId: 'e1',
         entityName: 'The Herald',
+        entityType: 'organization',
         role: 'founder',
         title: 'Founder',
-        permissions: ['platform:admin'],
+        entityPermissions: ['herald:publish'],
         joinedAt: '2026-07-14T00:00:00.000Z',
       },
     ]);
+  });
+
+  it('strips reserved namespaces so an entity row cannot mint platform authority', async () => {
+    // A live membership really does carry `permissions: ["platform:admin"]`, on
+    // an entity with no workosOrgId to reconcile it against. `entity` is written
+    // by the gateway webhook, not by this app — a slug from there must never be
+    // able to name a platform power.
+    rows([
+      {
+        entityId: 'e1',
+        permissions: [
+          'platform:admin',
+          'mukoko:news-moderator',
+          'admin',
+          'SuperAdmin',
+          'news:publish',
+          'herald:publish',
+        ],
+      },
+    ]);
+    const [row] = await getActiveMemberships('person-1');
+    expect(row.entityPermissions).toEqual(['herald:publish']);
   });
 
   it('returns nothing for a missing person id rather than querying', async () => {
@@ -83,7 +107,7 @@ describe('getActiveMemberships', () => {
   it('drops non-string permission entries', async () => {
     rows([{ entityId: 'e1', permissions: ['ok', 42, null, { a: 1 }] }]);
     const [row] = await getActiveMemberships('person-1');
-    expect(row.permissions).toEqual(['ok']);
+    expect(row.entityPermissions).toEqual(['ok']);
   });
 });
 

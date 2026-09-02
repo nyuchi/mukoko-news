@@ -41,12 +41,49 @@ async function getEntityDb(): Promise<Db> {
 export interface Membership {
   entityId: string
   entityName: string | null
+  /** The entity's own type — `organization`, `family`, … See the note below. */
+  entityType: string | null
   /** `founder` | `admin` | `member` — the entity-scoped role, not a platform tier. */
   role: string | null
   title: string | null
-  /** Permission slugs granted by the membership record itself. */
-  permissions: string[]
+  /**
+   * Permission slugs carried by the membership row, with every reserved
+   * namespace stripped. Entity-scoped only — see `RESERVED_PERMISSION_NAMESPACES`.
+   */
+  entityPermissions: string[]
   joinedAt: string | null
+}
+
+/**
+ * Namespaces a membership row is NOT allowed to grant, stripped on read.
+ *
+ * This is not hypothetical tidiness. On the live cluster one active membership
+ * carries `permissions: ["platform:admin"]` — on an entity with no
+ * `workosOrgId` at all, so it cannot even be reconciled against the WorkOS
+ * platform-team org that `roles.ts` gates on. Half the other active
+ * memberships are of entities whose `entityType` is `family`: founding your
+ * own household entity is not a platform credential.
+ *
+ * `entity` is written by the gateway's WorkOS webhook and by whatever else
+ * touches that domain; the news frontend does not own it. Reading a slug from
+ * it and treating it as authority would make any writer to `entity` an
+ * authority on who administers this app. So the reserved namespaces never
+ * leave this module, and platform tiers keep coming from the verified WorkOS
+ * token alone (`src/lib/auth/roles.ts`).
+ */
+const RESERVED_PERMISSION_NAMESPACES = ['platform:', 'mukoko:', 'nyuchi:', 'admin:', 'news:']
+const RESERVED_PERMISSIONS = ['admin', 'superadmin', 'moderator', 'support', 'staff']
+
+/** Drop anything that reads as a platform grant rather than an entity-scoped one. */
+export function sanitizeEntityPermissions(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return []
+  return raw.filter((p): p is string => {
+    if (typeof p !== 'string') return false
+    const slug = p.trim().toLowerCase()
+    if (!slug) return false
+    if (RESERVED_PERMISSIONS.includes(slug)) return false
+    return !RESERVED_PERMISSION_NAMESPACES.some((ns) => slug.startsWith(ns))
+  })
 }
 
 /**
@@ -99,6 +136,7 @@ export async function getActiveMemberships(personId: string): Promise<Membership
             permissions: 1,
             joinedAt: 1,
             entityName: { $first: '$entity.name' },
+            entityType: { $first: '$entity.entityType' },
           },
         },
       ])
@@ -107,11 +145,10 @@ export async function getActiveMemberships(personId: string): Promise<Membership
     return rows.map((r) => ({
       entityId: String(r.entityId),
       entityName: typeof r.entityName === 'string' ? r.entityName : null,
+      entityType: typeof r.entityType === 'string' ? r.entityType : null,
       role: typeof r.role === 'string' ? r.role : null,
       title: typeof r.title === 'string' ? r.title : null,
-      permissions: Array.isArray(r.permissions)
-        ? r.permissions.filter((p): p is string => typeof p === 'string')
-        : [],
+      entityPermissions: sanitizeEntityPermissions(r.permissions),
       joinedAt: r.joinedAt instanceof Date ? r.joinedAt.toISOString() : null,
     }))
   } catch (error) {

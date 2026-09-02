@@ -50,6 +50,33 @@ Any new admin/privileged surface must perform its own server-side `withAuth()` +
 
 **Org scoping is mandatory.** All grants are honored **only inside the platform-team org** (`WORKOS_PLATFORM_ORG_ID`). WorkOS permission slugs are environment-wide, so an unscoped check would leak access across orgs. Never add a role/permission check that isn't gated by the platform org.
 
+## Entity capabilities (`src/lib/auth/entity-access.ts`)
+
+There are **two** authorization systems here and they must not meet.
+
+| | source of truth | grants | gate |
+|---|---|---|---|
+| **Platform tiers** | the verified WorkOS access token | `/admin`, moderation | `src/lib/auth/roles.ts` |
+| **Entity capabilities** | `entity.memberships` in MongoDB | actions on **one** entity | `src/lib/auth/entity-access.ts` |
+
+`getMyEntityAccess()` / `getEntityAccess(entityId)` / `requireEntityCapability(entityId, cap)` resolve a membership into `entity:read`, `entity:manage` or `entity:members`, scoped to the entity named in the call. `requireEntityCapability` throws `ForbiddenError`.
+
+**A membership can never produce a platform tier.** Not by convention — structurally:
+
+1. `entity-access.ts` imports nothing from `roles.ts` and no value it returns can be widened into a `Tier`.
+2. `roles.ts` reads no database; it answers from the token alone.
+3. `src/app/admin/layout.tsx` takes no membership input.
+
+`src/lib/__tests__/entity-access.test.ts` asserts all three by reading the source files, so wiring them together fails CI instead of quietly widening access.
+
+**Why the bar is this high.** `entity` is written by the gateway's WorkOS webhook, not by this app, and MongoDB's validators are `validationLevel: "moderate"` with no `additionalProperties: false` — they accept whatever a writer sends. On the live cluster that has already produced an **active** membership carrying `permissions: ["platform:admin"]`, on an entity with no `workosOrgId` to reconcile it against. Several other active memberships are of `entityType: "family"` entities; founding your own household is not staff access. Honouring a slug from that collection would make every writer to `entity` an authority on who administers Mukoko News.
+
+So capabilities derive from `membershipRole` through a **closed** map — an unrecognised role grants nothing — and the row's `permissions` array is never consulted for a decision. `sanitizeEntityPermissions` additionally strips reserved namespaces (`platform:`, `mukoko:`, `nyuchi:`, `admin:`, `news:`, and bare `admin`/`superadmin`/`moderator`/`support`/`staff`) so such a slug does not even leave the reader.
+
+**Empty means unproven, never permitted.** The membership read is fail-soft and returns `[]` on a dead cluster, so every decision grants on the **presence** of a membership. A degraded read closes access rather than opening it.
+
+**Call the guard inside the action.** A Server Action is a public RPC surface — anyone who can POST its action id reaches it whether or not they loaded the page. Gating only the page that renders the button is a UX affordance, not access control.
+
 ## Using auth in server components
 
 ```tsx
