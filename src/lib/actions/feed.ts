@@ -11,11 +11,13 @@
  */
 
 import { cookies } from 'next/headers'
+import { unstable_cache } from 'next/cache'
 import { getDb } from '@/lib/mongodb/client'
 import { resolveEngagementSubject, claimSessionEngagement } from '@/lib/engagement'
 import { getArticles, getArticleById, getNewsByteArticles, searchArticles, getSavedArticles, getTopicTimeline } from '@/lib/mongodb/articles'
 import { getCategories, getTrendingCategories } from '@/lib/mongodb/categories'
 import { getSources, getStats, getTrendingAuthors } from '@/lib/mongodb/sources'
+import { getTopCountriesByRecentVolume } from '@/lib/mongodb/coverage'
 import {
   clampInt,
   countryCodeSchema,
@@ -187,4 +189,22 @@ export async function getTopicTimelineAction(slug: string, days = 30) {
   }
   const result = await getTopicTimeline(trimmed, { days: clampInt(days, 1, 90, 30) })
   return { topic: trimmed, ...result }
+}
+
+/**
+ * The countries onboarding should offer, ranked by what the corpus is actually
+ * publishing right now.
+ *
+ * Cached rather than queried per visitor: the answer is identical for everyone
+ * and this backs a first-run modal, so without it every new reader would pay for
+ * the same aggregation. An hour is well inside the rate at which coverage moves.
+ */
+const cachedTopCountries = unstable_cache(
+  (limit: number) => getTopCountriesByRecentVolume(limit),
+  ['onboarding-top-countries'],
+  { revalidate: 3600, tags: ['coverage'] }
+)
+
+export async function getTopCountriesAction(limit = 6) {
+  return cachedTopCountries(clampInt(limit, 1, 24, 6))
 }

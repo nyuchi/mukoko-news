@@ -32,6 +32,22 @@ function entityIcon(entityType: string | null) {
   return entityType === 'family' ? Home : Building2;
 }
 
+/**
+ * The line under the org name.
+ *
+ * `title` is free text a person wrote ("Founder", "Head of Newsroom") and is
+ * shown verbatim. `role` is the raw `membershipRole` enum off the database row
+ * — `founder` | `admin` | `member` — so it needs casing before it is put in
+ * front of a reader. Rendering it raw put "Founder" next to "admin" in the same
+ * list, which reads as two different kinds of thing rather than one field.
+ */
+function roleLabel(title: string | null, role: string | null): string {
+  if (title) return title;
+  if (!role) return 'Member';
+  const trimmed = role.trim();
+  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1).toLowerCase();
+}
+
 export function ProfileOrganizations() {
   const [orgs, setOrgs] = useState<EntityAccess[] | null>(null);
 
@@ -80,14 +96,14 @@ export function ProfileOrganizations() {
                 <span className="font-medium block truncate">
                   {org.entityName ?? 'Unnamed organization'}
                 </span>
-                <span className="text-xs text-text-tertiary">
-                  {org.title ?? org.role ?? 'Member'}
+                <span className="text-xs text-text-secondary">
+                  {roleLabel(org.title, org.role)}
                 </span>
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {org.capabilities.map((cap) => (
                     <span
                       key={cap}
-                      className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-elevated text-text-secondary"
+                      className="text-xs font-mono px-2 py-0.5 rounded-full bg-elevated text-text-secondary"
                     >
                       {CAPABILITY_LABELS[cap]}
                     </span>
@@ -99,7 +115,7 @@ export function ProfileOrganizations() {
         })}
       </ul>
 
-      <p className="px-4 py-3 text-xs text-text-tertiary border-t border-elevated">
+      <p className="px-4 py-3 text-xs text-text-secondary border-t border-elevated">
         These permissions apply to each organization on its own.
       </p>
     </div>
