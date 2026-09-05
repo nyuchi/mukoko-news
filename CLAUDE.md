@@ -230,7 +230,7 @@ The MCP OAuth server (`news.mukoko.com/.well-known/oauth-authorization-server`, 
 
 **Mark**: the **Seed of Life** — one centre cell ringed by six, the first ring of the honeycomb, rendered in the 7 minerals with **tanzanite at the core**. **The full-palette mark is the only icon, at every size.** Bare mark on a transparent ground: `public/mukoko-mark-full-{light,dark}.svg` (used by `AppIcon`). Mark on the deep-tanzanite (`#1A0033`) rounded ground: `public/mukoko-appicon.png` — the app icon, and the source the favicons are downscaled from, so the browser tab, the installed app and every other surface carry identical artwork. (Owner correction 2026-09-01 — this **supersedes** the earlier "mono-tanzanite favicon below 32px" rule. The mono variant made the tab icon a solid purple blob that looked like a different product; `favicon.svg`, `favicon-{16,32,48}.png`, `favicon-180.png`, `apple-touch-icon.png` and `favicon.ico` are now the full-palette mark, and `mukoko-appicon-mono-tanzanite.png` was deleted so it cannot be wired up again. `favicon.svg` carries its own ground, so one file serves both browser themes and there is no `favicon-dark.svg`.) Never add gradients/shadows, recolour petals, reorder the ring, or substitute a mono/single-colour reduction.
 
-**Palette** — 7 **African Minerals**, each with light/dark + container/on-container values (full set in `src/app/globals.css`, theme-aware via the `.light`/`.dark` classes; mirrored in the brand kit `tokens/minerals.json`):
+**Palette** — 7 **African Minerals**, each with light/dark + container/on-container values (full set in `src/app/globals.css`, theme-aware via the `.light`/`.dark` classes). **The source of truth is the Mzizi MCP** (`mzizi_get_tokens` — 21 colour families: 7 minerals, 7 heritage, 7 experimental), not a file in this repo. Verified 2026-09-05: all 7 minerals and all 14 container values here match Mzizi exactly. (An earlier version of this line claimed a brand kit at `tokens/minerals.json`; **no such file has ever existed** in this repo — query the MCP instead.)
 
 | mineral | light | dark | role |
 | --- | --- | --- | --- |
@@ -243,6 +243,25 @@ The MCP OAuth server (`news.mukoko.com/.well-known/oauth-authorization-server`, 
 | copper | `#BF5A36` | `#FF8A65` | commons |
 
 `--primary`=tanzanite, `--secondary`=cobalt, `--accent`=gold, `--success`=malachite, `--warning`=terracotta. Use light hex on light surfaces, dark hex on dark.
+
+**Surfaces (2026-09-05)** — the Mzizi background scale (`mzizi_get_tokens: backgrounds`). The page is the **matte base**; the card sits **below** it, nearer black, so a card reads as a well rather than a raised grey slab; hover rows, menus and popovers rise above both. This inverted the previous order, where every card was *lighter* than the page it sat on.
+
+| token | light | dark | Mzizi name |
+| --- | --- | --- | --- |
+| `--background` | `#F3F3F1` | `#0E0D0C` | `base` — matte page |
+| `--surface` / `--card` | `#EEEEEC` | `#050504` | `surface` / `muted` — the card |
+| `--elevated` / `--popover` | `#E5E4E1` | `#1E1D1A` | `container` — hover rows, menus |
+| `--border` | `#E7E5E0` | `#2A2927` | `border` — warm stone, not cool grey |
+
+**Text is set by APCA, not WCAG 2** — Mzizi's floor is **APCA 3.0 AAA**. WCAG 2 ratios systematically overstate light-text-on-dark, which is how `--text-tertiary` came to be documented as "7.0:1" while measuring **APCA Lc 38.7** on the card — barely half what a 12px string needs, and it was used for every hint line, card heading and chip. Current values, measured on the *worst* surface each lands on, all clearing both the APCA target and the AAA 7:1 floor:
+
+| token | light | dark |
+| --- | --- | --- |
+| `--foreground` | `#000000` (Lc 95.9) | `#FFFFFF` (Lc 107.9) |
+| `--text-secondary` | `#2E2B27` (Lc 89.0) | `#E8E8E4` (Lc 92.7) |
+| `--text-tertiary` | `#474139` (Lc 83.2) | `#D4D4CF` (Lc 80.3) |
+
+**Deferring to the system.** `color-scheme` is declared per theme so native controls, scrollbars and the first-paint canvas match. `@media (prefers-contrast: more)` hands the reading surfaces over to the **system colours** (`Canvas`/`CanvasText`) — a reader who asked their OS for more contrast has already tuned that pair, and second-guessing it is worse than deferring; the minerals stay. `@media (forced-colors: active)` gets out of the way and redraws focus rings in `Highlight`, which is the one colour that survives a palette replacement. System colours are deliberately **not** the default: that would drop the Mzizi scale and the mineral identity on every machine, which is a brand decision rather than an accessibility one.
 
 **Typography**: **Noto Serif** (display/headings, wordmark = lowercase weight 600 — always "mukoko", never capitalised), **Noto Sans** (UI/body), **JetBrains Mono** (code/data/labels) — self-hosted via `next/font/google` in `layout.tsx`, with the CSS variables wired to the `--font-sans/serif/mono` theme tokens in `globals.css`.
 

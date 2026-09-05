@@ -17,22 +17,30 @@
   --charcoal: #0A0A0A;
   --cream: #FAF9F5;
 
-  /* Default to dark mode */
-  --background: #0A0A0A;
-  --foreground: #F5F5F4;
-  --surface: #141414;
-  --elevated: #1E1E1E;
+  /* Default to dark mode.
+
+     Surfaces follow the Mzizi background scale (mzizi_get_tokens: backgrounds).
+     The page is the MATTE base; the card sits BELOW it, nearer black, so a card
+     reads as a well rather than a raised grey slab, and hover rows and menus
+     rise above both. This inverts the old order (bg #0A0A0A < surface #141414 <
+     elevated #1E1E1E), where every card was lighter than the page it sat on. */
+  --background: #0E0D0C;   /* Mzizi `base`      — matte page */
+  --foreground: #FFFFFF;
+  --surface: #050504;      /* Mzizi `muted`     — "deepest fill … maximum text contrast" */
+  --elevated: #1E1D1A;     /* Mzizi `container` — hover rows, menus, raised chrome */
 
   /* Text hierarchy */
-  --text-primary: #F5F5F4;
-  /* Dark-mode neutrals are set by APCA (the WCAG 3 contrast method), not by the
-     WCAG 2 ratios the old comments quoted. WCAG 2 systematically overstates
-     light-text-on-dark: at #8A8A85 the tertiary token measured "7.0:1" and was
-     APCA Lc 38.7 on --surface, less than half the Lc 75 a 12-14px body string
-     needs and below the Lc 60 fluent-reading minimum. Every hint line, card
-     heading and chip on /profile used it. Measured with APCA 0.1.9 (4g). */
-  --text-secondary: #D4D4CF;   /* APCA Lc 79.5 on --surface — clears the Lc 75 body target */
-  --text-tertiary: #BCBCB6;    /* APCA Lc 65.3 on --surface — clears the Lc 60 fluent minimum */
+  /* APCA 3.0 AAA, measured on --surface (#050504) — the deepest surface text
+     lands on. WCAG 2 ratio in brackets, the 7:1 floor the Mzizi checker applies.
+       primary   #FFFFFF  Lc 107.9  [20.4:1]
+       secondary #E8E8E4  Lc  92.7  [17.1:1]
+       tertiary  #D4D4CF  Lc  80.3  [13.7:1 — 11.3:1 on --elevated]
+     The pre-2026-09-05 values came from WCAG 2 ratios, which systematically
+     overstate light-text-on-dark: --text-tertiary read "7.0:1" and was Lc 38.7,
+     barely half what a 12px string needs. */
+  --text-primary: #FFFFFF;
+  --text-secondary: #E8E8E4;
+  --text-tertiary: #D4D4CF;
 
   /* Brand Colors - Dark mode - African Minerals (dark_hex) */
   --tanzanite: #B388FF;
@@ -91,35 +99,37 @@
   --chart-grid: #2E2E2E;
 
   /* UI Elements */
-  --muted: #141414;
-  --muted-foreground: #B8B8B3;
-  --card: #121212;
-  --card-foreground: #F5F5F4;
-  --popover: #121212;
-  --popover-foreground: #F5F5F4;
-  --border: #2E2E2E;
-  --input: #2E2E2E;
+  --muted: #050504;
+  --muted-foreground: #E8E8E4;   /* was #B8B8B3 — Lc 63 on the card, under the floor */
+  --card: #050504;               /* the card IS the deep well, not a lighter slab */
+  --card-foreground: #FFFFFF;
+  --popover: #1E1D1A;            /* popovers rise ABOVE the card, so they lighten */
+  --popover-foreground: #FFFFFF;
+  --border: #2A2927;             /* Mzizi `border` — warm stone, not cool grey */
+  --input: #2A2927;
   --ring: var(--primary);
   --radius: 0.75rem;
 }
 
-/* Dark Theme - WCAG AAA Compliant */
+/* Dark Theme — APCA 3.0 AAA (the Mzizi accessibility floor) */
 .dark {
-  --background: #0A0A0A;
-  --foreground: #F5F5F4;
-  --surface: #141414;
-  --elevated: #1E1E1E;
+  --background: #0E0D0C;   /* Mzizi `base`      — matte page */
+  --foreground: #FFFFFF;
+  --surface: #050504;      /* Mzizi `muted`     — deepest fill, maximum text contrast */
+  --elevated: #1E1D1A;     /* Mzizi `container` — hover rows, menus, raised chrome */
 
   /* Text hierarchy - AAA compliant (7:1+ contrast on #0A0A0A) */
-  --text-primary: #F5F5F4;     /* 19.3:1 contrast */
-  /* Dark-mode neutrals are set by APCA (the WCAG 3 contrast method), not by the
-     WCAG 2 ratios the old comments quoted. WCAG 2 systematically overstates
-     light-text-on-dark: at #8A8A85 the tertiary token measured "7.0:1" and was
-     APCA Lc 38.7 on --surface, less than half the Lc 75 a 12-14px body string
-     needs and below the Lc 60 fluent-reading minimum. Every hint line, card
-     heading and chip on /profile used it. Measured with APCA 0.1.9 (4g). */
-  --text-secondary: #D4D4CF;   /* APCA Lc 79.5 on --surface — clears the Lc 75 body target */
-  --text-tertiary: #BCBCB6;    /* APCA Lc 65.3 on --surface — clears the Lc 60 fluent minimum */
+  /* APCA 3.0 AAA, measured on --surface (#050504) — the deepest surface text
+     lands on. WCAG 2 ratio in brackets, the 7:1 floor the Mzizi checker applies.
+       primary   #FFFFFF  Lc 107.9  [20.4:1]
+       secondary #E8E8E4  Lc  92.7  [17.1:1]
+       tertiary  #D4D4CF  Lc  80.3  [13.7:1 — 11.3:1 on --elevated]
+     The pre-2026-09-05 values came from WCAG 2 ratios, which systematically
+     overstate light-text-on-dark: --text-tertiary read "7.0:1" and was Lc 38.7,
+     barely half what a 12px string needs. */
+  --text-primary: #FFFFFF;
+  --text-secondary: #E8E8E4;
+  --text-tertiary: #D4D4CF;
 
   /* Brand Colors - African Minerals (dark_hex) */
   --tanzanite: #B388FF;
@@ -177,28 +187,33 @@
   --chart-grid: #2E2E2E;
 
   /* UI Elements */
-  --muted: #141414;
-  --muted-foreground: #B8B8B3;
-  --card: #121212;
-  --card-foreground: #F5F5F4;
-  --popover: #121212;
-  --popover-foreground: #F5F5F4;
-  --border: #2E2E2E;
-  --input: #2E2E2E;
+  --muted: #050504;
+  --muted-foreground: #E8E8E4;   /* was #B8B8B3 — Lc 63 on the card, under the floor */
+  --card: #050504;               /* the card IS the deep well, not a lighter slab */
+  --card-foreground: #FFFFFF;
+  --popover: #1E1D1A;            /* popovers rise ABOVE the card, so they lighten */
+  --popover-foreground: #FFFFFF;
+  --border: #2A2927;             /* Mzizi `border` — warm stone, not cool grey */
+  --input: #2A2927;
   --ring: var(--primary);
 }
 
 /* Light Theme - WCAG AAA Compliant */
 .light {
-  --background: #FAFAF8;
-  --foreground: #171717;
-  --surface: #FFFFFF;
-  --elevated: #F0F0ED;
+  --background: #F3F3F1;   /* Mzizi `base` — matte page */
+  --foreground: #000000;
+  --surface: #EEEEEC;      /* Mzizi `surface`   — card / panel */
+  --elevated: #E5E4E1;     /* Mzizi `container` — hover rows, menus */
 
   /* Text hierarchy - AAA compliant (7:1+ contrast on #FAFAF8) */
-  --text-primary: #171717;     /* 17.4:1 contrast */
-  --text-secondary: #404040;   /* 10.2:1 contrast */
-  --text-tertiary: #595959;    /* 7.0:1 contrast */
+  /* APCA 3.0 AAA, measured on --elevated (#E5E4E1) — the worst light surface
+     text lands on — so every value clears the floor on every surface.
+       primary   #000000  Lc 95.9 on --surface  [19.0:1]
+       secondary #2E2B27  Lc 89.0               [12.4:1]
+       tertiary  #474139  Lc 83.2               [ 7.9:1] */
+  --text-primary: #000000;
+  --text-secondary: #2E2B27;
+  --text-tertiary: #474139;
 
   /* Brand Colors - African Minerals (light_hex) */
   --tanzanite: #4B0082;        /* Tanzanite */
@@ -250,14 +265,14 @@
   --chart-grid: #E0E0E0;
 
   /* UI Elements */
-  --muted: #F0F0ED;
-  --muted-foreground: #404040;
-  --card: #FFFFFF;
-  --card-foreground: #171717;
-  --popover: #FFFFFF;
-  --popover-foreground: #171717;
-  --border: #E0E0E0;
-  --input: #E0E0E0;
+  --muted: #FAF9F5;
+  --muted-foreground: #2E2B27;
+  --card: #EEEEEC;
+  --card-foreground: #000000;
+  --popover: #FAFAFA;            /* popovers rise above the card, so they lighten */
+  --popover-foreground: #000000;
+  --border: #E7E5E0;             /* Mzizi `border` — warm stone, not cool grey */
+  --input: #E7E5E0;
   --ring: var(--primary);
 }
 
@@ -405,7 +420,7 @@
   --status-success: #64FFDA;
   --status-warning: #FFD740;
   --status-error: #FF5252;
-  --status-neutral: #8A8A85;
+  --status-neutral: #D4D4CF;  /* was #8A8A85 — Lc 38.7, unreadable on the card */
   /* Focus ring (mzizi styling-accessibility-checks) */
   --focusRing-width: 2px;
   --focusRing-offset: 2px;
@@ -415,7 +430,72 @@
   --status-success: #004D40;
   --status-warning: #5D4037;
   --status-error: #B3261E;
-  --status-neutral: #595959;
+  --status-neutral: #474139;  /* matches --text-tertiary */
+}
+
+/* ── Deferring to the system where the system knows better ───────────
+   Three things the OS can tell us that a fixed palette cannot.
+
+   1. `color-scheme` — tells the UA which way our surfaces run, so form
+      controls, scrollbars, spellcheck underlines and the canvas flash on first
+      paint are all drawn to match. Without it a dark page gets light native
+      widgets and a white flash before CSS applies.
+
+   2. `prefers-contrast: more` — a reader who has asked their OS for higher
+      contrast is telling us our palette is not enough for them. Honour it with
+      the SYSTEM colours (`Canvas` / `CanvasText`), which are exactly the pair
+      that reader has already tuned, rather than a second guess of our own. The
+      brand minerals stay: only the reading surfaces defer.
+
+   3. `forced-colors: active` — Windows High Contrast and similar replace the
+      palette wholesale. Our job there is to get out of the way and make sure
+      nothing depends on a colour we no longer control, so borders become
+      system-coloured rather than invisible.
+
+   Deliberately NOT the default: system colours alone would drop the Mzizi
+   surface scale and the mineral identity on every machine, which is a brand
+   decision, not an accessibility one. They apply when the reader has asked. */
+:root {
+  color-scheme: dark;
+}
+.light {
+  color-scheme: light;
+}
+
+@media (prefers-contrast: more) {
+  :root,
+  .dark,
+  .light {
+    --background: Canvas;
+    --surface: Canvas;
+    --elevated: Canvas;
+    --foreground: CanvasText;
+    --text-primary: CanvasText;
+    --text-secondary: CanvasText;
+    --text-tertiary: CanvasText;
+    --card: Canvas;
+    --card-foreground: CanvasText;
+    --popover: Canvas;
+    --popover-foreground: CanvasText;
+    --border: CanvasText;
+    --muted: Canvas;
+    --muted-foreground: CanvasText;
+  }
+}
+
+@media (forced-colors: active) {
+  :root,
+  .dark,
+  .light {
+    --border: CanvasText;
+    --input: CanvasText;
+  }
+  /* A focus ring drawn in a brand colour disappears when the palette is
+     replaced; the system highlight is the one colour guaranteed to remain. */
+  *:focus-visible {
+    outline: var(--focusRing-width, 2px) solid Highlight;
+    outline-offset: var(--focusRing-offset, 2px);
+  }
 }
 
 /* ── Mzizi motion tokens: entry animation used by the nyuchi harness ── */

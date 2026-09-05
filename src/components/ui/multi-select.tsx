@@ -199,14 +199,19 @@ export function MultiSelect({
               search input via aria-activedescendant, which is the listbox
               pattern this implements.
 
-              tabIndex={-1} on the container makes the scroll region
-              programmatically focusable, so a scrollable area is not stranded
-              from keyboard users (axe: scrollable-region-focusable). */}
+              tabIndex={0} on the container: the rows themselves are not
+              focusable (that is the aria-activedescendant pattern), which left
+              the scroll region with no focusable content at all — axe reports it
+              as scrollable-region-focusable, and a keyboard user who tabs rather
+              than arrows really can be stranded. It costs one tab stop, and only
+              while the panel is open. Arrow keys work from either the search
+              input or the list, because the handler sits on the panel that
+              contains both. */}
           <div
             id={listId}
             ref={listRef}
             role="listbox"
-            tabIndex={-1}
+            tabIndex={0}
             aria-multiselectable="true"
             aria-label={triggerLabel}
             className="max-h-64 overflow-y-auto py-1 outline-none"
