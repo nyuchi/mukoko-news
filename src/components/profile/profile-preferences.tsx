@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { Check, Globe2, Loader2, Tag } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Globe2, Loader2, Star, Tag } from 'lucide-react';
+import { MultiSelect, SelectedBadge, type MultiSelectOption } from '@/components/ui/multi-select';
 import { updateInterestsAction } from '@/lib/actions/profile';
 import { usePreferences } from '@/contexts/preferences-context';
 import { COUNTRIES, getCategoryEmoji } from '@/lib/constants';
@@ -46,6 +47,22 @@ export function ProfilePreferences({
   } = usePreferences();
 
   const [categories, setCategories] = useState<Category[]>([]);
+
+  // The option lists the two pickers choose from. Memoised so the dropdown does
+  // not rebuild 54 objects on every keystroke in its own search field.
+  const countryOptions = useMemo<MultiSelectOption[]>(
+    () => COUNTRIES.map((c) => ({ value: c.code, label: c.name, icon: c.flag })),
+    []
+  );
+  const interestOptions = useMemo<MultiSelectOption[]>(
+    () =>
+      categories.map((c) => ({
+        value: c.id,
+        label: c.name,
+        icon: getCategoryEmoji(c.slug ?? c.id),
+      })),
+    [categories]
+  );
   const [loading, setLoading] = useState(true);
   const [savingInterests, setSavingInterests] = useState(false);
   const [interestError, setInterestError] = useState<string | null>(null);
@@ -114,35 +131,46 @@ export function ProfilePreferences({
           <Globe2 className="w-4 h-4 text-secondary" aria-hidden="true" />
           <span className="font-medium">Countries</span>
         </div>
-        <p className="text-xs text-text-tertiary mb-3">
-          Which countries your feed draws from. Tap a selected country again to make it your
-          primary.
+        <p id="countries-hint" className="text-xs text-text-tertiary mb-3">
+          Which countries your feed draws from. Select a country below; tap one of your chosen
+          countries to make it your primary.
         </p>
-        <div className="flex flex-wrap gap-2">
-          {COUNTRIES.map((country) => {
-            const active = selectedCountries.includes(country.code);
-            const isPrimary = primaryCountry === country.code;
+        <MultiSelect
+          options={countryOptions}
+          selected={selectedCountries}
+          onToggle={toggleCountry}
+          triggerLabel="Add a country"
+          searchPlaceholder="Search countries"
+          emptyText="No country matches that."
+          aria-describedby="countries-hint"
+          renderBadge={(option) => {
+            const isPrimary = primaryCountry === option.value;
             return (
-              <button
-                key={country.code}
-                type="button"
-                onClick={() => (active && !isPrimary ? setPrimaryCountry(country.code) : toggleCountry(country.code))}
-                aria-pressed={active}
-                className={`inline-flex items-center gap-1.5 px-3 min-h-[var(--touch-chip,31px)] rounded-full text-sm border transition-colors ${
-                  isPrimary
-                    ? 'bg-primary text-on-primary border-transparent font-medium'
-                    : active
-                      ? 'bg-container-tanzanite text-on-container-tanzanite border-transparent'
-                      : 'bg-background border-elevated text-text-secondary hover:bg-elevated'
-                }`}
+              <SelectedBadge
+                option={option}
+                tone={isPrimary ? 'primary' : 'default'}
+                onRemove={() => toggleCountry(option.value)}
               >
-                <span aria-hidden="true">{country.flag}</span>
-                {country.name}
-                {isPrimary && <span className="text-[10px] uppercase tracking-wide">Primary</span>}
-              </button>
+                <button
+                  type="button"
+                  onClick={() => setPrimaryCountry(option.value)}
+                  aria-pressed={isPrimary}
+                  title={isPrimary ? `${option.label} is your primary country` : `Make ${option.label} your primary country`}
+                  className="inline-flex items-center gap-1.5"
+                >
+                  <span aria-hidden="true">{option.icon}</span>
+                  {option.label}
+                  {isPrimary ? (
+                    <>
+                      <Star className="w-3 h-3 fill-current" aria-hidden="true" />
+                      <span className="sr-only">(primary)</span>
+                    </>
+                  ) : null}
+                </button>
+              </SelectedBadge>
             );
-          })}
-        </div>
+          }}
+        />
       </div>
 
       {/* Interest categories */}
@@ -173,28 +201,15 @@ export function ProfilePreferences({
         ) : categories.length === 0 ? (
           <p className="text-sm text-text-tertiary py-2">Interests are unavailable right now.</p>
         ) : (
-          <div className="flex flex-wrap gap-2">
-            {categories.map((category) => {
-              const active = selectedCategories.includes(category.id);
-              return (
-                <button
-                  key={category.id}
-                  type="button"
-                  onClick={() => onToggleCategory(category.id)}
-                  aria-pressed={active}
-                  className={`inline-flex items-center gap-1.5 px-3 min-h-[var(--touch-chip,31px)] rounded-full text-sm border transition-colors ${
-                    active
-                      ? 'bg-container-tanzanite text-on-container-tanzanite border-transparent'
-                      : 'bg-background border-elevated text-text-secondary hover:bg-elevated'
-                  }`}
-                >
-                  <span aria-hidden="true">{getCategoryEmoji(category.slug ?? category.id)}</span>
-                  {category.name}
-                  {active && <Check className="w-3.5 h-3.5" aria-hidden="true" />}
-                </button>
-              );
-            })}
-          </div>
+          <MultiSelect
+            options={interestOptions}
+            selected={selectedCategories}
+            onToggle={onToggleCategory}
+            triggerLabel="Add an interest"
+            searchPlaceholder="Search interests"
+            emptyText="No interest matches that."
+            disabled={savingInterests}
+          />
         )}
       </div>
     </div>
