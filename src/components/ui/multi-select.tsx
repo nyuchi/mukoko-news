@@ -68,6 +68,7 @@ export function MultiSelect({
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   const listId = useId();
   const optionId = (i: number) => `${listId}-opt-${i}`;
 
@@ -98,6 +99,20 @@ export function MultiSelect({
   useEffect(() => {
     if (open) searchRef.current?.focus();
   }, [open]);
+
+  // Scroll the active option into view. Without this, arrow-keying past the
+  // bottom of the visible rows moves aria-activedescendant somewhere a sighted
+  // keyboard user cannot see — the screen reader announces an option that is
+  // off-screen, and the two experiences diverge.
+  useEffect(() => {
+    if (!open) return;
+    const active = listRef.current?.querySelector(`#${CSS.escape(optionId(activeIndex))}`);
+    // Feature-checked: jsdom (and some embedded webviews) do not implement
+    // scrollIntoView, and an unguarded call throws during render there.
+    if (active && typeof active.scrollIntoView === 'function') {
+      active.scrollIntoView({ block: 'nearest' });
+    }
+  });
 
   function close(returnFocus = true) {
     setOpen(false);
@@ -170,47 +185,59 @@ export function MultiSelect({
               aria-label={searchPlaceholder}
               aria-controls={listId}
               aria-activedescendant={filtered.length ? optionId(activeIndex) : undefined}
-              className="w-full py-2.5 bg-transparent text-sm outline-none placeholder:text-text-tertiary"
+              className="w-full py-2.5 bg-transparent text-sm outline-none placeholder:text-text-secondary"
             />
           </div>
 
-          <ul
+          {/* A div, not a ul. `role="option"` must be a DIRECT child of
+              `role="listbox"`, and a <li> in between breaks that relationship —
+              axe reports it as aria-required-parent (critical) plus a
+              listitem violation, because a <li> under role="listbox" is no
+              longer in a list. Options are divs rather than buttons for the
+              same reason: a focusable control inside an option is announced as
+              a button, not a selectable row. Keyboard interaction lives on the
+              search input via aria-activedescendant, which is the listbox
+              pattern this implements.
+
+              tabIndex={-1} on the container makes the scroll region
+              programmatically focusable, so a scrollable area is not stranded
+              from keyboard users (axe: scrollable-region-focusable). */}
+          <div
             id={listId}
+            ref={listRef}
             role="listbox"
+            tabIndex={-1}
             aria-multiselectable="true"
             aria-label={triggerLabel}
-            className="max-h-64 overflow-y-auto py-1"
+            className="max-h-64 overflow-y-auto py-1 outline-none"
           >
             {filtered.length === 0 ? (
-              <li className="px-3 py-3 text-sm text-text-tertiary">{emptyText}</li>
+              <p className="px-3 py-3 text-sm text-text-secondary">{emptyText}</p>
             ) : (
               filtered.map((option, i) => {
                 const isSelected = selected.includes(option.value);
                 return (
-                  <li key={option.value}>
-                    <button
-                      id={optionId(i)}
-                      type="button"
-                      role="option"
-                      aria-selected={isSelected}
-                      tabIndex={-1}
-                      onMouseEnter={() => setActiveIndex(i)}
-                      onClick={() => onToggle(option.value)}
-                      className={`w-full flex items-center gap-2 px-3 min-h-[var(--touch-dense,37px)] text-left text-sm transition-colors ${
-                        i === activeIndex ? 'bg-elevated' : ''
-                      }`}
-                    >
-                      {option.icon && <span aria-hidden="true">{option.icon}</span>}
-                      <span className="flex-1 truncate">{option.label}</span>
-                      {isSelected && (
-                        <Check className="w-4 h-4 text-primary shrink-0" aria-hidden="true" />
-                      )}
-                    </button>
-                  </li>
+                  <div
+                    key={option.value}
+                    id={optionId(i)}
+                    role="option"
+                    aria-selected={isSelected}
+                    onMouseEnter={() => setActiveIndex(i)}
+                    onClick={() => onToggle(option.value)}
+                    className={`w-full flex items-center gap-2 px-3 min-h-[var(--touch-dense,37px)] text-left text-sm cursor-pointer transition-colors ${
+                      i === activeIndex ? 'bg-elevated' : ''
+                    }`}
+                  >
+                    {option.icon && <span aria-hidden="true">{option.icon}</span>}
+                    <span className="flex-1 truncate">{option.label}</span>
+                    {isSelected && (
+                      <Check className="w-4 h-4 text-primary shrink-0" aria-hidden="true" />
+                    )}
+                  </div>
                 );
               })
             )}
-          </ul>
+          </div>
         </div>
       )}
 

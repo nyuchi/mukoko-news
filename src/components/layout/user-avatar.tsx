@@ -67,7 +67,7 @@ export function UserAvatar({ onDark = false }: { onDark?: boolean }) {
   if (!user) {
     return (
       <Link href="/sign-in" className={base} aria-label="Sign in">
-        <User className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+        <User className="w-4 h-4 sm:w-5 sm:h-5 text-on-primary" aria-hidden="true" />
       </Link>
     );
   }
@@ -98,7 +98,19 @@ export function UserAvatar({ onDark = false }: { onDark?: boolean }) {
           onError={() => setImageFailed(true)}
         />
       ) : (
-        <span className="text-xs sm:text-sm font-bold text-white">
+        // `text-on-primary`, not `text-white`.
+        //
+        // The pill sits inside the header's `bg-primary`, and `--primary` FLIPS
+        // with the theme: #4B0082 in light, #B388FF in dark. Hardcoding white
+        // ink is therefore only correct in one of them — in dark it composites
+        // to white on ~#BB94FF, which axe reports as a serious contrast
+        // violation (3.91:1) and APCA puts at Lc 51.9 against a 75 requirement.
+        // `--on-primary` is the token that already tracks that flip.
+        //
+        // This is an improvement, not a pass: on dark it reaches Lc 56, and
+        // NO ink clears 75 on #B388FF at this size — the ceiling is the mineral
+        // itself, which is a palette decision rather than a component one.
+        <span className="text-xs sm:text-sm font-bold text-on-primary">
           {userInitials(first, last, user.email)}
         </span>
       )}

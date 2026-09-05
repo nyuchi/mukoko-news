@@ -168,3 +168,52 @@ describe('MultiSelect', () => {
     expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
   });
 });
+
+describe('accessibility structure', () => {
+  it('puts role="option" as a DIRECT child of role="listbox"', () => {
+    // A <li> between them breaks the required-parent relationship: axe reports
+    // aria-required-parent (critical) plus a listitem violation, because a <li>
+    // under role="listbox" is no longer inside a list.
+    setup();
+    openPanel();
+    const box = listbox();
+    for (const opt of within(box).getAllByRole('option')) {
+      expect(opt.parentElement).toBe(box);
+    }
+  });
+
+  it('does not nest a focusable control inside an option', () => {
+    // A button inside an option is announced as a button rather than a
+    // selectable row, and adds tab stops the listbox pattern does not want.
+    setup();
+    openPanel();
+    for (const opt of within(listbox()).getAllByRole('option')) {
+      expect(opt.querySelector('button, a, input, select, textarea')).toBeNull();
+    }
+  });
+
+  it('names the listbox and marks it multi-selectable', () => {
+    setup();
+    openPanel();
+    expect(listbox()).toHaveAttribute('aria-multiselectable', 'true');
+    expect(listbox()).toHaveAccessibleName('Add a country');
+  });
+
+  it('wires the trigger to the panel it controls', () => {
+    setup();
+    const trigger = screen.getByRole('button', { name: /add a country/i });
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    expect(trigger).toHaveAttribute('aria-haspopup', 'listbox');
+    openPanel();
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    expect(trigger.getAttribute('aria-controls')).toBe(listbox().id);
+  });
+
+  it('gives every remove control a distinct accessible name', () => {
+    // "Remove" alone repeated down a list of badges tells a screen-reader user
+    // nothing about which one they are on.
+    setup(['NG', 'ZW']);
+    expect(screen.getByRole('button', { name: 'Remove Nigeria' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Remove Zimbabwe' })).toBeInTheDocument();
+  });
+});

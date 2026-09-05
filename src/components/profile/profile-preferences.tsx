@@ -131,7 +131,7 @@ export function ProfilePreferences({
           <Globe2 className="w-4 h-4 text-secondary" aria-hidden="true" />
           <span className="font-medium">Countries</span>
         </div>
-        <p id="countries-hint" className="text-xs text-text-tertiary mb-3">
+        <p id="countries-hint" className="text-xs text-text-secondary mb-3">
           Which countries your feed draws from. Select a country below; tap one of your chosen
           countries to make it your primary.
         </p>
@@ -179,7 +179,7 @@ export function ProfilePreferences({
           <Tag className="w-4 h-4 text-secondary" aria-hidden="true" />
           <span className="font-medium">Interests</span>
         </div>
-        <p className="text-xs text-text-tertiary mb-3">
+        <p className="text-xs text-text-secondary mb-3">
           Topics to surface first. Choosing none shows you everything.
           {signedIn && ' Saved to your Mukoko account, so they follow you across devices.'}
         </p>

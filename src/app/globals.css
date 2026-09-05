@@ -25,8 +25,14 @@
 
   /* Text hierarchy */
   --text-primary: #F5F5F4;
-  --text-secondary: #B8B8B3;
-  --text-tertiary: #8A8A85;
+  /* Dark-mode neutrals are set by APCA (the WCAG 3 contrast method), not by the
+     WCAG 2 ratios the old comments quoted. WCAG 2 systematically overstates
+     light-text-on-dark: at #8A8A85 the tertiary token measured "7.0:1" and was
+     APCA Lc 38.7 on --surface, less than half the Lc 75 a 12-14px body string
+     needs and below the Lc 60 fluent-reading minimum. Every hint line, card
+     heading and chip on /profile used it. Measured with APCA 0.1.9 (4g). */
+  --text-secondary: #D4D4CF;   /* APCA Lc 79.5 on --surface — clears the Lc 75 body target */
+  --text-tertiary: #BCBCB6;    /* APCA Lc 65.3 on --surface — clears the Lc 60 fluent minimum */
 
   /* Brand Colors - Dark mode - African Minerals (dark_hex) */
   --tanzanite: #B388FF;
@@ -53,7 +59,7 @@
   --on-container-cobalt: #B3E5FC;
   --color-tanzanite: #B388FF;
   --container-tanzanite: #1A0033;
-  --on-container-tanzanite: #E1BEE7;
+  --on-container-tanzanite: #EDE0F3;  /* APCA Lc 89.8 on --container-tanzanite (#E1BEE7 was 73.3, under the Lc 75 body target) */
   --color-malachite: #64FFDA;
   --container-malachite: #00251A;
   --on-container-malachite: #A7FFEB;
@@ -106,8 +112,14 @@
 
   /* Text hierarchy - AAA compliant (7:1+ contrast on #0A0A0A) */
   --text-primary: #F5F5F4;     /* 19.3:1 contrast */
-  --text-secondary: #B8B8B3;   /* 10.4:1 contrast */
-  --text-tertiary: #8A8A85;    /* 7.1:1 contrast */
+  /* Dark-mode neutrals are set by APCA (the WCAG 3 contrast method), not by the
+     WCAG 2 ratios the old comments quoted. WCAG 2 systematically overstates
+     light-text-on-dark: at #8A8A85 the tertiary token measured "7.0:1" and was
+     APCA Lc 38.7 on --surface, less than half the Lc 75 a 12-14px body string
+     needs and below the Lc 60 fluent-reading minimum. Every hint line, card
+     heading and chip on /profile used it. Measured with APCA 0.1.9 (4g). */
+  --text-secondary: #D4D4CF;   /* APCA Lc 79.5 on --surface — clears the Lc 75 body target */
+  --text-tertiary: #BCBCB6;    /* APCA Lc 65.3 on --surface — clears the Lc 60 fluent minimum */
 
   /* Brand Colors - African Minerals (dark_hex) */
   --tanzanite: #B388FF;
@@ -133,7 +145,7 @@
   --on-container-cobalt: #B3E5FC;
   --color-tanzanite: #B388FF;
   --container-tanzanite: #1A0033;
-  --on-container-tanzanite: #E1BEE7;
+  --on-container-tanzanite: #EDE0F3;  /* APCA Lc 89.8 on --container-tanzanite (#E1BEE7 was 73.3, under the Lc 75 body target) */
   --color-malachite: #64FFDA;
   --container-malachite: #00251A;
   --on-container-malachite: #A7FFEB;
