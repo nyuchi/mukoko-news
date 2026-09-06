@@ -15,6 +15,15 @@ vi.mock('@/lib/mongodb/admin', () => ({
   pingDatabase: (...args: unknown[]) => mockPingDatabase(...args),
 }));
 
+// The page now renders the enrichment control, which imports the 'use server'
+// gateway module — and that pulls WorkOS's authkit in, which needs a Next.js
+// server runtime jsdom does not provide. The control has its own suite; here it
+// only needs to not break the page. Mocked at the gateway rather than at the
+// component so the page still renders the real control.
+vi.mock('@/lib/admin/gateway', () => ({
+  drainEnrichmentBacklog: vi.fn().mockResolvedValue({ ok: true, status: 202 }),
+}));
+
 describe('AdminSystemPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();

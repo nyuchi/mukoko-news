@@ -24,6 +24,7 @@ import type { MyProfile } from "@/lib/mongodb/identity";
 import { ProfileIdentity } from "@/components/profile/profile-identity";
 import { ProfilePreferences } from "@/components/profile/profile-preferences";
 import { ProfileOrganizations } from "@/components/profile/profile-organizations";
+import { ProfileAdminLink } from "@/components/profile/profile-admin-link";
 
 function ProfileContent() {
   const { theme, cycleTheme } = useTheme();
@@ -121,6 +122,12 @@ function ProfileContent() {
 
       {/* The settings that were missing entirely: countries + interests. */}
       <ProfilePreferences signedIn initialInterests={profile?.interests} />
+
+      {/* Staff entry point to /admin. Nothing in the app linked there before, so
+          the console was reachable only by typing the URL. Renders nothing for
+          non-staff — and this is a link, not a gate: /admin re-derives the tier
+          server-side on every request. */}
+      <ProfileAdminLink />
 
       {/* Entity memberships, shown as the entity-scoped capabilities they are.
           Renders nothing when there are none. */}

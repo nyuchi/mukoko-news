@@ -1,7 +1,16 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { ShieldAlert, LayoutDashboard, Radio, Newspaper, BadgeCheck } from 'lucide-react'
+import {
+  ShieldAlert,
+  LayoutDashboard,
+  Radio,
+  Newspaper,
+  BadgeCheck,
+  BarChart3,
+  Users,
+  ServerCog,
+} from 'lucide-react'
 import { withAuth } from '@workos-inc/authkit-nextjs'
 import { resolveTier, canAccessAdmin, TIER_LABELS } from '@/lib/auth/roles'
 import { AdminSignOut } from '@/components/admin/admin-sign-out'
@@ -11,11 +20,18 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 }
 
+// Every page under /admin belongs here. Three of them — Analytics, Users and
+// System — existed with no link from anywhere in the app, so they were reachable
+// only by typing the URL. An admin page nobody can navigate to is not a feature,
+// and System is where the pipeline commands live.
 const ADMIN_NAV = [
   { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/admin/sources', label: 'Sources', icon: Radio },
   { href: '/admin/articles', label: 'Moderation', icon: Newspaper },
   { href: '/admin/publishers', label: 'Publishers', icon: BadgeCheck },
+  { href: '/admin/analytics', label: 'Analytics', icon: BarChart3 },
+  { href: '/admin/users', label: 'Users', icon: Users },
+  { href: '/admin/system', label: 'System', icon: ServerCog },
 ]
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
