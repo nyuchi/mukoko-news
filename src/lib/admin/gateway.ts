@@ -130,3 +130,27 @@ export async function rejectPublisherClaim(
     body: JSON.stringify({ rejectionReason: safeReason }),
   })
 }
+
+/**
+ * Start an enrichment backlog drain (gateway: POST /api/admin/enrich/backlog).
+ *
+ * Enrichment previously had three ways in and none of them was a *role*: the
+ * pipeline's notify hook and the fly-worker trigger are gated by shared service
+ * secrets, and the agent's Durable Object drains on its own schedule. So "let an
+ * admin re-run enrichment" meant handing someone a service credential. The
+ * gateway route closes that: it sits inside `/api/admin/*`, inherits the same
+ * WorkOS platform-org check this console gated on, and keeps the service token
+ * server-side.
+ *
+ * Takes no arguments. The drain is bounded by the agent's own MAX_BATCH /
+ * SCHEDULED_MAX_CHAIN, not by anything a caller passes — there is no parameter
+ * here for a caller to get wrong, and none to validate.
+ *
+ * Returns 202 while draining. A 503 means the gateway is not wired up
+ * (ENRICHMENT_WORKER_URL / ENRICHMENT_API_TOKEN unset, or the host pin rejected
+ * the configured URL) — deliberately distinct from "drain started", because an
+ * admin pressing a button needs to be able to tell those apart.
+ */
+export async function drainEnrichmentBacklog(): Promise<GatewayResult> {
+  return callGateway('/api/admin/enrich/backlog', { method: 'POST' })
+}

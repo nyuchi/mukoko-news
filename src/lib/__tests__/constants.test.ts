@@ -54,6 +54,56 @@ describe('CATEGORY_META', () => {
     expect(CATEGORY_META['all']).toBeDefined();
     expect(CATEGORY_META['all'].emoji).toBe('📰');
   });
+
+  /**
+   * The keys must stay exactly the pipeline's closed CATEGORY_ENUM plus `all`.
+   *
+   * This is pinned rather than left to convention because `sitemap.ts` derives
+   * the category URLs it submits to search engines from these keys, so a key
+   * with no articles behind it is an empty page offered to crawlers — and that
+   * is precisely what `general` and `harare` were. `general` was withdrawn from
+   * the enum (the model was being offered a catch-all and took it on 26% of
+   * enriched articles) and purged from the corpus; `harare` is a city, and
+   * geography belongs to the `places` domain and the `countryCode` filter, not
+   * to the topic vocabulary.
+   *
+   * If the pipeline adds a category, add it here too — that is the intended
+   * failure of this test, not a reason to loosen it.
+   */
+  const PIPELINE_CATEGORY_ENUM = [
+    'politics',
+    'economy',
+    'business',
+    'technology',
+    'sports',
+    'health',
+    'education',
+    'entertainment',
+    'international',
+    'agriculture',
+    'crime',
+    'environment',
+    'science',
+    'culture',
+    'lifestyle',
+    'travel',
+    'food',
+  ];
+
+  it('matches the pipeline category vocabulary exactly, plus "all"', () => {
+    expect(Object.keys(CATEGORY_META).sort()).toEqual(
+      [...PIPELINE_CATEGORY_ENUM, 'all'].sort()
+    );
+  });
+
+  it('offers no catch-all category', () => {
+    // A catch-all in the UI vocabulary re-creates the problem removing it from
+    // the model's enum was meant to solve: a bucket that means nothing to a
+    // reader and dilutes every ranking built on the field.
+    for (const catchall of ['general', 'other', 'misc', 'news', 'uncategorized', 'top', 'world']) {
+      expect(CATEGORY_META[catchall]).toBeUndefined();
+    }
+  });
 });
 
 describe('getCategoryEmoji', () => {

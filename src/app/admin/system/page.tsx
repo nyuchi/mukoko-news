@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { ArrowLeft, Activity, Database, Workflow } from 'lucide-react'
 import { pingDatabase } from '@/lib/mongodb/admin'
+import { EnrichmentControls } from '@/components/admin/enrichment-controls'
 
 export const metadata = { title: 'System' }
 
@@ -69,7 +70,16 @@ export default async function AdminSystemPage() {
         </div>
       </section>
 
-      {/* Pipeline — honest boundary note, no fabricated status */}
+      {/* Pipeline — the enrichment control is the one lever this console has over
+          the pipeline. Everything else about it is still owned by another repo, so
+          the boundary note below stays: no fabricated status. */}
+      <section className="mb-8">
+        <h2 className="text-lg font-semibold text-foreground mb-4">Commands</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <EnrichmentControls />
+        </div>
+      </section>
+
       <section>
         <h2 className="text-lg font-semibold text-foreground mb-4">Pipeline</h2>
         <div className="bg-surface rounded-xl border border-elevated p-5 flex items-start gap-4">
@@ -80,7 +90,8 @@ export default async function AdminSystemPage() {
               RSS collection and AI enrichment run in the <code>mukoko-news-pipeline</code> repo
               (Fly.io + Cloudflare Workers). Their status is not monitored from this frontend, so
               no status is shown here. Sync intervals and retention are configured in the
-              pipeline repo, not here.
+              pipeline repo, not here. The drain above is a command, not a status: it starts work
+              and returns — it cannot report whether that work succeeded.
             </p>
           </div>
         </div>
