@@ -5,10 +5,10 @@ import { X, Loader2, Sparkles } from "lucide-react";
 import { usePreferences } from "@/contexts/preferences-context";
 import { COUNTRIES, getCategoryEmoji } from "@/lib/constants";
 import { type Category } from "@/lib/api";
-import { getCategoriesAction } from "@/lib/actions/feed";
+import { getCategoriesAction, getTopCountriesAction } from "@/lib/actions/feed";
 
 // Number of quick-pick items to show
-const QUICK_COUNTRIES_COUNT = 4;
+const QUICK_COUNTRIES_COUNT = 6;
 const QUICK_CATEGORIES_COUNT = 6;
 
 export function OnboardingModal() {
@@ -23,21 +23,33 @@ export function OnboardingModal() {
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
+  // Country codes ranked by what the corpus is actually publishing. Null until
+  // the read answers, so the fallback below is used for that first paint.
+  const [coveredCodes, setCoveredCodes] = useState<string[] | null>(null);
 
   useEffect(() => {
-    async function loadCategories() {
-      try {
-        const cats = await getCategoriesAction();
-        setCategories(cats);
-      } catch (error) {
-        console.error("Failed to load categories:", error);
-      } finally {
-        setLoading(false);
-      }
-    }
-    if (showOnboarding) {
-      loadCategories();
-    }
+    if (!showOnboarding) return;
+    let active = true;
+
+    getCategoriesAction()
+      .then((cats) => {
+        if (active) setCategories(cats);
+      })
+      .catch((error) => console.error("Failed to load categories:", error))
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    getTopCountriesAction(QUICK_COUNTRIES_COUNT)
+      .then((rows) => {
+        if (active) setCoveredCodes(rows.map((r) => r.code));
+      })
+      // Fail-soft: keep the static fallback rather than an empty step.
+      .catch((error) => console.error("Failed to load country coverage:", error));
+
+    return () => {
+      active = false;
+    };
   }, [showOnboarding]);
 
   if (!showOnboarding) return null;
@@ -46,8 +58,24 @@ export function OnboardingModal() {
     completeOnboarding();
   };
 
-  // Show top countries and categories for quick selection
-  const quickCountries = COUNTRIES.slice(0, QUICK_COUNTRIES_COUNT);
+  // Offer the countries the corpus is actually publishing, in that order.
+  //
+  // This used to be `COUNTRIES.slice(0, 4)` — the first four entries of a
+  // hand-ordered constant, which is the "East Africa" block at the top of the
+  // array and has nothing to do with coverage. On the live corpus that offered
+  // Tanzania (368 articles in the last 30 days) while omitting Nigeria (8,648
+  // in the same window, the largest country in the corpus) entirely.
+  //
+  // A code with no entry in COUNTRIES is dropped rather than rendered without a
+  // flag or name; the static slice stands in until the read answers, and if the
+  // read fails it stands in permanently — a step with stale options beats one
+  // with none.
+  const quickCountries =
+    coveredCodes && coveredCodes.length > 0
+      ? coveredCodes
+          .map((code) => COUNTRIES.find((c) => c.code === code))
+          .filter((c): c is (typeof COUNTRIES)[number] => !!c)
+      : COUNTRIES.slice(0, QUICK_COUNTRIES_COUNT);
   const quickCategories = categories.slice(0, QUICK_CATEGORIES_COUNT);
 
   return (

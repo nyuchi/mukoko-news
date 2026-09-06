@@ -207,7 +207,7 @@ export function Header() {
                       : "bg-surface border-elevated"
                   }`}
                 >
-                  <nav className="py-2">
+                  <nav aria-label="Menu" className="py-2">
                     {allPages.map((page) => {
                       const Icon = page.icon;
                       const isActive = pathname === page.href;
@@ -244,7 +244,7 @@ export function Header() {
         </div>
 
         {/* Nav Links */}
-        <nav className="hidden md:flex items-center gap-8">
+        <nav aria-label="Primary" className="hidden md:flex items-center gap-8">
           {navLinks.map((link) => (
             <Link
               key={link.href}
