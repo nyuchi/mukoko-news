@@ -70,7 +70,29 @@ export type CountryCode = (typeof COUNTRIES)[number]["code"];
 // refetch when the user's preferences match these defaults.
 export const DEFAULT_FEED_COUNTRIES: string[] = ["ZW"];
 
-// Category emoji and color mapping
+/**
+ * Category emoji and colour mapping.
+ *
+ * The keys are the pipeline's canonical category vocabulary — the closed
+ * 17-value `CATEGORY_ENUM` in `fundi-news-enrichment/src/agent.ts` — plus the
+ * `all` pseudo-category the UI uses for "no filter". Nothing else belongs here:
+ * `sitemap.ts` derives the category URLs it submits to search engines straight
+ * from these keys, so an entry with no articles behind it is an empty page
+ * offered to crawlers.
+ *
+ * Two keys were removed once the corpus was measured:
+ *
+ * - `general` — withdrawn from the enum because the model was being offered a
+ *   catch-all and took it on 11,627 of 44,237 enriched articles, and stripped
+ *   from the stored data. No article carries it, so offering it here was a
+ *   promise of a feed that cannot be filled.
+ * - `harare` — a city, not a category. It was never in the enum; geography is
+ *   owned by the `places` domain and filtered on `countryCode`, not by
+ *   smuggling one city into the topic vocabulary.
+ *
+ * `getCategoryEmoji` falls back to 📰 for anything unrecognised, so removing a
+ * key degrades to a default icon rather than throwing.
+ */
 export const CATEGORY_META: Record<string, { emoji: string; color: string }> = {
   all: { emoji: "📰", color: "bg-gray-500" },
   politics: { emoji: "🏛️", color: "bg-red-500" },
@@ -82,8 +104,6 @@ export const CATEGORY_META: Record<string, { emoji: string; color: string }> = {
   education: { emoji: "📚", color: "bg-violet-500" },
   entertainment: { emoji: "🎬", color: "bg-pink-500" },
   international: { emoji: "🌍", color: "bg-cyan-500" },
-  general: { emoji: "📰", color: "bg-lime-500" },
-  harare: { emoji: "🏙️", color: "bg-teal-500" },
   agriculture: { emoji: "🌾", color: "bg-amber-500" },
   crime: { emoji: "🚔", color: "bg-red-600" },
   environment: { emoji: "🌍", color: "bg-green-600" },
