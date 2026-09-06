@@ -3,9 +3,10 @@
 import { useState, useEffect } from "react";
 import { X, Loader2, Sparkles } from "lucide-react";
 import { usePreferences } from "@/contexts/preferences-context";
-import { COUNTRIES, getCategoryEmoji } from "@/lib/constants";
+import { getCategoryEmoji } from "@/lib/constants";
+import { STATIC_COUNTRIES, type CountryOption } from "@/lib/countries";
 import { type Category } from "@/lib/api";
-import { getCategoriesAction, getTopCountriesAction } from "@/lib/actions/feed";
+import { getCategoriesAction, getTopCountriesAction, getCountriesAction } from "@/lib/actions/feed";
 
 // Number of quick-pick items to show
 const QUICK_COUNTRIES_COUNT = 6;
@@ -26,6 +27,7 @@ export function OnboardingModal() {
   // Country codes ranked by what the corpus is actually publishing. Null until
   // the read answers, so the fallback below is used for that first paint.
   const [coveredCodes, setCoveredCodes] = useState<string[] | null>(null);
+  const [countries, setCountries] = useState<CountryOption[]>(STATIC_COUNTRIES);
 
   useEffect(() => {
     if (!showOnboarding) return;
@@ -47,6 +49,14 @@ export function OnboardingModal() {
       // Fail-soft: keep the static fallback rather than an empty step.
       .catch((error) => console.error("Failed to load country coverage:", error));
 
+    // The country list itself comes from `places`, the domain that owns
+    // geography — not from this app's hand-maintained constant.
+    getCountriesAction()
+      .then((rows) => {
+        if (active) setCountries(rows);
+      })
+      .catch((error) => console.error("Failed to load countries:", error));
+
     return () => {
       active = false;
     };
@@ -66,16 +76,20 @@ export function OnboardingModal() {
   // Tanzania (368 articles in the last 30 days) while omitting Nigeria (8,648
   // in the same window, the largest country in the corpus) entirely.
   //
-  // A code with no entry in COUNTRIES is dropped rather than rendered without a
-  // flag or name; the static slice stands in until the read answers, and if the
-  // read fails it stands in permanently — a step with stale options beats one
-  // with none.
+  // A covered code with no matching country record is dropped — it would render
+  // with no name at all. But a country `places` knows and this app has no flag
+  // for is NOT dropped: `getCountries` gives it a placeholder flag, so the list
+  // is governed by which countries exist rather than by which ones someone
+  // remembered to add art for.
+  //
+  // The static slice stands in until the reads answer, and permanently if they
+  // fail — a step with stale options beats one with none.
   const quickCountries =
     coveredCodes && coveredCodes.length > 0
       ? coveredCodes
-          .map((code) => COUNTRIES.find((c) => c.code === code))
-          .filter((c): c is (typeof COUNTRIES)[number] => !!c)
-      : COUNTRIES.slice(0, QUICK_COUNTRIES_COUNT);
+          .map((code) => countries.find((c) => c.code === code))
+          .filter((c): c is CountryOption => !!c)
+      : countries.slice(0, QUICK_COUNTRIES_COUNT);
   const quickCategories = categories.slice(0, QUICK_CATEGORIES_COUNT);
 
   return (

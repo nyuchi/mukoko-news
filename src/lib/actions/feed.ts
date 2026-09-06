@@ -12,6 +12,7 @@
 
 import { cookies } from 'next/headers'
 import { unstable_cache } from 'next/cache'
+import { getCountries } from '@/lib/mongodb/places'
 import { getDb } from '@/lib/mongodb/client'
 import { resolveEngagementSubject, claimSessionEngagement } from '@/lib/engagement'
 import { getArticles, getArticleById, getNewsByteArticles, searchArticles, getSavedArticles, getTopicTimeline } from '@/lib/mongodb/articles'
@@ -207,4 +208,28 @@ const cachedTopCountries = unstable_cache(
 
 export async function getTopCountriesAction(limit = 6) {
   return cachedTopCountries(clampInt(limit, 1, 24, 6))
+}
+
+/**
+ * The country list, from the `places` domain that owns geography.
+ *
+ * The hand-maintained `COUNTRIES` constant matched `places` exactly at the time
+ * of writing, but nothing kept them that way — a country added to the SSOT, or
+ * the platform expanding past Africa, would never have reached this app. Now
+ * `places` decides which countries exist and what they are called; the constant
+ * only supplies the flag and accent colour, which are presentation and not
+ * geography.
+ *
+ * Cached for a day. This is the slowest-moving data the app reads — countries
+ * do not change hourly — and every visitor gets the same answer, so querying it
+ * per render would be pure waste. `getCountries` is fail-soft to the static
+ * list, so a bad read yields a slightly stale picker rather than an empty one.
+ */
+const cachedCountries = unstable_cache(() => getCountries(), ['places-countries'], {
+  revalidate: 86400,
+  tags: ['countries'],
+})
+
+export async function getCountriesAction() {
+  return cachedCountries()
 }

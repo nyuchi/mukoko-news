@@ -15,10 +15,15 @@ import { PreferencesProvider } from '@/contexts/preferences-context';
 
 const mockCategories = vi.fn();
 const mockCountries = vi.fn();
+const mockCountryList = vi.fn();
 
 vi.mock('@/lib/actions/feed', () => ({
   getCategoriesAction: () => mockCategories(),
   getTopCountriesAction: (limit: number) => mockCountries(limit),
+  // The country list itself now comes from `places`, the domain that owns
+  // geography — `getTopCountriesAction` only says which of them the corpus is
+  // publishing. Two reads, two different questions.
+  getCountriesAction: () => mockCountryList(),
 }));
 
 import { OnboardingModal } from '../onboarding-modal';
@@ -31,10 +36,12 @@ function renderModal() {
   );
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.clearAllMocks();
   localStorage.clear();
   mockCategories.mockResolvedValue([]);
+  const { STATIC_COUNTRIES } = await import('@/lib/countries');
+  mockCountryList.mockResolvedValue(STATIC_COUNTRIES);
 });
 
 describe('onboarding country quick-picks', () => {
@@ -60,9 +67,11 @@ describe('onboarding country quick-picks', () => {
     expect(mockCountries).toHaveBeenCalledWith(6);
   });
 
-  it('drops a country code that has no entry in COUNTRIES', async () => {
-    // A code the corpus carries but the UI has no flag or name for must not
-    // render as a nameless chip.
+  it('drops a covered code that no country record matches', async () => {
+    // A code the corpus carries but `places` does not know must not render as a
+    // nameless chip. Note this is NOT the same as a country `places` knows and
+    // this app has no flag for — that one is listed, with a placeholder flag,
+    // because the list is governed by which countries exist.
     mockCountries.mockResolvedValue([
       { code: 'NG', recent: 10 },
       { code: 'XX', recent: 5 },

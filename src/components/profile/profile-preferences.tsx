@@ -5,8 +5,9 @@ import { Globe2, Loader2, Star, Tag } from 'lucide-react';
 import { MultiSelect, SelectedBadge, type MultiSelectOption } from '@/components/ui/multi-select';
 import { updateInterestsAction } from '@/lib/actions/profile';
 import { usePreferences } from '@/contexts/preferences-context';
-import { COUNTRIES, getCategoryEmoji } from '@/lib/constants';
-import { getCategoriesAction } from '@/lib/actions/feed';
+import { getCategoryEmoji } from '@/lib/constants';
+import { STATIC_COUNTRIES, type CountryOption } from '@/lib/countries';
+import { getCategoriesAction, getCountriesAction } from '@/lib/actions/feed';
 import type { Category } from '@/lib/api';
 
 /**
@@ -48,11 +49,29 @@ export function ProfilePreferences({
 
   const [categories, setCategories] = useState<Category[]>([]);
 
+  // The country list comes from `places`, the domain that owns geography — not
+  // from this app's hand-maintained constant, which nothing kept in sync with
+  // it. The static list stands in until the read answers and permanently if it
+  // fails: a picker with no countries is worse than a slightly stale one.
+  const [countries, setCountries] = useState<CountryOption[]>(STATIC_COUNTRIES);
+
+  useEffect(() => {
+    let active = true;
+    getCountriesAction()
+      .then((rows) => {
+        if (active) setCountries(rows);
+      })
+      .catch((error) => console.error('Failed to load countries:', error));
+    return () => {
+      active = false;
+    };
+  }, []);
+
   // The option lists the two pickers choose from. Memoised so the dropdown does
-  // not rebuild 54 objects on every keystroke in its own search field.
+  // not rebuild every option on each keystroke in its own search field.
   const countryOptions = useMemo<MultiSelectOption[]>(
-    () => COUNTRIES.map((c) => ({ value: c.code, label: c.name, icon: c.flag })),
-    []
+    () => countries.map((c) => ({ value: c.code, label: c.name, icon: c.flag })),
+    [countries]
   );
   const interestOptions = useMemo<MultiSelectOption[]>(
     () =>
