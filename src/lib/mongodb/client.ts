@@ -38,4 +38,28 @@ export async function getDb() {
   return client.db(dbName)
 }
 
-export default { getDb }
+/**
+ * A database other than `news`, for the rare cross-domain READ.
+ *
+ * The platform is one cluster of ~29 domain-separated databases, each the SSOT
+ * for its own domain, and this app owns none of them but `news`. So this is
+ * deliberately a narrow, named union rather than an arbitrary string: reading
+ * another domain is legitimate (that is what "resolve it from the owning
+ * domain" means), inventing a database name is not.
+ *
+ * `places` owns geography — the country list every filter in this app is built
+ * on. `entity` and `identity` are already read through their own modules; they
+ * are named here so those can converge on one accessor rather than each opening
+ * its own.
+ *
+ * READ ONLY by convention: this app writes to `news` and to its own profile
+ * record, never to another domain's collections.
+ */
+export type DomainDbName = 'places' | 'entity' | 'identity' | 'platform'
+
+export async function getDomainDb(name: DomainDbName) {
+  const client = await getClientPromise()
+  return client.db(name)
+}
+
+export default { getDb, getDomainDb }
