@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { ArrowLeft, Newspaper } from 'lucide-react'
 import { getTopicTimelineAction } from '@/lib/actions/feed'
+import { getFullUrl } from '@/lib/constants'
 import { TopicTimeline } from '@/components/topic-timeline'
 
 // Developing-story surface: everything published on a topic in the last 30
@@ -26,6 +27,15 @@ export async function generateMetadata({ params }: TopicPageProps): Promise<Meta
   return {
     title: `${title} — Ongoing coverage`,
     description: `Follow the ${title} story as it develops: every report, day by day, from newsrooms across Africa.`,
+    // Declared explicitly: without it this route inherited the root canonical
+    // and pointed every developing-story page at the homepage.
+    alternates: { canonical: getFullUrl(`/topic/${slug}`) },
+    openGraph: {
+      title: `${title} — Ongoing coverage`,
+      description: `Every report on ${title}, day by day, from newsrooms across Africa.`,
+      url: getFullUrl(`/topic/${slug}`),
+      type: 'website',
+    },
   }
 }
 

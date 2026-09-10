@@ -94,8 +94,10 @@ describe('ShareModal', () => {
       const onClose = vi.fn();
       render(<ShareModal article={mockArticle} isOpen={true} onClose={onClose} />);
 
-      // Find the X button (close button)
-      const closeButton = screen.getByRole('button', { name: '' });
+      // The close button is now named. Selecting it by `name: ''` (as this test
+      // originally did) asserted the icon-only button had NO accessible name,
+      // which was the WCAG 4.1.2 defect rather than the intended behaviour.
+      const closeButton = screen.getByRole('button', { name: 'Close share dialog' });
       fireEvent.click(closeButton);
 
       expect(onClose).toHaveBeenCalledTimes(1);
@@ -302,5 +304,40 @@ describe('ShareModal', () => {
         expect(screen.getByText('Copy Link')).toBeInTheDocument();
       });
     });
+  });
+});
+
+describe('share modal dialog semantics', () => {
+  const article = {
+    id: 'a1',
+    title: 'A headline',
+    description: 'desc',
+    source: 'The Herald',
+    published_at: '2026-09-01T00:00:00.000Z',
+  } as never;
+
+  it('exposes itself as a modal dialog named by its heading', () => {
+    render(<ShareModal article={article} isOpen={true} onClose={() => {}} />);
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    expect(dialog).toHaveAccessibleName('Share Article');
+  });
+
+  it('gives the icon-only close button an accessible name', () => {
+    render(<ShareModal article={article} isOpen={true} onClose={() => {}} />);
+    expect(screen.getByRole('button', { name: 'Close share dialog' })).toBeInTheDocument();
+  });
+
+  it('moves focus into the dialog when it opens', () => {
+    render(<ShareModal article={article} isOpen={true} onClose={() => {}} />);
+    expect(document.activeElement).toBe(screen.getByRole('dialog'));
+  });
+
+  it('keeps the backdrop out of the accessibility tree', () => {
+    const { container } = render(
+      <ShareModal article={article} isOpen={true} onClose={() => {}} />
+    );
+    const backdrop = container.querySelector('.bg-black\\/60');
+    expect(backdrop).toHaveAttribute('aria-hidden', 'true');
   });
 });

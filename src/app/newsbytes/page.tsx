@@ -240,6 +240,10 @@ export default function NewsBytesPage() {
   return (
     <ErrorBoundary fallback={<div className="fixed inset-0 z-40 flex items-center justify-center bg-black text-white/60">Failed to load NewsBytes</div>}>
       <div className="fixed inset-0 z-40 bg-black flex items-center justify-center">
+        {/* The page's one and only h1. It is visually hidden because the design
+            is full-bleed imagery, but the document still needs a title for
+            heading navigation and for the a11y tree. */}
+        <h1 className="sr-only">NewsBytes — short African news stories</h1>
         {/* Desktop/Tablet: Centered vertical frame container */}
       <div className="relative h-full w-full md:w-auto md:h-[calc(100vh-80px)] md:aspect-[9/16] md:max-h-[900px] md:rounded-2xl md:overflow-hidden md:shadow-2xl md:shadow-black/50">
         {/* Progress Indicator - positioned below header */}
@@ -291,10 +295,13 @@ export default function NewsBytesPage() {
                   </span>
                 )}
 
-                {/* Title */}
-                <h1 className="font-serif text-xl sm:text-2xl md:text-3xl font-bold text-white mb-3 leading-tight">
+                {/* Title is h2, not a top-level heading. Every slide used to
+                    render its own level-1 heading, so a feed of 20 bytes
+                    produced 20 of them and heading navigation was useless
+                    (WCAG 1.3.1). The page's single h1 sits above the scroller. */}
+                <h2 className="font-serif text-xl sm:text-2xl md:text-3xl font-bold text-white mb-3 leading-tight">
                   {byte.title}
-                </h1>
+                </h2>
 
                 {/* Description */}
                 {byte.description && (
