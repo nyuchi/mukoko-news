@@ -25,6 +25,7 @@ import { ArticlePageSkeleton } from "@/components/ui/skeleton";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { ArticleJsonLd } from "@/components/ui/json-ld";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
+import { ArticleReadingMeta, ArticleMetricsPanel } from "@/components/article/article-metrics";
 
 /**
  * True when the article body is just the description again — excerpt-only RSS
@@ -321,12 +322,23 @@ export default function ArticleDetailClient({
             {article.title}
           </h1>
 
+          {/* Source, date, reading time and byline.
+
+              `text-text-secondary`, not `on-primary/80`: main removed the
+              coloured hero this header used to sit on, so an on-primary tone
+              here would be a foreground colour with no matching ground behind
+              it — unreadable in one theme. */}
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-text-secondary">
             <span className="font-medium">{article.source}</span>
             <span className="flex items-center gap-1">
               <Clock className="w-4 h-4" aria-hidden="true" />
               {formatDate(article.published_at)}
             </span>
+            {/* Reading time and byline — the two metrics a reader uses to decide
+                whether to start reading, so they belong here rather than at the
+                foot of the article. Both are independently optional and render
+                nothing when the article has neither. */}
+            <ArticleReadingMeta article={article} />
           </div>
 
           {/* Tags belong with the byline, not after the article.
@@ -414,6 +426,12 @@ export default function ArticleDetailClient({
             Read full article{article.source ? ` at ${article.source}` : ""}
           </a>
         )}
+
+        {/* About this article — reader-facing metrics from the article document
+            itself, plus the staff-gated pipeline provenance. Placed after the
+            body because it answers "what was that?" rather than "should I read
+            this?"; the deciding metrics are in the header instead. */}
+        <ArticleMetricsPanel article={article} />
 
         {/* Divider */}
         <div className="border-t border-elevated my-8" />
