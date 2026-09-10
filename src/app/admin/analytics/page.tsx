@@ -111,7 +111,7 @@ export default async function AdminAnalyticsPage() {
             icon={Layers}
             value={stats.categories}
             label="Curated Categories"
-            tint="text-accent"
+            tint="text-gold"
           />
         </div>
       )}

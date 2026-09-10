@@ -1,7 +1,7 @@
 {
   "name": "mukoko news",
   "short_name": "mukoko",
-  "description": "Pan-African digital news aggregation platform. Breaking news, top stories, and in-depth coverage from Zimbabwe, South Africa, Kenya, Nigeria, and 12 more African countries.",
+  "description": "Pan-African digital news aggregation platform. Breaking news, top stories and in-depth coverage — live in 16 African countries, with all 54 in scope.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#1A0033",

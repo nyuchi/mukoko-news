@@ -1,4 +1,11 @@
-import { BASE_URL, COUNTRIES } from "@/lib/constants";
+import {
+  BASE_URL,
+  COUNTRIES,
+  RELEASED_COUNTRY_CODES,
+  RELEASED_COUNTRY_COUNT,
+  COUNTRY_SCOPE_TOTAL,
+  isReleasedCountry,
+} from "@/lib/constants";
 import { SoftwareApplicationJsonLd } from "@/components/ui/json-ld";
 
 function CodeBlock({ children, label }: { children: string; label?: string }) {
@@ -40,7 +47,10 @@ function ParamRow({
 }
 
 export default function EmbedPage() {
-  const countryCodes = COUNTRIES.map((c) => c.code).join(", ");
+  // The live countries, not the whole scope: a developer copying a code out of
+  // this table expects articles back, and an in-scope-but-unreleased country
+  // renders an empty widget.
+  const countryCodes = RELEASED_COUNTRY_CODES.join(", ");
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-10">
@@ -51,8 +61,9 @@ export default function EmbedPage() {
       </h1>
       <p className="mt-4 text-text-secondary max-w-2xl">
         Add live, location-based African news to any website or app. Embeddable
-        news cards for top stories, featured content, and local news across 16
-        countries — free, no API key required.
+        news cards for top stories, featured content and local news &mdash; live in{" "}
+        {RELEASED_COUNTRY_COUNT} African countries, with all {COUNTRY_SCOPE_TOTAL} in scope.
+        Free, no API key required.
       </p>
 
       {/* Quick start — Script Widget */}
@@ -110,7 +121,7 @@ export default function EmbedPage() {
                 name="country"
                 type="string"
                 defaultVal="ZW"
-                description={`Country code for location filtering. Supported: ${countryCodes}`}
+                description={`Country code for location filtering. Live: ${countryCodes}. The other ${COUNTRY_SCOPE_TOTAL - RELEASED_COUNTRY_COUNT} African Union member states are accepted but have no articles yet.`}
               />
               <ParamRow
                 name="type"
@@ -248,10 +259,13 @@ export default function EmbedPage() {
         <p className="mt-2 text-sm text-text-secondary">
           Location-based embeds are critical for sister apps and regional content.
           Use the <code className="text-primary font-mono text-xs">country</code> parameter
-          to target any of the 16 supported African countries.
+          to target any of the {RELEASED_COUNTRY_COUNT} live African countries below. The
+          remaining {COUNTRY_SCOPE_TOTAL - RELEASED_COUNTRY_COUNT} African Union member states
+          are in scope and coming soon &mdash; the parameter accepts them, but there are no
+          articles behind them yet.
         </p>
         <div className="mt-4 grid grid-cols-4 sm:grid-cols-8 gap-2">
-          {COUNTRIES.map((c) => (
+          {COUNTRIES.filter((c) => isReleasedCountry(c.code)).map((c) => (
             <div key={c.code} className="flex flex-col items-center gap-1 p-2 rounded-xl bg-surface border border-border text-center">
               <span className="text-lg">{c.flag}</span>
               <span className="text-[10px] font-semibold">{c.code}</span>
@@ -288,7 +302,10 @@ export default function EmbedPage() {
       <section className="mt-12 mb-12">
         <h2 className="text-xl font-semibold">Features</h2>
         <ul className="mt-4 space-y-2 text-sm text-text-secondary list-disc pl-5">
-          <li>Location-based news from 16 African countries</li>
+          <li>
+            Location-based news from {RELEASED_COUNTRY_COUNT} live African countries (
+            {COUNTRY_SCOPE_TOTAL} in scope)
+          </li>
           <li>4 feed types: Top Stories, Featured, Latest, Location</li>
           <li>5 visual layouts: Cards, Compact, Hero, Ticker, List</li>
           <li>Category filtering (politics, sports, economy, tech, etc.)</li>

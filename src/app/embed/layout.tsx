@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
-import { getFullUrl } from "@/lib/constants";
+import { getFullUrl, COVERAGE_FRAGMENT } from "@/lib/constants";
 
 export const metadata: Metadata = {
   title: "Embed Location News Cards",
   description:
-    "Add live, location-based African news to any website or app. Embeddable news cards for top stories, featured content, and local news across 16 countries — free, no API key required.",
+    `Add live, location-based African news to any website or app. Embeddable news cards for top stories, featured content and local news — ${COVERAGE_FRAGMENT}. Free, no API key required.`,
   alternates: {
     canonical: getFullUrl("/embed"),
   },

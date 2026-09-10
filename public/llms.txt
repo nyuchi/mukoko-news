@@ -1,6 +1,12 @@
 # Mukoko News
 
-> Pan-African news aggregation for Zimbabwe and 15 other African countries — briefings, search, source views and open-data analytics. "Mukoko" means "beehive" in Shona.
+> Pan-African news aggregation — briefings, search, source views and open-data analytics. "Mukoko" means "beehive" in Shona.
+
+## Coverage
+
+Live in 16 African countries, with all 54 African Union member states in scope — the rest are coming soon. Country pages for the countries that are not live say so rather than showing an empty result set; only the live countries are submitted in the sitemap.
+
+Mukoko aggregates other newsrooms' reporting and does not publish it. Article representations here carry an EXCERPT and a link to the originating publisher, never the full text; the publisher named on each article is the newsroom that wrote it.
 
 ## For AI agents
 
