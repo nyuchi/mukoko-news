@@ -27,6 +27,14 @@
   /* The full Mzizi background scale. Five steps were missing, which is why
      menus reused the hover-row colour, the share modal hand-rolled its own
      backdrop, and article heroes had no media-well token. */
+  /* How much bottom space the floating mobile nav needs kept clear: its own
+     height (4rem) + the 0.75rem it floats by + a 0.75rem breathing gap, on top
+     of the home-indicator inset. Every surface that pins something to the
+     bottom on mobile reads this, so the pill and an action rail can never be
+     lifted by different amounts again. Zero above `md`, where the pill is not
+     rendered — consumers apply `md:` themselves since a CSS variable cannot
+     carry a breakpoint. */
+  --bottom-nav-clearance: calc(env(safe-area-inset-bottom, 0px) + 5.5rem);
   --void: #080807;      /* app shell behind base */
   --pitch: #050505;     /* deepest — media wells, splash */
   --raised: #2E2C29;    /* above overlay — menus, toasts */

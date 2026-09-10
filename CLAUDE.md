@@ -108,6 +108,18 @@ src/
   __tests__/setup.ts      # Vitest global setup
 ```
 
+### Navigation (`src/lib/navigation.ts`)
+
+**One registry, four surfaces.** `DESTINATIONS` is every page a reader can go to, grouped; the header's "jump to" dropdown, the mobile bottom bar, the footer site map and `/profile` all read it. Each used to carry its own hand-written array and they had drifted — the header dropdown named ten destinations and omitted `/sources`, `/about`, `/terms`, `/privacy` and `/publishers/claim`; the footer named five, none of them a reading surface — so **no surface in the app could reach every page**. `pick(...hrefs)` **throws** on an unknown href rather than rendering a shorter bar, and `navigation.test.ts` walks the App Router directory and fails when a route has a page but is neither registered nor listed in `NOT_DESTINATIONS` with a reason. Adding a page and linking it from nowhere is now a CI failure. `/admin` is deliberately excluded: it is RBAC-gated, and listing it for everyone advertises a door almost nobody can open.
+
+**The bottom nav is on every route** (owner decision 2026-09-10, TikTok as the reference). It used to return `null` on `/newsbytes` and on every article page, so the two surfaces a reader is most likely to arrive on from a shared link were the two with no visible way out — the only routes back were the browser's own back gesture or knowing to tap the wordmark. It read as a deliberate immersive choice in the code and as being stranded in the product. `hidesAppChrome()` is now true for **one** route, `/embed/iframe`, which is our markup inside somebody else's page.
+
+**Navigation owns the bottom edge; content actions move to a right rail.** That is the split TikTok uses on a fullscreen video, and `/newsbytes` already had the rail. `ArticleActionBar` now matches it: a vertical rail on mobile, the horizontal bar it always was from `md` up (where there is no floating pill). It is **one DOM tree that reshapes with responsive classes**, not two that take turns behind `md:hidden` — jsdom applies no media queries, so two `role="toolbar"` regions with the same accessible name would make every `getByRole` in the suite match both.
+
+**`--bottom-nav-clearance`** (`globals.css`) is how much bottom space the floating pill needs kept clear — its height, its lift, a breathing gap and the home-indicator inset. The page padding in `layout.tsx`, the NewsBytes caption column and action rail, and the article page all read it, so the pill and whatever sits above it can never be lifted by different amounts. Consumers apply the `md:` reset themselves, since a CSS variable cannot carry a breakpoint.
+
+**The pill is `rounded-full`.** It floats because this is a web app rather than an installed one: there is no OS-drawn tab bar to sit flush against, and a full-width bar welded to the bottom of a browser viewport collides with the browser's own toolbar and the home-indicator gesture zone. A floating bar is a pill; `rounded-2xl` read as a card that happened to be at the bottom of the screen.
+
 ### Data Flow (reads)
 
 All news data reads go through Server Actions → MongoDB Atlas (`news` database). Server Actions live in `src/lib/actions/feed.ts` and delegate to `src/lib/mongodb/*.ts`:

@@ -3,10 +3,12 @@
 import { useState, useEffect, useSyncExternalStore, useMemo, useRef } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Search, Zap, ChevronDown, Compass, Bookmark, BarChart3, LineChart, HelpCircle, Settings } from "lucide-react";
+import { Search, Zap, ChevronDown } from "lucide-react";
 import { UserAvatar } from "./user-avatar";
 import { DateTimeWeather } from "./datetime-weather";
 import { AppIcon } from "@/components/ui/app-icon";
+
+import { HEADER_MENU_HREFS, pick } from "@/lib/navigation";
 
 const navLinks = [
   { href: "/", label: "Feed" },
@@ -14,19 +16,13 @@ const navLinks = [
   { href: "/newsbytes", label: "NewsBytes" },
 ];
 
-// All navigable pages for the dropdown
-const allPages = [
-  { href: "/", label: "Feed", icon: Zap },
-  { href: "/discover", label: "Discover", icon: Compass },
-  { href: "/newsbytes", label: "NewsBytes", icon: Zap },
-  { href: "/categories", label: "Categories", icon: BarChart3 },
-  { href: "/insights", label: "Insights", icon: BarChart3 },
-  { href: "/analytics", label: "Analytics", icon: LineChart },
-  { href: "/saved", label: "Saved", icon: Bookmark },
-  { href: "/search", label: "Search", icon: Search },
-  { href: "/profile", label: "Profile", icon: Settings },
-  { href: "/help", label: "Help", icon: HelpCircle },
-];
+// The header's "jump to" dropdown. The picks live in `@/lib/navigation`
+// alongside every other surface's, so this list cannot quietly fall behind the
+// routes that exist — which is exactly what had happened: it named ten
+// destinations and omitted /sources, /about, /terms, /privacy and
+// /publishers/claim. `pick()` throws on an unknown href, so a renamed route
+// fails a test rather than silently shortening this menu.
+const allPages = pick(...HEADER_MENU_HREFS);
 
 // Static page titles mapping
 const pageTitles: Record<string, string> = {

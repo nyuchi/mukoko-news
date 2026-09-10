@@ -287,7 +287,10 @@ export default function NewsBytesPage() {
               <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/90" />
 
               {/* Content */}
-              <div className="absolute bottom-0 left-4 right-16 sm:left-6 sm:right-20 z-10 pb-6">
+              {/* The caption column clears the floating nav for the same
+                  reason the action rail does — the "Read Full Article" link is
+                  the last thing in it, and the pill would sit on top of it. */}
+              <div className="absolute bottom-0 left-4 right-16 sm:left-6 sm:right-20 z-10 pb-[var(--bottom-nav-clearance)] md:pb-6">
                 {/* Category Badge */}
                 {(byte.category_id || byte.category) && (
                   <span className="inline-block px-3 py-1 bg-primary text-black text-xs font-bold uppercase rounded-lg mb-3">
@@ -326,8 +329,13 @@ export default function NewsBytesPage() {
                 </Link>
               </div>
 
-              {/* Right Side Actions */}
-              <div className="absolute right-3 sm:right-4 bottom-6 z-10 flex flex-col items-center gap-4 sm:gap-5">
+              {/* Right Side Actions.
+                  Lifted clear of the floating bottom nav, which is on this
+                  route now — it used to be hidden here, which is what left a
+                  reader arriving from a share link with no way out. The lift
+                  reads the same `--bottom-nav-clearance` the page padding
+                  does, so the rail and the pill cannot drift apart. */}
+              <div className="absolute right-3 sm:right-4 bottom-[var(--bottom-nav-clearance)] z-10 flex flex-col items-center gap-4 sm:gap-5 md:bottom-6">
                 <button
                   onClick={(e) => handleLike(byte.id, e)}
                   className="flex flex-col items-center"

@@ -204,8 +204,11 @@ export default async function RootLayout({
 
             <Header />
             {/* Bottom padding on mobile keeps the floating nav pill from
-                covering the last row of content (nav height + lift + safe area) */}
-            <main id="main-content" tabIndex={-1} className="flex-1 relative z-10 pb-[calc(env(safe-area-inset-bottom,0px)_+_5.5rem)] md:pb-0">
+                covering the last row of content. The amount is
+                `--bottom-nav-clearance` in globals.css, shared with every other
+                surface that pins something above the pill, so they cannot be
+                lifted by different amounts. */}
+            <main id="main-content" tabIndex={-1} className="flex-1 relative z-10 pb-[var(--bottom-nav-clearance)] md:pb-0">
               {children}
             </main>
             <Footer />

@@ -1,10 +1,9 @@
 'use client'
 
 import { Heart, Bookmark, Share2, Check, ExternalLink } from 'lucide-react'
-import { PageContainer } from '@/components/layout/page-container'
 
 /**
- * The article's actions, pinned to the bottom of the viewport.
+ * The article's actions.
  *
  * ## Why pinned rather than at the foot of the article
  *
@@ -14,6 +13,30 @@ import { PageContainer } from '@/components/layout/page-container'
  * this audience mostly reads on, that is the whole interaction. Pinning them
  * costs one bar of height and makes them reachable at the moment the intent
  * actually occurs.
+ *
+ * ## Two shapes, because the bottom of a phone belongs to navigation
+ *
+ * On mobile this is a **vertical rail on the right**; from `md` up it is the
+ * horizontal bar it always was.
+ *
+ * The article page used to hide the app's bottom nav so this bar could own the
+ * bottom edge, which meant an article opened from a shared link had no visible
+ * route to anywhere else in the app. Navigation wins that space: the floating
+ * nav pill is on every route now, and the actions move out of its way rather
+ * than displacing it. That is the split TikTok uses on a fullscreen video —
+ * navigation along the bottom, content actions up the right-hand side — and the
+ * same rail `/newsbytes` already had.
+ *
+ * The rail is lifted by `--bottom-nav-clearance`, the one token every surface
+ * that pins something above the pill reads, so the rail and the pill can never
+ * be lifted by different amounts.
+ *
+ * **It is one DOM tree that reshapes, not two that take turns.** Rendering a
+ * mobile toolbar and a desktop toolbar and hiding one with `md:hidden` would
+ * put two `role="toolbar"` regions with the same accessible name into the
+ * page — and since jsdom applies no media queries, every `getByRole` in the
+ * suite would match both. The responsive classes below carry the whole
+ * difference: a circular well on a phone, a flex row on a desktop.
  *
  * ## Every control here writes somewhere real
  *
@@ -31,6 +54,16 @@ import { PageContainer } from '@/components/layout/page-container'
  *
  * Both come back when there is something behind them.
  */
+
+/**
+ * One action. A circular well on mobile — which also makes the label part of
+ * the tap target rather than a caption beside it — and a flex cell in the bar
+ * from `md` up.
+ */
+const ACTION =
+  'inline-flex h-14 w-14 shrink-0 flex-col items-center justify-center gap-0.5 rounded-full border border-outline bg-surface/90 text-[10px] font-medium shadow-md backdrop-blur-xl transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background ' +
+  'md:h-auto md:min-h-[var(--touch-a11y)] md:w-auto md:flex-1 md:rounded-xl md:border-transparent md:bg-transparent md:px-2 md:text-[11px] md:shadow-none md:backdrop-blur-none'
+
 export function ArticleActionBar({
   isLiked,
   likesCount,
@@ -53,25 +86,29 @@ export function ArticleActionBar({
   onSave: () => void
   onShare: () => void
 }) {
-  const item =
-    'inline-flex min-h-[var(--touch-a11y)] flex-col items-center justify-center gap-0.5 rounded-xl px-2 text-[11px] font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background'
-
   return (
     <div
       role="toolbar"
       aria-label="Article actions"
-      // `--wash` over the page, plus a blur: the bar has to stay legible above
-      // whatever paragraph is behind it without becoming an opaque slab that
-      // eats a line of the article.
-      className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/85 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl"
+      className={
+        // Mobile: a rail on the right, lifted clear of the navigation pill.
+        'fixed right-3 bottom-[var(--bottom-nav-clearance)] z-40 flex flex-col items-center gap-3 ' +
+        // Desktop: the full-width bar. `--wash` over the page plus a blur, so
+        // it stays legible above whatever paragraph is behind it without
+        // becoming an opaque slab that eats a line of the article.
+        'md:inset-x-0 md:right-auto md:bottom-0 md:flex-row md:gap-0 md:border-t md:border-border md:bg-background/85 md:pb-[env(safe-area-inset-bottom)] md:backdrop-blur-xl'
+      }
     >
-      <PageContainer width="reading" className="flex items-center gap-2 py-2">
+      {/* The reading-width column, applied only where the bar spans the
+          viewport. Inlined rather than using PageContainer because on mobile
+          this element must not be a column at all — it is a 56px-wide rail. */}
+      <div className="contents md:mx-auto md:flex md:w-full md:max-w-[var(--width-reading)] md:items-center md:gap-2 md:px-[var(--page-gutter)] md:py-2 sm:md:px-[var(--page-gutter-sm)]">
         <button
           type="button"
           onClick={onLike}
           aria-pressed={isLiked}
           aria-label={isLiked ? 'Remove like' : 'Like this article'}
-          className={`${item} flex-1 ${isLiked ? 'text-destructive' : 'text-foreground hover:bg-elevated'}`}
+          className={`${ACTION} ${isLiked ? 'text-destructive' : 'text-foreground md:hover:bg-elevated'}`}
         >
           <Heart className={`h-5 w-5 ${isLiked ? 'fill-current' : ''}`} aria-hidden="true" />
           {/* The count is the like count, so it is never rendered as a bare
@@ -85,7 +122,7 @@ export function ArticleActionBar({
           onClick={onSave}
           aria-pressed={isSaved}
           aria-label={isSaved ? 'Remove from saved' : 'Save this article'}
-          className={`${item} flex-1 ${isSaved ? 'text-primary' : 'text-foreground hover:bg-elevated'}`}
+          className={`${ACTION} ${isSaved ? 'text-primary' : 'text-foreground md:hover:bg-elevated'}`}
         >
           <Bookmark className={`h-5 w-5 ${isSaved ? 'fill-current' : ''}`} aria-hidden="true" />
           <span>{isSaved ? 'Saved' : 'Save'}</span>
@@ -96,10 +133,14 @@ export function ArticleActionBar({
             href={originalUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className={`${item} flex-1 text-foreground hover:bg-elevated`}
+            className={`${ACTION} text-foreground md:hover:bg-elevated`}
           >
             <ExternalLink className="h-5 w-5" aria-hidden="true" />
-            <span className="max-w-full truncate">
+            {/* On the rail there is room for one word; in the bar there is room
+                to name the publisher, which is what makes it obvious the link
+                leaves this site. */}
+            <span className="max-w-full truncate md:hidden">Original</span>
+            <span className="hidden max-w-full truncate md:inline">
               {sourceName ? `At ${sourceName}` : 'Original'}
             </span>
           </a>
@@ -108,18 +149,21 @@ export function ArticleActionBar({
         <button
           type="button"
           onClick={onShare}
-          className={`ml-auto inline-flex min-h-[var(--touch-default)] shrink-0 items-center gap-2 rounded-full px-5 text-sm font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background ${
-            copySuccess ? 'bg-success text-on-success' : 'bg-primary text-on-primary hover:opacity-90'
+          aria-label="Share this article"
+          className={`${ACTION} md:ml-auto md:h-auto md:min-h-[var(--touch-default)] md:w-auto md:flex-none md:flex-row md:gap-2 md:rounded-full md:px-5 md:text-sm md:font-semibold ${
+            copySuccess
+              ? 'border-transparent bg-success text-on-success'
+              : 'border-transparent bg-primary text-on-primary md:hover:opacity-90'
           }`}
         >
           {copySuccess ? (
-            <Check className="h-4 w-4" aria-hidden="true" />
+            <Check className="h-5 w-5 md:h-4 md:w-4" aria-hidden="true" />
           ) : (
-            <Share2 className="h-4 w-4" aria-hidden="true" />
+            <Share2 className="h-5 w-5 md:h-4 md:w-4" aria-hidden="true" />
           )}
           <span>{copySuccess ? 'Copied' : 'Share'}</span>
         </button>
-      </PageContainer>
+      </div>
     </div>
   )
 }
