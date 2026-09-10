@@ -53,10 +53,19 @@ export default function HomeClient({ initialFeed = null, initialCategories = nul
     (initialCategories ?? []).filter((c) => c.id !== "all")
   );
 
-  // Infinite scroll for the chronological "Latest" feed
-  const [latestPage, setLatestPage] = useState(1);
+  // Infinite scroll for the chronological "Latest" feed.
+  //
+  // Keyset cursor, not a page number. Offset paging re-walks and discards every
+  // earlier row on the server, so each scroll costs more than the last, and it
+  // duplicates or drops articles when new ones land mid-scroll — which on a news
+  // feed happens continuously. A cursor is flat-cost at any depth and stable
+  // under insertion. It matters most on the slow, metered connections this app
+  // is built for: nothing is re-fetched and nothing is re-sent.
+  const [latestCursor, setLatestCursor] = useState<string | null>(
+    initialFeed?.nextCursor ?? null
+  );
   const [hasMoreLatest, setHasMoreLatest] = useState(
-    !initialFeed || (initialFeed.latest?.length ?? 0) >= LATEST_PAGE_SIZE
+    initialFeed ? (initialFeed.hasMore ?? false) : true
   );
   const [loadingMore, setLoadingMore] = useState(false);
 
@@ -67,6 +76,10 @@ export default function HomeClient({ initialFeed = null, initialCategories = nul
   const [loading, setLoading] = useState(!initialFeed);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Distinct from `error`: `error` REPLACES the whole feed with a retry screen,
+  // which is right when nothing loaded and wrong when only a rail failed. A
+  // partial failure gets a banner above the content that did load.
+  const [notice, setNotice] = useState<string | null>(null);
   const [pullDistance, setPullDistance] = useState(0);
   const topStoriesScrollRef = useRef<HTMLDivElement>(null);
   const latestSentinelRef = useRef<HTMLDivElement>(null);
@@ -110,9 +123,15 @@ export default function HomeClient({ initialFeed = null, initialCategories = nul
       setYourNews(response.yourNews || []);
       setByCategory(response.byCategory || []);
       setLatestArticles(latest);
-      // Reset infinite-scroll pagination for the new filter set
-      setLatestPage(1);
-      setHasMoreLatest(latest.length >= LATEST_PAGE_SIZE);
+      // Reset infinite-scroll pagination for the new filter set — the old cursor
+      // points into a different result set and must not be carried over.
+      setLatestCursor(response.nextCursor ?? null);
+      setHasMoreLatest(response.hasMore ?? false);
+      // A degraded response means some rails failed server-side and came back
+      // empty. Say so rather than letting an empty feed imply there is no news.
+      setNotice(
+        response.degraded ? "Some sections couldn't be loaded. Pull down to retry." : null
+      );
     } catch (err) {
       console.error("Failed to fetch feed:", err);
       setError(err instanceof Error ? err.message : "Failed to load news feed");
@@ -158,11 +177,10 @@ export default function HomeClient({ initialFeed = null, initialCategories = nul
     if (loadingMore || !hasMoreLatest) return;
     setLoadingMore(true);
     try {
-      const nextPage = latestPage + 1;
       const countries = countryKey ? countryKey.split(",") : [];
-      const { articles, total } = await getArticlesAction({
+      const { articles, nextCursor, hasMore } = await getArticlesAction({
         sort: "latest",
-        page: nextPage,
+        cursor: latestCursor ?? undefined,
         limit: LATEST_PAGE_SIZE,
         countries: countries.length > 0 ? countries : undefined,
       });
@@ -170,14 +188,17 @@ export default function HomeClient({ initialFeed = null, initialCategories = nul
         const seen = new Set(prev.map((a) => a.id));
         return [...prev, ...articles.filter((a) => !seen.has(a.id))];
       });
-      setLatestPage(nextPage);
-      setHasMoreLatest(articles.length >= LATEST_PAGE_SIZE && nextPage * LATEST_PAGE_SIZE < total);
+      setLatestCursor(nextCursor);
+      // `hasMore` comes from the server having actually seen one more row, so it
+      // is exact — no inference from page arithmetic, which is what made the old
+      // version stop a page early or fire one pointless request past the end.
+      setHasMoreLatest(hasMore && nextCursor !== null);
     } catch (err) {
       console.error("Failed to load more articles:", err);
     } finally {
       setLoadingMore(false);
     }
-  }, [loadingMore, hasMoreLatest, latestPage, countryKey]);
+  }, [loadingMore, hasMoreLatest, latestCursor, countryKey]);
 
   // Keep a stable ref to the latest loader so the observer never re-registers
   const loadMoreLatestRef = useRef(loadMoreLatest);
@@ -454,6 +475,15 @@ export default function HomeClient({ initialFeed = null, initialCategories = nul
           </div>
         ) : hasContent ? (
           <div className="py-6 space-y-10">
+            {notice && (
+              <p
+                role="status"
+                className="flex items-center gap-2 px-4 py-3 rounded-xl bg-container-terracotta text-on-container-terracotta text-sm"
+              >
+                <WifiOff className="w-4 h-4 shrink-0" aria-hidden="true" />
+                {notice}
+              </p>
+            )}
             {/* TOP STORIES - Trending with story clustering */}
             {topStories.length > 0 && (
               <ErrorBoundary fallback={<div className="p-8 rounded-2xl bg-surface text-center text-text-secondary">Top stories unavailable</div>}>

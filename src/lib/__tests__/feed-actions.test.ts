@@ -18,13 +18,25 @@ import {
 } from '../mongodb/articles';
 import { getTrendingCategories } from '../mongodb/categories';
 import { getTrendingAuthors } from '../mongodb/sources';
+import type { Article } from '../api';
 
 // Server Actions are a public RPC surface — these tests assert that
 // malicious/buggy arguments are validated and clamped BEFORE they reach the
 // MongoDB layer, without changing the actions' return shapes.
 
+// `unstable_cache` needs Next's incremental cache, which only exists inside a
+// request/render. Under vitest it throws `Invariant: incrementalCache missing`,
+// and because the actions are now fail-soft that throw would be swallowed into an
+// empty result — the assertions below would pass vacuously while testing nothing.
+// A passthrough keeps these tests about what they are named for: argument
+// clamping on the way to MongoDB.
+vi.mock('next/cache', () => ({
+  unstable_cache: <A extends unknown[], R>(fn: (...args: A) => R) => fn,
+  revalidateTag: vi.fn(),
+}));
+
 vi.mock('../mongodb/articles', () => ({
-  getArticles: vi.fn().mockResolvedValue({ articles: [], total: 0 }),
+  getArticles: vi.fn().mockResolvedValue({ articles: [], total: null, nextCursor: null, hasMore: false }),
   getArticleById: vi.fn().mockResolvedValue(null),
   getNewsByteArticles: vi.fn().mockResolvedValue([]),
   searchArticles: vi.fn().mockResolvedValue([]),
@@ -121,8 +133,11 @@ describe('getArticlesAction input validation', () => {
   });
 
   it('keeps the documented return shape', async () => {
+    // `total` is null unless a caller passes `withTotal`: the capped count costs
+    // ~9.4s on the live cluster and nothing in the UI renders it. `hasMore` and
+    // `nextCursor` replace it for the only question the feed actually asks.
     const result = await getArticlesAction({ limit: 5000 });
-    expect(result).toEqual({ articles: [], total: 0 });
+    expect(result).toEqual({ articles: [], total: null, nextCursor: null, hasMore: false });
   });
 });
 
@@ -284,5 +299,100 @@ describe('getSavedArticlesAction input validation', () => {
     await getSavedArticlesAction();
     expect(mockClaim).not.toHaveBeenCalled();
     expect(getSavedArticles).toHaveBeenCalledWith('user:user_123');
+  });
+});
+
+/**
+ * The outage of 2026-09-10 was not caused by a query being slow. It was caused
+ * by a slow query being allowed to reach the client as an HTTP 500: this module
+ * had promised in its docstring since it was written that reads "degrade
+ * gracefully to safe defaults rather than throwing", and contained no error
+ * handling whatsoever. These tests make the docstring enforceable.
+ *
+ * The rule is asymmetric on purpose. A feed missing its trending rail is
+ * degraded; a feed that 500s is a blank site. Never trade the second for the
+ * first.
+ */
+describe('reads degrade instead of throwing', () => {
+  const boom = () => Promise.reject(new Error('MongoServerError: operation exceeded time limit'));
+
+  it('getArticlesAction returns an empty page', async () => {
+    vi.mocked(getArticles).mockImplementationOnce(boom);
+    await expect(getArticlesAction()).resolves.toEqual({
+      articles: [],
+      total: null,
+      nextCursor: null,
+      hasMore: false,
+    });
+  });
+
+  it('getNewsBytesAction returns an empty list', async () => {
+    vi.mocked(getNewsByteArticles).mockImplementationOnce(boom);
+    await expect(getNewsBytesAction()).resolves.toEqual([]);
+  });
+
+  it('searchArticlesAction returns an empty list', async () => {
+    vi.mocked(searchArticles).mockImplementationOnce(boom);
+    await expect(searchArticlesAction('zimbabwe')).resolves.toEqual([]);
+  });
+
+  it('getArticleAction returns null', async () => {
+    vi.mocked(getArticleById).mockImplementationOnce(boom);
+    await expect(getArticleAction('some-article-id')).resolves.toBeNull();
+  });
+
+  it('getTrendingCategoriesAction returns an empty list', async () => {
+    vi.mocked(getTrendingCategories).mockImplementationOnce(boom);
+    await expect(getTrendingCategoriesAction()).resolves.toEqual([]);
+  });
+
+  it('getTrendingAuthorsAction returns an empty result', async () => {
+    vi.mocked(getTrendingAuthors).mockImplementationOnce(boom);
+    await expect(getTrendingAuthorsAction()).resolves.toEqual({ trending_authors: [] });
+  });
+
+  it('the sectioned feed survives one failing rail and flags itself degraded', async () => {
+    // Top stories fail; latest succeeds. The reader must still get the feed.
+    vi.mocked(getArticles)
+      .mockImplementationOnce(boom)
+      .mockResolvedValueOnce({
+        articles: [{ id: 'a1', published_at: '2026-09-10T00:00:00.000Z' } as Article],
+        total: null,
+        nextCursor: 'cursor-1',
+        hasMore: true,
+      });
+
+    const feed = await getSectionedFeedAction();
+
+    expect(feed.topStories).toEqual([]);
+    expect(feed.latest).toHaveLength(1);
+    expect(feed.degraded).toBe(true);
+    expect(feed.nextCursor).toBe('cursor-1');
+    expect(feed.hasMore).toBe(true);
+  });
+
+  it('a fully healthy sectioned feed is not flagged degraded', async () => {
+    vi.mocked(getArticles).mockResolvedValue({
+      articles: [{ id: 'a1', published_at: '2026-09-10T00:00:00.000Z' } as Article],
+      total: null,
+      nextCursor: null,
+      hasMore: false,
+    });
+
+    await expect(getSectionedFeedAction()).resolves.toMatchObject({ degraded: false });
+  });
+});
+
+describe('feed pagination passes the cursor through', () => {
+  it('forwards an opaque cursor to the MongoDB layer', async () => {
+    await getArticlesAction({ cursor: 'abc.def', limit: 20 });
+    expect(getArticles).toHaveBeenCalledWith(expect.objectContaining({ cursor: 'abc.def' }));
+  });
+
+  it('drops a non-string cursor rather than forwarding it', async () => {
+    // Server Actions are a public RPC surface: the argument is whatever the
+    // caller sent, not necessarily what the type says.
+    await getArticlesAction({ cursor: { evil: true } as unknown as string });
+    expect(getArticles).toHaveBeenCalledWith(expect.objectContaining({ cursor: undefined }));
   });
 });

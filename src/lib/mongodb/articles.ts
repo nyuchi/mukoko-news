@@ -5,7 +5,7 @@
  */
 
 import type { Collection, Filter } from 'mongodb'
-import { getDb } from './client'
+import { getDb, QUERY_MAX_TIME_MS } from './client'
 import { stripHtml } from '@/lib/utils'
 import { clampInt, MAX_LIMIT, MAX_PAGE } from '@/lib/safety'
 import type { Article } from '@/lib/api'
@@ -122,6 +122,31 @@ function resolveKeywords(doc: MongoArticle): Article['keywords'] {
   return mapped.length ? mapped : undefined
 }
 
+/**
+ * Fields a LIST read must never pull.
+ *
+ * Mukoko's readers are on African mobile networks where data is metered and
+ * expensive, so every byte in a feed response is a byte someone pays for — and
+ * these are the biggest bytes in the collection. `embedding` is 1024 floats of
+ * BGE-M3 output that only vector search reads; the three body renditions are the
+ * full article text, which no card renders (`article.content` is consumed on the
+ * detail page and in its JSON-LD, nowhere else — grep before widening this).
+ *
+ * Excluding them cuts a 20-article feed response from hundreds of KB to a few,
+ * and cuts the server-side FETCH proportionally: the fetch of fat documents, not
+ * the index scan, is what makes these queries slow (measured: 3,000 documents =
+ * 1.4s, 20,000 = 50s, on an IXSCAN costing 2.2s of that).
+ *
+ * The single-article reads (`getArticleById`, `getArticleBySlug`) deliberately do
+ * NOT use this — that is the one page that needs the body.
+ */
+const LIST_PROJECTION = {
+  embedding: 0,
+  articleBody: 0,
+  articleBodyProcessed: 0,
+  articleBodyMarkdown: 0,
+} as const
+
 function toArticle(
   doc: MongoArticle,
   source?: MongoFeedSource,
@@ -132,11 +157,16 @@ function toArticle(
     id: doc._id,
     title: doc.headline,
     description: doc.description,
-    content: stripHtml(doc.articleBodyProcessed || doc.articleBody) || undefined,
-    // Markdown rendition (pipeline-generated from the sanitized body) for the rich
-    // reader — only on the single-article detail path (`fullContent`). Kept out of
-    // list responses (feed/search/related) so 20× full article bodies don't bloat
-    // the payload; cards render title/description only. Guard against a stray "".
+    // Both body renditions are detail-page-only (`fullContent`). Kept out of list
+    // responses (feed/search/related) so 20× full article bodies don't bloat the
+    // payload; cards render title/description only. The plain `content` used to
+    // ship on every list item regardless — this comment described the intent while
+    // the line above it did the opposite, which on a metered African mobile
+    // connection is a real bill, not a rounding error. `LIST_PROJECTION` stops the
+    // fields being read at all; this stops them being serialised if they ever are.
+    content: opts.fullContent
+      ? stripHtml(doc.articleBodyProcessed || doc.articleBody) || undefined
+      : undefined,
     content_markdown: opts.fullContent ? doc.articleBodyMarkdown?.trim() || undefined : undefined,
     source: source?.name || doc.feedSourceId,
     source_id: doc.feedSourceId,
@@ -153,20 +183,100 @@ function toArticle(
   }
 }
 
+/**
+ * How far back a `popular` sort looks.
+ *
+ * `{qualityScore: -1, datePublished: -1}` has no index behind it, so unbounded it
+ * plans as COLLSCAN → blocking in-memory SORT over the entire 1.47 GB collection
+ * (verified by explain). A `datePublished` lower bound puts the IXSCAN back in
+ * front of the sort, so the blocking sort only ever sees a bounded window.
+ *
+ * Fourteen days is also the editorially correct answer: "popular" on a news feed
+ * means popular *now*. A high-quality article from March outranking today's lead
+ * was a bug in the ranking as much as in the query plan.
+ */
+const POPULAR_WINDOW_DAYS = 14
+
+/**
+ * Ceiling on the pagination total, for the callers that explicitly ask for one.
+ *
+ * `countDocuments(filter)` with only `$ne` filters cannot use an index and cannot
+ * be covered, so it COLLSCANs — on every feed request. That one call is what took
+ * the site down on 2026-09-10.
+ *
+ * Capping it is not enough to make it routine: measured on the live cluster, even
+ * stopping at 5,000 matches costs **9.4 seconds**, because the scan still has to
+ * read 5,000 fat documents off disk to test two `$ne`s. So the count is now
+ * opt-in (`withTotal`) and OFF by default. Nothing in the UI reads it — "is there
+ * another page" is answered exactly and for free by fetching `limit + 1` — and a
+ * number no one displays is not worth nine seconds of a reader's time.
+ */
+const TOTAL_COUNT_CAP = 5000
+
+/** Opaque keyset cursor: the sort position of the last item a caller received. */
+export interface ArticleCursor {
+  publishedAt: string
+  id: string
+}
+
+export function encodeArticleCursor(article: Article): string {
+  return Buffer.from(`${article.published_at}|${article.id}`, 'utf8').toString('base64url')
+}
+
+export function decodeArticleCursor(raw: string | undefined | null): ArticleCursor | null {
+  if (!raw || typeof raw !== 'string' || raw.length > 512) return null
+  try {
+    const [publishedAt, ...rest] = Buffer.from(raw, 'base64url').toString('utf8').split('|')
+    const id = rest.join('|')
+    if (!publishedAt || !id) return null
+    if (Number.isNaN(Date.parse(publishedAt))) return null
+    return { publishedAt, id }
+  } catch {
+    return null
+  }
+}
+
 export async function getArticles(params: {
   limit?: number
   page?: number
+  /**
+   * Keyset position to read from, instead of `page`. This is the cheap path and
+   * the one the feed uses.
+   *
+   * Offset paging costs more the further a reader scrolls — `skip(n)` walks and
+   * discards n documents server-side, so page 20 pays for pages 1-19 again — and
+   * it double-counts or skips articles when new ones arrive mid-scroll, which on
+   * a news feed is constantly. A keyset cursor is O(1) per page regardless of
+   * depth and is stable under insertion: it says "continue from this exact
+   * position in the sort" rather than "discard the first n".
+   *
+   * `page` is kept for the numbered surfaces that still use it; the two are
+   * mutually exclusive and `cursor` wins.
+   */
+  cursor?: string
   category?: string
   categories?: string[]
   countries?: string[]
   sort?: 'latest' | 'trending' | 'popular'
-} = {}): Promise<{ articles: Article[]; total: number }> {
+  /**
+   * Compute a (capped) match count. Off by default because it costs ~9.4s — see
+   * TOTAL_COUNT_CAP. Only pass this if you are going to render the number.
+   */
+  withTotal?: boolean
+} = {}): Promise<{
+  articles: Article[]
+  /** Capped match count, or null when `withTotal` was not requested. */
+  total: number | null
+  nextCursor: string | null
+  hasMore: boolean
+}> {
   const db = await getDb()
   const { category, categories, countries, sort = 'latest' } = params
   // Defensive second layer: Server Actions clamp already, but never let an
   // unbounded limit/skip reach the driver from any other call path.
   const limit = clampInt(params.limit, 1, MAX_LIMIT, 20)
   const page = clampInt(params.page, 1, MAX_PAGE, 1)
+  const cursor = decodeArticleCursor(params.cursor)
 
   const filter: Filter<MongoArticle> = {
     status: { $ne: 'rejected' },
@@ -193,24 +303,85 @@ export async function getArticles(params: {
     filter.feedSourceId = { $in: sourceIds }
   }
 
+  const isPopular = sort !== 'latest'
+  if (isPopular) {
+    // Bound the blocking sort — see POPULAR_WINDOW_DAYS.
+    filter.datePublished = { $gte: new Date(Date.now() - POPULAR_WINDOW_DAYS * 86400_000) }
+  }
+
+  // Keyset: continue strictly after the caller's last position.
+  //
+  // The `_id` half is not ceremony. Ties on `datePublished` are common — measured
+  // on the live corpus, 3,000 recent articles carry only 2,831 distinct
+  // timestamps, so ~6% share one with another article. A bare `$lt` on the
+  // timestamp would skip every same-timestamp sibling at each page boundary; the
+  // second branch keeps them.
+  if (cursor && !isPopular) {
+    const at = new Date(cursor.publishedAt)
+    filter.$or = [
+      { datePublished: { $lt: at } },
+      { datePublished: at, _id: { $lt: cursor.id } },
+    ] as never
+  }
+
   const col = db.collection<MongoArticle>('articles')
-  const sortField = sort === 'latest' ? { datePublished: -1 } : { qualityScore: -1, datePublished: -1 }
-  const skip = (page - 1) * limit
+  // Sort on `datePublished` ALONE, never `{datePublished, _id}`.
+  //
+  // The tie-break belongs in the filter, not the sort. Adding `_id` to the sort
+  // key looks more correct and is catastrophically slower: no index carries
+  // `_id` within `datePublished` order, so the planner can no longer stream and
+  // falls back to a blocking SORT over the whole `$lt` branch — i.e. most of the
+  // collection. Measured: that variant did not finish inside 60s, while the
+  // single-key sort plans as SORT_MERGE (two streaming index scans) at 22 keys
+  // and 22 documents examined for the same page.
+  const sortField = sort === 'latest'
+    ? { datePublished: -1 }
+    : { qualityScore: -1, datePublished: -1 }
+  // A cursor read never skips: that is the whole point of it.
+  const skip = cursor ? 0 : (page - 1) * limit
 
-  const [docs, total] = await Promise.all([
-    col.find(filter).sort(sortField as never).skip(skip).limit(limit).toArray(),
-    col.countDocuments(filter),
-  ])
+  // Fetch one more than asked for. Its presence answers "is there another page"
+  // exactly, with no count at all — the cheap half of the TikTok-style feed.
+  const docs = await col
+    .find(filter, { projection: LIST_PROJECTION })
+    .sort(sortField as never)
+    .skip(skip)
+    .limit(limit + 1)
+    .maxTimeMS(QUERY_MAX_TIME_MS)
+    .toArray()
 
-  const sourceIds = [...new Set(docs.map(d => d.feedSourceId))]
+  const hasMore = docs.length > limit
+  const pageDocs = hasMore ? docs.slice(0, limit) : docs
+
+  // `null`, not a guess. A caller that did not ask for a total gets an explicit
+  // "not computed" rather than a plausible-looking number (the page length, say)
+  // that would silently be wrong wherever it was rendered.
+  const total = params.withTotal
+    ? await col.countDocuments(filter, { limit: TOTAL_COUNT_CAP, maxTimeMS: QUERY_MAX_TIME_MS })
+    : null
+
+  const sourceIds = [...new Set(pageDocs.map(d => d.feedSourceId))]
   const sources = await db.collection<MongoFeedSource>('feedSources')
     .find({ _id: { $in: sourceIds } })
+    .maxTimeMS(QUERY_MAX_TIME_MS)
     .toArray()
   const sourceMap = new Map(sources.map(s => [s._id, s]))
 
+  const articles = pageDocs.map(d => toArticle(d, sourceMap.get(d.feedSourceId)))
+
   return {
-    articles: docs.map(d => toArticle(d, sourceMap.get(d.feedSourceId))),
+    articles,
     total,
+    hasMore,
+    // Only the `latest` sort has a keyset implementation, so only it may hand
+    // back a cursor. Emitting one for `popular` would be a trap: the read path
+    // ignores a cursor on that sort (a keyset over `qualityScore` is a different
+    // query), so the caller would re-receive page one, dedupe it to nothing, see
+    // `hasMore` still true, and loop forever fetching the same rows.
+    nextCursor:
+      sort === 'latest' && hasMore && articles.length > 0
+        ? encodeArticleCursor(articles[articles.length - 1])
+        : null,
   }
 }
 
@@ -255,7 +426,7 @@ export async function getRelatedArticles(articleId: string, limit = 5): Promise<
       },
       { $match: { _id: { $ne: articleId } } },
       { $limit: limit },
-      { $project: { embedding: 0 } },
+      { $project: LIST_PROJECTION },
     ]
     docs = await db.collection<MongoArticle>('articles').aggregate<MongoArticle>(pipeline).toArray()
   } else {
@@ -268,9 +439,10 @@ export async function getRelatedArticles(articleId: string, limit = 5): Promise<
     }
     if (article.articleSection) filter.articleSection = article.articleSection
     docs = await db.collection<MongoArticle>('articles')
-      .find(filter)
+      .find(filter, { projection: LIST_PROJECTION })
       .sort({ datePublished: -1 })
       .limit(limit)
+      .maxTimeMS(QUERY_MAX_TIME_MS)
       .toArray()
   }
 
@@ -299,9 +471,10 @@ export async function getNewsByteArticles(limit = 10): Promise<Article[]> {
         { imageUrl: { $exists: true, $ne: null } },
         { image_url: { $exists: true, $ne: null } },
       ],
-    } as Filter<MongoArticle>)
+    } as Filter<MongoArticle>, { projection: LIST_PROJECTION })
     .sort({ datePublished: -1 })
     .limit(limit)
+    .maxTimeMS(QUERY_MAX_TIME_MS)
     .toArray()
 
   const sourceIds = [...new Set(docs.map(d => d.feedSourceId))]
@@ -346,7 +519,7 @@ export async function searchArticles(
       },
     },
     { $addFields: { searchScore: { $meta: 'searchScore' } } },
-    { $project: { embedding: 0 } },
+    { $project: LIST_PROJECTION },
     { $limit: limit },
   ]
 
@@ -361,9 +534,10 @@ export async function searchArticles(
       .find({
         status: { $in: ['approved', 'published'] },
         $or: [{ headline: re }, { description: re }],
-      })
+      }, { projection: LIST_PROJECTION })
       .sort({ datePublished: -1 })
       .limit(limit)
+      .maxTimeMS(QUERY_MAX_TIME_MS)
       .toArray()
   }
 
@@ -400,7 +574,8 @@ export async function getSavedArticles(sessionId: string): Promise<{ articles: A
 
   const articleIds = saves.map(s => s.articleId as string)
   const docs = await db.collection<MongoArticle>('articles')
-    .find({ _id: { $in: articleIds } })
+    .find({ _id: { $in: articleIds } }, { projection: LIST_PROJECTION })
+    .maxTimeMS(QUERY_MAX_TIME_MS)
     .toArray()
 
   const sourceIds = [...new Set(docs.map(d => d.feedSourceId))]
@@ -452,8 +627,13 @@ export async function getTopicTimeline(
 
   const col = db.collection<MongoArticle>('articles')
   const [docs, total] = await Promise.all([
-    col.find(filter).sort({ datePublished: -1 }).limit(limit).toArray(),
-    col.countDocuments(filter),
+    col
+      .find(filter, { projection: LIST_PROJECTION })
+      .sort({ datePublished: -1 })
+      .limit(limit)
+      .maxTimeMS(QUERY_MAX_TIME_MS)
+      .toArray(),
+    col.countDocuments(filter, { limit: TOTAL_COUNT_CAP, maxTimeMS: QUERY_MAX_TIME_MS }),
   ])
 
   const sourceIds = [...new Set(docs.map(d => d.feedSourceId))]
