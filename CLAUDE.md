@@ -168,7 +168,11 @@ Used for client-side fetches and the embed widget, and exports the shared `Artic
 
 ## Testing
 
-**1,690 frontend tests across 99 files** — Vitest 4 with jsdom + React Testing Library.
+**Vitest 4 with jsdom + React Testing Library.** `npm run test` prints the current count;
+no figure is written down here, for the same reason the README carries no coverage number —
+a count in a document nothing checks is stale by the next merge. (It went stale inside a
+single branch once already: this line was corrected from "~1,000 across 64", then a later
+commit on the same branch added 19 tests.)
 
 - Config: `vitest.config.ts` (globals on, `@` alias, `include: src/**/*.{test,spec}.*`)
 - Setup: `src/__tests__/setup.ts`
