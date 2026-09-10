@@ -37,17 +37,19 @@ jobs:
     # once they have all run. A step that is never reached never registers its
     # post hook, so placing this at the end would report nothing in exactly the
     # case that matters — a failing check.
+    #
+    # KNOWN LIMIT on `pull_request` runs: the action takes the commit from
+    # GITHUB_SHA, which on that event is the ephemeral merge commit
+    # (refs/pull/N/merge) rather than the PR head, so the status lands on a
+    # commit GitHub does not display. Measured twice — run 34425929192 wrote to
+    # 18e10b1 for head 92b65cf, run 34426047263 to 76b1e4b for head f5e08ad.
+    # It cannot be redirected: the action exposes no `sha` input, and GitHub
+    # documents that "you can't overwrite the value of the default environment
+    # variables named GITHUB_* and RUNNER_*", so setting GITHUB_SHA here is
+    # silently ignored (tried; it is why that second measurement exists).
+    # Push runs are unaffected — there GITHUB_SHA is the real commit.
     - name: Notify Vercel
       uses: vercel/repository-dispatch/actions/status@v1
-      env:
-        # On a `pull_request` event GITHUB_SHA is the ephemeral MERGE commit
-        # (refs/pull/N/merge), not the PR head, and this action reads
-        # `context.sha` straight out of that variable. Without the override it
-        # posts to a commit GitHub never displays: verified in run 34425929192,
-        # where it set the status on 18e10b1 (the merge ref) while the PR head
-        # was 92b65cf — the check ran, passed, and was invisible on the PR.
-        # `github.event.pull_request` is null on push, so this falls back cleanly.
-        GITHUB_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       with:
         name: 'Vercel - mukoko-news: lint / ${{ matrix.check }}'
 
@@ -105,15 +107,6 @@ jobs:
     steps:
     - name: Notify Vercel
       uses: vercel/repository-dispatch/actions/status@v1
-      env:
-        # On a `pull_request` event GITHUB_SHA is the ephemeral MERGE commit
-        # (refs/pull/N/merge), not the PR head, and this action reads
-        # `context.sha` straight out of that variable. Without the override it
-        # posts to a commit GitHub never displays: verified in run 34425929192,
-        # where it set the status on 18e10b1 (the merge ref) while the PR head
-        # was 92b65cf — the check ran, passed, and was invisible on the PR.
-        # `github.event.pull_request` is null on push, so this falls back cleanly.
-        GITHUB_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       with:
         name: 'Vercel - mukoko-news: ESLint'
 
@@ -133,15 +126,6 @@ jobs:
     steps:
     - name: Notify Vercel
       uses: vercel/repository-dispatch/actions/status@v1
-      env:
-        # On a `pull_request` event GITHUB_SHA is the ephemeral MERGE commit
-        # (refs/pull/N/merge), not the PR head, and this action reads
-        # `context.sha` straight out of that variable. Without the override it
-        # posts to a commit GitHub never displays: verified in run 34425929192,
-        # where it set the status on 18e10b1 (the merge ref) while the PR head
-        # was 92b65cf — the check ran, passed, and was invisible on the PR.
-        # `github.event.pull_request` is null on push, so this falls back cleanly.
-        GITHUB_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       with:
         name: 'Vercel - mukoko-news: Typecheck'
 
@@ -161,15 +145,6 @@ jobs:
     steps:
     - name: Notify Vercel
       uses: vercel/repository-dispatch/actions/status@v1
-      env:
-        # On a `pull_request` event GITHUB_SHA is the ephemeral MERGE commit
-        # (refs/pull/N/merge), not the PR head, and this action reads
-        # `context.sha` straight out of that variable. Without the override it
-        # posts to a commit GitHub never displays: verified in run 34425929192,
-        # where it set the status on 18e10b1 (the merge ref) while the PR head
-        # was 92b65cf — the check ran, passed, and was invisible on the PR.
-        # `github.event.pull_request` is null on push, so this falls back cleanly.
-        GITHUB_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       with:
         name: 'Vercel - mukoko-news: Test'
 
@@ -189,15 +164,6 @@ jobs:
     steps:
     - name: Notify Vercel
       uses: vercel/repository-dispatch/actions/status@v1
-      env:
-        # On a `pull_request` event GITHUB_SHA is the ephemeral MERGE commit
-        # (refs/pull/N/merge), not the PR head, and this action reads
-        # `context.sha` straight out of that variable. Without the override it
-        # posts to a commit GitHub never displays: verified in run 34425929192,
-        # where it set the status on 18e10b1 (the merge ref) while the PR head
-        # was 92b65cf — the check ran, passed, and was invisible on the PR.
-        # `github.event.pull_request` is null on push, so this falls back cleanly.
-        GITHUB_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       with:
         name: 'Vercel - mukoko-news: Build'
 
