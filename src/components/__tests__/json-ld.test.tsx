@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/react';
 import { ArticleJsonLd, BreadcrumbJsonLd, OrganizationJsonLd, WebSiteJsonLd, WebPageJsonLd, SoftwareApplicationJsonLd } from '../ui/json-ld';
+import { ARTICLE_EXCERPT_MAX_CHARS } from '@/lib/excerpt';
+import { RELEASED_COUNTRY_COUNT, COUNTRY_SCOPE_TOTAL } from '@/lib/constants';
 
 // Helper to extract JSON-LD script content
 function script(container: HTMLElement): string {
@@ -236,6 +238,75 @@ describe('JSON-LD Components', () => {
 
       const parsed = parseJsonLd(container);
       expect(parsed.articleBody).toBe('Full article body text goes here.');
+    });
+
+    /**
+     * `articleBody` used to carry `article.content` — the publisher's COMPLETE
+     * text, machine-readable, on Mukoko's origin. These three tests are the
+     * guard: an aggregator may quote, it may not republish.
+     */
+    it('emits an excerpt, never the publisher\'s full text', () => {
+      const fullBody = Array.from({ length: 300 }, (_, i) => `paragraph ${i} of real reporting`).join('. ');
+      const article = {
+        id: '123',
+        title: 'Test Article',
+        source: 'The Herald',
+        slug: 'test-article',
+        published_at: '2024-01-15T12:00:00Z',
+        content: fullBody,
+      };
+
+      const { container } = render(
+        <ArticleJsonLd article={article} url="https://news.mukoko.com/article/123" />
+      );
+
+      const parsed = parseJsonLd(container);
+      expect(parsed.articleBody).not.toBe(fullBody);
+      expect(parsed.articleBody.length).toBeLessThanOrEqual(ARTICLE_EXCERPT_MAX_CHARS + 1);
+      // …and the excerpt is a verbatim prefix, not a rewrite of the newsroom's words.
+      expect(fullBody.startsWith(parsed.articleBody.replace(/…$/, ''))).toBe(true);
+      // The raw body must not appear anywhere in the emitted document.
+      expect(script(container)).not.toContain(fullBody.slice(-80));
+    });
+
+    it('omits articleBody entirely when the only text is the description', () => {
+      const article = {
+        id: '123',
+        title: 'Test Article',
+        description: 'A one-line summary from the feed.',
+        source: 'The Herald',
+        slug: 'test-article',
+        published_at: '2024-01-15T12:00:00Z',
+      };
+
+      const { container } = render(
+        <ArticleJsonLd article={article} url="https://news.mukoko.com/article/123" />
+      );
+
+      const parsed = parseJsonLd(container);
+      // `description` already carries it; repeating it as `articleBody` is the
+      // same bytes twice on a metered connection for no additional meaning.
+      expect(parsed.articleBody).toBeUndefined();
+      expect(parsed.description).toBe('A one-line summary from the feed.');
+    });
+
+    it('bounds the Markdown rendition too', () => {
+      const markdown = `## Heading\n\n${'long markdown body text '.repeat(100)}`;
+      const article = {
+        id: '123',
+        title: 'Test Article',
+        source: 'The Herald',
+        slug: 'test-article',
+        published_at: '2024-01-15T12:00:00Z',
+        content_markdown: markdown,
+      };
+
+      const { container } = render(
+        <ArticleJsonLd article={article} url="https://news.mukoko.com/article/123" />
+      );
+
+      const parsed = parseJsonLd(container);
+      expect(parsed.articleBody.length).toBeLessThanOrEqual(ARTICLE_EXCERPT_MAX_CHARS + 1);
     });
 
     it('should include wordCount when provided', () => {
@@ -532,6 +603,33 @@ describe('JSON-LD Components', () => {
       // The href gets passed through getFullUrl which prepends BASE_URL,
       // so it won't be a raw javascript: URL in the output
       expect(content).toContain('BreadcrumbList');
+    });
+  });
+
+  /**
+   * The structured data is where an answer engine reads the platform's own
+   * description of itself, so it must carry the same 54/16 claim as the pages.
+   */
+  describe('coverage claim in the site-level schemas', () => {
+    it('OrganizationJsonLd states the released count and the scope', () => {
+      const { container } = render(<OrganizationJsonLd />);
+      const parsed = parseJsonLd(container);
+      expect(parsed.description).toContain(String(RELEASED_COUNTRY_COUNT));
+      expect(parsed.description).toContain(String(COUNTRY_SCOPE_TOTAL));
+    });
+
+    it('WebSiteJsonLd states the released count and the scope', () => {
+      const { container } = render(<WebSiteJsonLd />);
+      const parsed = parseJsonLd(container);
+      expect(parsed.description).toContain(String(RELEASED_COUNTRY_COUNT));
+      expect(parsed.description).toContain(String(COUNTRY_SCOPE_TOTAL));
+    });
+
+    it('SoftwareApplicationJsonLd (embed widget) states both too', () => {
+      const { container } = render(<SoftwareApplicationJsonLd />);
+      const parsed = parseJsonLd(container);
+      expect(parsed.featureList).toContain(String(RELEASED_COUNTRY_COUNT));
+      expect(parsed.featureList).toContain(String(COUNTRY_SCOPE_TOTAL));
     });
   });
 });

@@ -3,7 +3,7 @@
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { getArticlesAction, searchArticlesAction } from '@/lib/actions/feed'
-import { getArticleUrl } from '@/lib/constants'
+import { getArticleUrl, COVERAGE_FRAGMENT } from '@/lib/constants'
 
 // WebMCP — exposes Mukoko News' key actions to in-browser AI agents via the
 // experimental `navigator.modelContext.provideContext()` API. Tools call the
@@ -30,7 +30,7 @@ const TOOLS: WebMcpTool[] = [
   {
     name: 'search_mukoko_news',
     description:
-      'Search Mukoko News — Pan-African news across Zimbabwe and 15 other African countries. Returns matching headlines with links.',
+      `Search Mukoko News — Pan-African news, ${COVERAGE_FRAGMENT}. Returns matching headlines with links.`,
     inputSchema: {
       type: 'object',
       properties: {
