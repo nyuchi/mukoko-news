@@ -30,7 +30,9 @@ async function articleMarkdown(id: string): Promise<Response> {
 
   const parts: string[] = [`# ${article.title}`]
   const meta: string[] = []
-  if (article.source) meta.push(`**Source:** ${article.source}`)
+  // `article.author` is the journalist; `article.source` is the newsroom that
+  // published the piece. Mukoko aggregates it — it is neither.
+  if (article.source) meta.push(`**Published by:** ${article.source}`)
   if (article.author) meta.push(`**By:** ${article.author}`)
   if (article.published_at) meta.push(`**Published:** ${article.published_at}`)
   if (meta.length) parts.push(meta.join(' · '))
