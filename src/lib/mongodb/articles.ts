@@ -719,18 +719,22 @@ export async function searchArticles(
   return filtered.map(d => toArticle(d, sourceMap.get(d.feedSourceId)))
 }
 
-export async function getSavedArticles(sessionId: string): Promise<{ articles: Article[] }> {
+/**
+ * Hydrate a list of article ids into cards, **in the order given**.
+ *
+ * The order matters and is the reason this takes ids rather than a filter: the
+ * caller has already decided the ranking (save time, byline recency, relevance)
+ * and MongoDB's `$in` returns whatever order the index hands back. Anything the
+ * read cannot resolve is dropped rather than returned as a hole.
+ *
+ * List projection, so no article bodies are fetched — see `LIST_PROJECTION`.
+ */
+export async function getArticlesByIds(ids: string[]): Promise<Article[]> {
+  if (ids.length === 0) return []
+
   const db = await getDb()
-  const saves = await db.collection('articleSaves')
-    .find({ sessionId })
-    .sort({ createdAt: -1 })
-    .toArray()
-
-  if (saves.length === 0) return { articles: [] }
-
-  const articleIds = saves.map(s => s.articleId as string)
   const docs = await db.collection<MongoArticle>('articles')
-    .find({ _id: { $in: articleIds } }, { projection: LIST_PROJECTION })
+    .find({ _id: { $in: ids } }, { projection: LIST_PROJECTION })
     .maxTimeMS(QUERY_MAX_TIME_MS)
     .toArray()
 
@@ -741,7 +745,17 @@ export async function getSavedArticles(sessionId: string): Promise<{ articles: A
   const sourceMap = new Map(sources.map(s => [s._id, s]))
 
   const articleMap = new Map(docs.map(d => [d._id, toArticle(d, sourceMap.get(d.feedSourceId))]))
-  return { articles: articleIds.map(id => articleMap.get(id)).filter(Boolean) as Article[] }
+  return ids.map(id => articleMap.get(id)).filter(Boolean) as Article[]
+}
+
+export async function getSavedArticles(sessionId: string): Promise<{ articles: Article[] }> {
+  const db = await getDb()
+  const saves = await db.collection('articleSaves')
+    .find({ sessionId })
+    .sort({ createdAt: -1 })
+    .toArray()
+
+  return { articles: await getArticlesByIds(saves.map(s => s.articleId as string)) }
 }
 
 // ── Topic timeline (developing-story surface) ────────────────────────────────
