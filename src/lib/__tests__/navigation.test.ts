@@ -6,7 +6,6 @@ import { describe, expect, it } from 'vitest'
 import {
   BOTTOM_NAV_HREFS,
   DESTINATIONS,
-  HEADER_MENU_HREFS,
   NAV_GROUPS,
   destinationsInGroup,
   hidesAppChrome,
@@ -17,11 +16,12 @@ import {
 /**
  * The failure this file exists to prevent is drift, not a broken render.
  *
- * Four surfaces navigate this app and each used to carry its own hand-written
- * array. They had already fallen apart: the header dropdown named ten
- * destinations and omitted /sources, /about, /terms, /privacy and
- * /publishers/claim; the footer named five, none of them a reading surface.
- * The result was that no surface in the app could reach every page.
+ * Three surfaces navigate this app — the drawer, the bottom bar and /profile —
+ * and each used to carry its own hand-written array. They had already fallen
+ * apart: the header dropdown (since removed) named ten destinations and
+ * omitted /sources, /about, /terms, /privacy and /publishers/claim; the footer
+ * named five, none of them a reading surface. The result was that no surface
+ * in the app could reach every page.
  *
  * The structural test at the bottom is the one that matters: it walks the App
  * Router directory and asserts that a route with a page is either registered
@@ -67,9 +67,8 @@ describe('pick()', () => {
     expect(() => pick('/nope')).toThrow(/no destination registered/)
   })
 
-  it('resolves every href the bottom nav and header menu claim', () => {
+  it('resolves every href the bottom nav claims', () => {
     expect(() => pick(...BOTTOM_NAV_HREFS)).not.toThrow()
-    expect(() => pick(...HEADER_MENU_HREFS)).not.toThrow()
   })
 
   it('keeps the bottom nav at five slots', () => {

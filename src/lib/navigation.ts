@@ -21,19 +21,22 @@ import {
  *
  * ## Why this file exists
  *
- * Four surfaces navigate this app — the header's dropdown, the mobile bottom
- * nav, the footer and `/profile` — and each carried its own hand-written array.
- * They had drifted: the header dropdown listed ten destinations and omitted
- * `/sources`, `/about`, `/terms`, `/privacy` and `/publishers/claim`; the
- * footer listed five, none of which were reading surfaces; the bottom nav
- * listed five more. So the app had **no surface at all** that could take a
- * reader to every page, and adding a page meant remembering four files.
+ * Four surfaces used to navigate this app — the header's dropdown, the mobile
+ * bottom nav, the footer and `/profile` — and each carried its own
+ * hand-written array. They had drifted: the header dropdown listed ten
+ * destinations and omitted `/sources`, `/about`, `/terms`, `/privacy` and
+ * `/publishers/claim`; the footer listed five, none of which were reading
+ * surfaces; the bottom nav listed five more. So the app had **no surface at
+ * all** that could take a reader to every page, and adding a page meant
+ * remembering four files.
  *
- * `DESTINATIONS` is now the single list, grouped, and each surface takes the
- * slice it has room for. Adding a page here puts it in the footer and on
- * `/profile` automatically; the two space-constrained surfaces (the header
- * dropdown and the bottom nav) name their own picks by href, so a new page
- * never silently displaces a primary one.
+ * `DESTINATIONS` is now the single list, grouped. The **drawer**
+ * (`nav-sidebar.tsx`) renders all of it, so adding a page here reaches the
+ * reader with no further edit; the bottom nav is the one space-constrained
+ * surface left and names its own five picks by href, so a new page can never
+ * silently displace a primary one. The header's dropdown is gone — it was a
+ * second, shorter copy of this same list, which is the drift this file exists
+ * to end.
  *
  * `/admin` is deliberately absent: it is RBAC-gated, and listing it for
  * everyone advertises a door almost nobody can open. `/sign-in`, `/offline`
@@ -222,21 +225,6 @@ export function destinationsInGroup(group: NavGroupId): Destination[] {
  * which is why `/profile` holds a slot rather than, say, `/insights`.
  */
 export const BOTTOM_NAV_HREFS = ['/', '/discover', '/newsbytes', '/saved', '/profile'] as const
-
-/** The header's "jump to" dropdown — wider than the bottom bar, still not everything. */
-export const HEADER_MENU_HREFS = [
-  '/',
-  '/discover',
-  '/newsbytes',
-  '/categories',
-  '/sources',
-  '/search',
-  '/saved',
-  '/insights',
-  '/analytics',
-  '/profile',
-  '/help',
-] as const
 
 /**
  * Routes that render no app chrome at all.
