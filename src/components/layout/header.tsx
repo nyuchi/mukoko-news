@@ -3,26 +3,17 @@
 import { useState, useEffect, useSyncExternalStore, useMemo, useRef } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Search, Zap, ChevronDown } from "lucide-react";
+import { Menu, RotateCw, Search, Zap } from "lucide-react";
 import { UserAvatar } from "./user-avatar";
 import { DateTimeWeather } from "./datetime-weather";
+import { NavSidebar } from "./nav-sidebar";
 import { AppIcon } from "@/components/ui/app-icon";
-
-import { HEADER_MENU_HREFS, pick } from "@/lib/navigation";
 
 const navLinks = [
   { href: "/", label: "Feed" },
   { href: "/discover", label: "Discover" },
   { href: "/newsbytes", label: "NewsBytes" },
 ];
-
-// The header's "jump to" dropdown. The picks live in `@/lib/navigation`
-// alongside every other surface's, so this list cannot quietly fall behind the
-// routes that exist — which is exactly what had happened: it named ten
-// destinations and omitted /sources, /about, /terms, /privacy and
-// /publishers/claim. `pick()` throws on an unknown href, so a renamed route
-// fails a test rather than silently shortening this menu.
-const allPages = pick(...HEADER_MENU_HREFS);
 
 // Static page titles mapping
 const pageTitles: Record<string, string> = {
@@ -78,8 +69,8 @@ export function Header() {
   const pathname = usePathname();
   const router = useRouter();
   const [isScrolled, setIsScrolled] = useState(false);
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
   const isNewsBytes = pathname === "/newsbytes";
   // The date/time + weather strip is masthead furniture for the reading
   // surfaces. It is suppressed on the two chrome-less routes: NewsBytes is a
@@ -89,15 +80,13 @@ export function Header() {
   // weather call on a host that never asked for one.
   const showDateTimeWeather = !isNewsBytes && !pathname.startsWith("/embed");
 
-  // Handle title button click - toggle dropdown or refresh if already open
+  // The scrolled title is a REFRESH control now, not a menu. It used to be
+  // both — one tap opened a page list, a second tap refreshed — which meant
+  // the same button did two unrelated things depending on hidden state. The
+  // page list moved to the drawer, so this does the one job its tooltip
+  // always claimed.
   const handleTitleClick = () => {
-    if (isDropdownOpen) {
-      // If dropdown is open, close it and force refresh current page
-      setIsDropdownOpen(false);
-      router.refresh();
-    } else {
-      setIsDropdownOpen(true);
-    }
+    router.refresh();
   };
 
   // Memoize the subscription function based on pathname
@@ -123,25 +112,6 @@ export function Header() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setIsDropdownOpen(false);
-      }
-    };
-
-    if (isDropdownOpen) {
-      document.addEventListener("mousedown", handleClickOutside);
-      return () => document.removeEventListener("mousedown", handleClickOutside);
-    }
-  }, [isDropdownOpen]);
-
-  // Close dropdown on route change
-  useEffect(() => {
-    setIsDropdownOpen(false);
-  }, [pathname]);
-
   return (
     <header
       data-app-header
@@ -165,7 +135,7 @@ export function Header() {
         }`}
       >
         {/* Logo / Page Title with Dropdown - fixed height container */}
-        <div className="min-w-0 flex-shrink relative h-8" ref={dropdownRef}>
+        <div className="min-w-0 flex-shrink relative h-8">
           {/* Logo - visible when not scrolled */}
           <Link
             href="/"
@@ -195,62 +165,16 @@ export function Header() {
                 className={`flex items-center gap-2 transition-colors ${
                   isNewsBytes ? "text-white" : "text-primary hover:text-primary/80"
                 }`}
-                aria-expanded={isDropdownOpen}
-                aria-haspopup="true"
-                title={isDropdownOpen ? "Refresh page" : "Navigate to page"}
+                title="Refresh this page"
+                aria-label={`Refresh ${pageTitle}`}
               >
                 <AppIcon size={32} />
                 <span className="font-serif font-semibold lowercase text-[16px] sm:text-[20px] truncate max-w-[100px] sm:max-w-[160px]">
                   {pageTitle.toLowerCase()}
                 </span>
-                <ChevronDown
-                  className={`w-4 h-4 transition-transform duration-200 shrink-0 ${
-                    isDropdownOpen ? "rotate-180" : ""
-                  }`}
-                />
+                <RotateCw className="w-4 h-4 shrink-0" aria-hidden="true" />
               </button>
 
-              {/* Dropdown Menu */}
-              {isDropdownOpen && (
-                <div
-                  className={`absolute top-full left-0 mt-2 w-56 rounded-xl shadow-lg border overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200 ${
-                    isNewsBytes
-                      ? "bg-black/90 backdrop-blur-xl border-white/10"
-                      : "bg-surface border-elevated"
-                  }`}
-                >
-                  <nav aria-label="Menu" className="py-2">
-                    {allPages.map((page) => {
-                      const Icon = page.icon;
-                      const isActive = pathname === page.href;
-                      return (
-                        <Link
-                          key={page.href}
-                          href={page.href}
-                          className={`flex items-center gap-3 px-4 py-2.5 transition-colors ${
-                            isNewsBytes
-                              ? isActive
-                                ? "bg-white/20 text-white"
-                                : "text-white/80 hover:bg-white/10 hover:text-white"
-                              : isActive
-                                ? "bg-primary/10 text-primary"
-                                : "text-foreground hover:bg-elevated"
-                          }`}
-                          onClick={() => setIsDropdownOpen(false)}
-                        >
-                          <Icon className="w-4 h-4" />
-                          <span className="font-medium">{page.label}</span>
-                          {isActive && (
-                            <span className={`ml-auto w-1.5 h-1.5 rounded-full ${
-                              isNewsBytes ? "bg-white" : "bg-primary"
-                            }`} />
-                          )}
-                        </Link>
-                      );
-                    })}
-                  </nav>
-                </div>
-              )}
             </div>
           )}
         </div>
@@ -276,6 +200,25 @@ export function Header() {
         <div className={`flex items-center rounded-full p-0.5 sm:p-1 gap-0.5 sm:gap-1 flex-shrink-0 ${
           isNewsBytes ? "bg-black/40 backdrop-blur-md" : "bg-primary"
         }`}>
+          {/* Opens the full navigation drawer. It sits in the actions pill
+              rather than at the far left because that is the edge a thumb
+              already reaches for on this header — search, bytes and the
+              account control are all here. */}
+          <button
+            ref={menuButtonRef}
+            type="button"
+            onClick={() => setIsMenuOpen(true)}
+            aria-label="Open menu"
+            aria-haspopup="dialog"
+            aria-expanded={isMenuOpen}
+            className={`flex items-center justify-center w-9 h-9 sm:w-11 sm:h-11 rounded-full transition-colors ${
+              isNewsBytes
+                ? "bg-white/10 hover:bg-white/20"
+                : "bg-background/10 hover:bg-background/20"
+            }`}
+          >
+            <Menu className="w-4 h-4 sm:w-5 sm:h-5 text-white" aria-hidden="true" />
+          </button>
           <Link
             href="/search"
             className={`flex items-center justify-center w-9 h-9 sm:w-11 sm:h-11 rounded-full transition-colors ${
@@ -313,6 +256,12 @@ export function Header() {
           <DateTimeWeather />
         </div>
       )}
+
+      <NavSidebar
+        open={isMenuOpen}
+        onClose={() => setIsMenuOpen(false)}
+        returnFocusRef={menuButtonRef}
+      />
     </header>
   );
 }

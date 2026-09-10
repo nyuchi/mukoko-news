@@ -5,12 +5,14 @@ import { usePathname } from "next/navigation";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { AppIcon } from "@/components/ui/app-icon";
 import { SUPPORT_URL } from "@/lib/constants";
-import {
-  DESTINATIONS,
-  NAV_GROUPS,
-  hidesAppChrome,
-  isImmersive,
-} from "@/lib/navigation";
+import { hidesAppChrome, isImmersive, pick } from "@/lib/navigation";
+
+/**
+ * The footer's own short list: the pages a reader looks for at the foot of a
+ * page specifically, which is not the same set as "everywhere they can go".
+ * Named by href so `pick()` throws if one is renamed.
+ */
+const FOOTER_HREFS = ["/about", "/help", "/terms", "/privacy"] as const;
 
 // Mukoko News configuration
 const APP_CONFIG = {
@@ -21,21 +23,21 @@ const APP_CONFIG = {
 };
 
 /**
- * The footer, and the app's full site map.
+ * The footer: brand, legal, attribution.
  *
- * It used to carry five links — About, Help, Support, Terms, Privacy — none of
- * which is a reading surface. Combined with a header dropdown that omitted five
- * pages and a five-slot bottom bar, that left the app with **no surface at all**
- * that could take a reader to every page it has. The footer is the natural home
- * for that: it is the one piece of chrome with room for the whole list, and it
- * is where a reader who has run out of ideas looks.
+ * It briefly carried the app's **full site map** — sixteen destinations in a
+ * five-column grid. That fixed a real problem (no surface could reach every
+ * page) in the wrong place: at the foot of the page it is a long scroll from
+ * wherever the reader is, it collapsed to two columns of sixteen links on a
+ * phone, and reaching it meant scrolling past the content you were reading.
  *
- * The groups come from `@/lib/navigation`, which every navigating surface now
- * reads, so a new page appears here without anyone remembering to add it.
+ * The map now lives in the navigation drawer (`nav-sidebar.tsx`), one tap from
+ * the header on every route. What is left here is what a footer is actually
+ * for: who made this, the legal pages, and the theme control.
  *
- * Support is the one entry that is not a route: it is an Intercom-hosted site,
- * so it gets the new-tab + `noopener` treatment rather than a client-side
- * transition.
+ * The four links below are a deliberate short list, not a subset that will
+ * drift — they come from the same registry through `pick()`, which throws on
+ * an unknown href.
  */
 export function Footer() {
   const pathname = usePathname();
@@ -51,47 +53,7 @@ export function Footer() {
   return (
     <footer className="mt-20 border-t border-elevated py-12">
       <div className="mx-auto w-full max-w-[var(--width-wide)] px-[var(--page-gutter)] sm:px-[var(--page-gutter-sm)]">
-        {/* Site map */}
-        <nav
-          aria-label="All pages"
-          className="grid grid-cols-2 gap-x-8 gap-y-8 sm:grid-cols-3 lg:grid-cols-5"
-        >
-          {NAV_GROUPS.map((group) => (
-            <div key={group.id}>
-              <h2 className="mb-3 font-mono text-[11px] font-medium uppercase tracking-wider text-text-tertiary">
-                {group.label}
-              </h2>
-              <ul className="space-y-2">
-                {DESTINATIONS.filter((d) => d.group === group.id).map((d) => (
-                  <li key={d.href}>
-                    <Link
-                      href={d.href}
-                      className="text-sm text-text-secondary transition-colors hover:text-foreground"
-                      aria-current={pathname === d.href ? "page" : undefined}
-                    >
-                      {d.label}
-                    </Link>
-                  </li>
-                ))}
-                {group.id === "about" && (
-                  <li>
-                    <a
-                      href={SUPPORT_URL}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-sm text-text-secondary transition-colors hover:text-foreground"
-                    >
-                      Support
-                    </a>
-                  </li>
-                )}
-              </ul>
-            </div>
-          ))}
-        </nav>
-
-        {/* Brand + attribution */}
-        <div className="mt-12 flex flex-col items-center justify-between gap-6 border-t border-elevated pt-8 md:flex-row">
+        <div className="flex flex-col items-center justify-between gap-6 md:flex-row">
           <div className="flex items-center gap-3">
             <AppIcon size={28} className="shadow-sm" />
             <span className="text-xl font-bold text-primary">{APP_CONFIG.name}</span>
@@ -99,6 +61,27 @@ export function Footer() {
               &ldquo;{APP_CONFIG.tagline}&rdquo;
             </span>
           </div>
+
+          <nav aria-label="Footer" className="flex flex-wrap justify-center gap-x-6 gap-y-2">
+            {pick(...FOOTER_HREFS).map((d) => (
+              <Link
+                key={d.href}
+                href={d.href}
+                className="text-sm text-text-secondary transition-colors hover:text-foreground"
+                aria-current={pathname === d.href ? "page" : undefined}
+              >
+                {d.label}
+              </Link>
+            ))}
+            <a
+              href={SUPPORT_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm text-text-secondary transition-colors hover:text-foreground"
+            >
+              Support
+            </a>
+          </nav>
 
           <div className="flex items-center gap-4 whitespace-nowrap text-xs text-text-tertiary">
             <ThemeToggle />
