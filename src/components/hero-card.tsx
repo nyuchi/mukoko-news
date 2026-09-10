@@ -30,7 +30,7 @@ export function HeroCard({ article }: HeroCardProps) {
       className="block group focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 rounded-2xl"
       aria-label={`Read article: ${article.title}`}
     >
-      <article className="relative rounded-2xl overflow-hidden bg-surface border border-border">
+      <article className="relative rounded-2xl overflow-hidden bg-surface border border-outline">
         {/* Image area with gradient overlay */}
         <div className="relative h-[280px] sm:h-[340px] md:h-[400px] w-full">
           {/* Background - either image or gradient fallback */}

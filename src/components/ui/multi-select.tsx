@@ -160,7 +160,7 @@ export function MultiSelect({
         aria-haspopup="listbox"
         aria-controls={open ? listId : undefined}
         aria-describedby={describedBy}
-        className="w-full inline-flex items-center justify-between gap-2 px-3 min-h-[var(--touch-input,43px)] rounded-xl border border-elevated bg-background text-sm text-text-secondary hover:bg-elevated disabled:opacity-50 disabled:hover:bg-background transition-colors"
+        className="w-full inline-flex items-center justify-between gap-2 px-3 min-h-[var(--touch-input,43px)] rounded-xl border border-outline bg-background text-sm text-text-secondary hover:bg-elevated disabled:opacity-50 disabled:hover:bg-background transition-colors"
       >
         <span>{triggerLabel}</span>
         <ChevronDown
@@ -171,7 +171,7 @@ export function MultiSelect({
 
       {open && (
         <div
-          className="absolute z-30 mt-1 w-full rounded-xl border border-elevated bg-surface shadow-lg overflow-hidden"
+          className="absolute z-30 mt-1 w-full rounded-xl border border-outline bg-surface shadow-lg overflow-hidden"
           onKeyDown={onKeyDown}
         >
           <div className="flex items-center gap-2 px-3 border-b border-elevated">

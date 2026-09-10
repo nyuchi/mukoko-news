@@ -468,7 +468,7 @@ class NyuchiHarnessBoundary extends React.Component<NyuchiHarnessProps, HarnessS
                 onClick={this.handleRetry}
                 className={cn(
                   "mt-4 flex h-9 items-center gap-2 rounded-full px-4 text-xs font-medium transition-colors",
-                  "border border-border text-foreground hover:bg-foreground/[0.05]"
+                  "border border-outline text-foreground hover:bg-foreground/[0.05]"
                 )}
               >
                 Try Again{this.state.retryCount > 0 ? ` (${this.state.retryCount})` : ""}

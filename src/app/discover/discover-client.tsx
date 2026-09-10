@@ -228,7 +228,7 @@ export default function DiscoverClient({
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="Search articles, topics, or sources..."
-          className="w-full pl-12 pr-4 py-4 bg-surface rounded-2xl border border-elevated outline-none text-foreground placeholder:text-text-tertiary focus:ring-2 focus:ring-primary/50 focus:border-primary/50"
+          className="w-full pl-12 pr-4 py-4 bg-surface rounded-2xl border border-outline outline-none text-foreground placeholder:text-text-tertiary focus:ring-2 focus:ring-primary/50 focus:border-primary/50"
         />
       </form>
 
@@ -328,7 +328,7 @@ export default function DiscoverClient({
                   <Link
                     key={category.id}
                     href={`/discover?category=${category.id}`}
-                    className="flex items-center gap-3 p-4 bg-surface rounded-xl border border-elevated hover:border-primary/30 hover:bg-elevated transition-all group"
+                    className="flex items-center gap-3 p-4 bg-surface rounded-xl border border-outline hover:border-primary/30 hover:bg-elevated transition-all group"
                   >
                     <div
                       className={`flex h-10 w-10 items-center justify-center rounded-full text-lg ${categoryTone(category.id)}`}
@@ -360,7 +360,7 @@ export default function DiscoverClient({
                   <Link
                     key={country.code}
                     href={`/discover?country=${country.code}`}
-                    className="flex items-center gap-3 p-4 bg-surface rounded-xl border border-elevated hover:border-primary/30 hover:bg-elevated transition-all group"
+                    className="flex items-center gap-3 p-4 bg-surface rounded-xl border border-outline hover:border-primary/30 hover:bg-elevated transition-all group"
                   >
                     {/* Neutral, not a per-country hue: the flag is the
                         country's identity and the circle is just the shape it
@@ -422,7 +422,7 @@ function SourcesSection({ sources }: { sources: Source[] }) {
             <Link
               key={source.id}
               href={`/discover?source=${encodeURIComponent(source.name)}`}
-              className="flex items-center gap-3 p-4 bg-surface rounded-xl border border-elevated hover:border-primary/30 hover:bg-elevated transition-all group"
+              className="flex items-center gap-3 p-4 bg-surface rounded-xl border border-outline hover:border-primary/30 hover:bg-elevated transition-all group"
             >
               <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
                 <Newspaper className="w-5 h-5 text-primary" />
@@ -466,7 +466,7 @@ function KeywordCloud({ keywords }: { keywords: Keyword[] }) {
             <Link
               key={keyword.id}
               href={`/search?q=${encodeURIComponent(keyword.name)}`}
-              className="inline-block bg-surface rounded-full border border-elevated hover:border-primary/30 hover:bg-elevated transition-all text-foreground hover:text-primary whitespace-nowrap"
+              className="inline-block bg-surface rounded-full border border-outline hover:border-primary/30 hover:bg-elevated transition-all text-foreground hover:text-primary whitespace-nowrap"
               style={{
                 fontSize: `${fontSize}rem`,
                 fontWeight,

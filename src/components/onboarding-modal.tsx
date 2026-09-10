@@ -107,7 +107,7 @@ export function OnboardingModal() {
       />
 
       {/* Modal - compact and friendly */}
-      <div className="relative w-full max-w-sm bg-surface rounded-2xl overflow-hidden animate-in zoom-in-95 fade-in duration-200 border border-border">
+      <div className="relative w-full max-w-sm bg-surface rounded-2xl overflow-hidden animate-in zoom-in-95 fade-in duration-200 border border-outline">
         {/* Close button */}
         <button
           onClick={handleGetStarted}

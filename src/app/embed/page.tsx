@@ -7,7 +7,7 @@ import { getLiveCoverageAction } from "@/lib/actions/coverage";
 
 function CodeBlock({ children, label }: { children: string; label?: string }) {
   return (
-    <div className="mt-4 overflow-hidden rounded-2xl bg-surface border border-border">
+    <div className="mt-4 overflow-hidden rounded-2xl bg-surface border border-outline">
       {label && (
         <div className="px-4 py-2 text-[10px] font-semibold uppercase tracking-wider text-text-tertiary border-b border-border bg-elevated">
           {label}
@@ -174,7 +174,7 @@ export default async function EmbedPage() {
               width="420"
               height="520"
               title="Cards Layout — Zimbabwe Top Stories"
-              className="rounded-2xl border border-border"
+              className="rounded-2xl border border-outline"
             />
           </div>
         </div>
@@ -192,7 +192,7 @@ export default async function EmbedPage() {
               width="420"
               height="340"
               title="Hero Layout — Kenya Featured Story"
-              className="rounded-2xl border border-border"
+              className="rounded-2xl border border-outline"
             />
           </div>
         </div>
@@ -210,7 +210,7 @@ export default async function EmbedPage() {
               width="360"
               height="420"
               title="Compact Layout — Nigeria Latest News"
-              className="rounded-2xl border border-border"
+              className="rounded-2xl border border-outline"
             />
           </div>
         </div>
@@ -228,7 +228,7 @@ export default async function EmbedPage() {
               width="100%"
               height="200"
               title="Ticker Layout — South Africa Top Stories"
-              className="rounded-2xl border border-border"
+              className="rounded-2xl border border-outline"
             />
           </div>
         </div>
@@ -246,7 +246,7 @@ export default async function EmbedPage() {
               width="400"
               height="520"
               title="List Layout — Ghana Latest News"
-              className="rounded-2xl border border-border"
+              className="rounded-2xl border border-outline"
             />
           </div>
         </div>
@@ -265,7 +265,7 @@ export default async function EmbedPage() {
         </p>
         <div className="mt-4 grid grid-cols-4 sm:grid-cols-8 gap-2">
           {COUNTRIES.filter((c) => liveCodes.has(c.code)).map((c) => (
-            <div key={c.code} className="flex flex-col items-center gap-1 p-2 rounded-xl bg-surface border border-border text-center">
+            <div key={c.code} className="flex flex-col items-center gap-1 p-2 rounded-xl bg-surface border border-outline text-center">
               <span className="text-lg">{c.flag}</span>
               <span className="text-[10px] font-semibold">{c.code}</span>
             </div>

@@ -170,7 +170,7 @@ function VolumeChart({ series }: { series: SeriesPoint[] }) {
 
       {active && (
         <div
-          className="pointer-events-none absolute -top-1 rounded-lg border border-elevated bg-surface px-3 py-2 text-xs shadow-lg"
+          className="pointer-events-none absolute -top-1 rounded-lg border border-outline bg-surface px-3 py-2 text-xs shadow-lg"
           style={{ left: `min(max(0px, ${(active.x / W) * 100}% - 60px), calc(100% - 130px))` }}
           role="status"
         >
@@ -365,7 +365,7 @@ function EntityGroups({ entities }: { entities: CorpusQueryResult['byEntity'] })
               <li key={`${type}-${e.name}`}>
                 <Link
                   href={`/analytics?q=${encodeURIComponent(e.name)}`}
-                  className="inline-flex min-h-[var(--touch-chip)] items-center gap-1.5 rounded-full border border-elevated bg-elevated/40 px-3 text-xs text-foreground transition-colors hover:border-primary/50"
+                  className="inline-flex min-h-[var(--touch-chip)] items-center gap-1.5 rounded-full border border-outline bg-elevated/40 px-3 text-xs text-foreground transition-colors hover:border-primary/50"
                 >
                   {e.name}
                   <span className="font-mono text-text-tertiary">{formatNumber(e.count)}</span>
@@ -410,19 +410,19 @@ function ConcentrationPanel({ data }: { data: CoverageConcentration }) {
   return (
     <div>
       <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <div className="rounded-xl border border-elevated bg-surface p-3">
+        <div className="rounded-xl border border-outline bg-surface p-3">
           <div className="text-xl font-bold text-foreground">{data.countries.length}</div>
           <div className="text-[11px] text-text-secondary">Countries with coverage</div>
         </div>
-        <div className="rounded-xl border border-elevated bg-surface p-3">
+        <div className="rounded-xl border border-outline bg-surface p-3">
           <div className="text-xl font-bold text-chart-negative">{data.singleSourceCount}</div>
           <div className="text-[11px] text-text-secondary">Served by one source</div>
         </div>
-        <div className="rounded-xl border border-elevated bg-surface p-3">
+        <div className="rounded-xl border border-outline bg-surface p-3">
           <div className="text-xl font-bold text-foreground">{data.uncovered.length}</div>
           <div className="text-[11px] text-text-secondary">Countries with none</div>
         </div>
-        <div className="rounded-xl border border-elevated bg-surface p-3">
+        <div className="rounded-xl border border-outline bg-surface p-3">
           <div className="text-xl font-bold text-foreground">{data.days}d</div>
           <div className="text-[11px] text-text-secondary">Window</div>
         </div>
@@ -511,7 +511,7 @@ function Section({
   children: React.ReactNode
 }) {
   return (
-    <section className="rounded-2xl border border-elevated bg-surface p-5">
+    <section className="rounded-2xl border border-outline bg-surface p-5">
       <div className="mb-4">
         <h2 className="flex items-center gap-2 text-base font-bold text-foreground">
           {Icon && <Icon className="h-4 w-4 text-primary" />}
@@ -634,7 +634,7 @@ export default function AnalyticsClient({
         {/* Query controls — one row above the charts */}
         <form
           onSubmit={submit}
-          className="mb-4 rounded-2xl border border-elevated bg-surface p-4"
+          className="mb-4 rounded-2xl border border-outline bg-surface p-4"
           role="search"
         >
           <div className="grid gap-3 md:grid-cols-[2fr_1fr_1fr_auto]">
@@ -650,7 +650,7 @@ export default function AnalyticsClient({
                   value={q}
                   onChange={(e) => setQ(e.target.value)}
                   placeholder="accidents, corruption, elections…"
-                  className="min-h-[var(--touch-a11y)] w-full rounded-xl border border-border bg-background pl-9 pr-3 text-sm text-foreground outline-none focus:border-primary"
+                  className="min-h-[var(--touch-a11y)] w-full rounded-xl border border-outline bg-background pl-9 pr-3 text-sm text-foreground outline-none focus:border-primary"
                 />
               </div>
             </label>
@@ -660,7 +660,7 @@ export default function AnalyticsClient({
               <select
                 value={country}
                 onChange={(e) => setCountry(e.target.value)}
-                className="min-h-[var(--touch-a11y)] w-full rounded-xl border border-border bg-background px-3 text-sm text-foreground outline-none focus:border-primary"
+                className="min-h-[var(--touch-a11y)] w-full rounded-xl border border-outline bg-background px-3 text-sm text-foreground outline-none focus:border-primary"
               >
                 <option value="">All countries</option>
                 {facets.countries.map((c) => (
@@ -676,7 +676,7 @@ export default function AnalyticsClient({
               <select
                 value={category}
                 onChange={(e) => setCategory(e.target.value)}
-                className="min-h-[var(--touch-a11y)] w-full rounded-xl border border-border bg-background px-3 text-sm text-foreground outline-none focus:border-primary"
+                className="min-h-[var(--touch-a11y)] w-full rounded-xl border border-outline bg-background px-3 text-sm text-foreground outline-none focus:border-primary"
               >
                 <option value="">All categories</option>
                 {facets.categories.map((c) => (
@@ -710,7 +710,7 @@ export default function AnalyticsClient({
                 type="date"
                 value={from}
                 onChange={(e) => setFrom(e.target.value)}
-                className="min-h-[var(--touch-compact)] rounded-lg border border-border bg-background px-3 font-mono text-xs text-foreground outline-none focus:border-primary"
+                className="min-h-[var(--touch-compact)] rounded-lg border border-outline bg-background px-3 font-mono text-xs text-foreground outline-none focus:border-primary"
               />
             </label>
             <label className="block">
@@ -719,7 +719,7 @@ export default function AnalyticsClient({
                 type="date"
                 value={to}
                 onChange={(e) => setTo(e.target.value)}
-                className="min-h-[var(--touch-compact)] rounded-lg border border-border bg-background px-3 font-mono text-xs text-foreground outline-none focus:border-primary"
+                className="min-h-[var(--touch-compact)] rounded-lg border border-outline bg-background px-3 font-mono text-xs text-foreground outline-none focus:border-primary"
               />
             </label>
           </div>
@@ -731,7 +731,7 @@ export default function AnalyticsClient({
             <li key={p.href}>
               <Link
                 href={p.href}
-                className="inline-flex min-h-[var(--touch-chip)] items-center rounded-full border border-elevated bg-surface px-3 text-xs text-text-secondary transition-colors hover:border-primary/50 hover:text-foreground"
+                className="inline-flex min-h-[var(--touch-chip)] items-center rounded-full border border-outline bg-surface px-3 text-xs text-text-secondary transition-colors hover:border-primary/50 hover:text-foreground"
               >
                 {p.label}
               </Link>
@@ -757,7 +757,7 @@ export default function AnalyticsClient({
           {result.total > 0 && (
             <a
               href={exportHref}
-              className="inline-flex min-h-[var(--touch-compact)] items-center gap-2 rounded-full border border-elevated bg-surface px-4 text-xs font-medium text-foreground transition-colors hover:bg-elevated/50"
+              className="inline-flex min-h-[var(--touch-compact)] items-center gap-2 rounded-full border border-outline bg-surface px-4 text-xs font-medium text-foreground transition-colors hover:bg-elevated/50"
               download
             >
               <Download className="h-3.5 w-3.5" aria-hidden="true" />

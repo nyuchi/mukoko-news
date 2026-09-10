@@ -51,7 +51,7 @@ export function ArticlesModerator({ initialArticles, activeFilter }: ArticlesMod
             className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
               activeFilter === f.key
                 ? 'bg-primary text-on-primary'
-                : 'bg-surface border border-elevated text-text-secondary hover:bg-elevated'
+                : 'bg-surface border border-outline text-text-secondary hover:bg-elevated'
             }`}
           >
             {f.label}
@@ -60,7 +60,7 @@ export function ArticlesModerator({ initialArticles, activeFilter }: ArticlesMod
       </div>
 
       {notice && (
-        <div className="mb-4 rounded-xl border border-elevated bg-surface px-4 py-3 text-sm text-foreground">
+        <div className="mb-4 rounded-xl border border-outline bg-surface px-4 py-3 text-sm text-foreground">
           {notice}
         </div>
       )}
@@ -69,7 +69,7 @@ export function ArticlesModerator({ initialArticles, activeFilter }: ArticlesMod
         {articles.map((a) => (
           <div
             key={a.id}
-            className="flex items-start justify-between gap-4 rounded-xl border border-elevated bg-surface p-4"
+            className="flex items-start justify-between gap-4 rounded-xl border border-outline bg-surface p-4"
           >
             <div className="min-w-0">
               <h3 className="font-medium text-foreground line-clamp-2">{a.title}</h3>
@@ -127,7 +127,7 @@ export function ArticlesModerator({ initialArticles, activeFilter }: ArticlesMod
           </div>
         ))}
         {articles.length === 0 && (
-          <div className="rounded-xl border border-elevated bg-surface px-4 py-12 text-center text-text-tertiary">
+          <div className="rounded-xl border border-outline bg-surface px-4 py-12 text-center text-text-tertiary">
             Nothing in the {activeFilter} queue.
           </div>
         )}

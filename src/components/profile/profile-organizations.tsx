@@ -67,7 +67,7 @@ export function ProfileOrganizations() {
 
   if (orgs === null) {
     return (
-      <div className="bg-surface border border-elevated rounded-2xl p-6 mb-6 flex justify-center">
+      <div className="bg-surface border border-outline rounded-2xl p-6 mb-6 flex justify-center">
         <Loader2 className="w-5 h-5 text-text-tertiary animate-spin" />
       </div>
     );
@@ -76,7 +76,7 @@ export function ProfileOrganizations() {
   if (orgs.length === 0) return null;
 
   return (
-    <div className="bg-surface border border-elevated rounded-2xl overflow-hidden mb-6">
+    <div className="bg-surface border border-outline rounded-2xl overflow-hidden mb-6">
       <h2 className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-text-tertiary border-b border-elevated">
         Your organizations
       </h2>

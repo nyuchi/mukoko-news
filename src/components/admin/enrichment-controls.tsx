@@ -56,7 +56,7 @@ export function EnrichmentControls() {
   }
 
   return (
-    <div className="bg-surface rounded-xl border border-elevated p-5">
+    <div className="bg-surface rounded-xl border border-outline p-5">
       <div className="flex items-center gap-3 mb-3">
         <Sparkles className="w-6 h-6 text-secondary" />
         <span className="font-medium text-foreground">AI enrichment</span>

@@ -122,7 +122,7 @@ export default function SearchPage() {
         {/* Search Bar */}
       <div className="mb-8">
         <form onSubmit={handleSearch} className="relative">
-          <div className="flex items-center gap-3 bg-surface border border-elevated rounded-2xl px-4 py-3 focus-within:border-primary transition-colors">
+          <div className="flex items-center gap-3 bg-surface border border-outline rounded-2xl px-4 py-3 focus-within:border-primary transition-colors">
             <Search className="w-5 h-5 text-text-tertiary" />
             <input
               type="text"
@@ -214,7 +214,7 @@ export default function SearchPage() {
                 <button
                   key={category.id}
                   onClick={() => handleTrendingClick(category.name)}
-                  className="px-4 py-2 bg-surface border border-elevated rounded-full text-sm hover:border-primary hover:text-primary transition-colors"
+                  className="px-4 py-2 bg-surface border border-outline rounded-full text-sm hover:border-primary hover:text-primary transition-colors"
                 >
                   {category.name}
                 </button>
@@ -230,7 +230,7 @@ export default function SearchPage() {
                 Trending Searches
               </h3>
             </div>
-            <div className="bg-surface border border-elevated rounded-2xl overflow-hidden">
+            <div className="bg-surface border border-outline rounded-2xl overflow-hidden">
               {trendingTopics.map((topic, index) => (
                 <button
                   key={topic.name}
@@ -259,7 +259,7 @@ export default function SearchPage() {
                 Platform Stats
               </h3>
             </div>
-            <div className="bg-surface border border-elevated rounded-2xl p-6">
+            <div className="bg-surface border border-outline rounded-2xl p-6">
               <div className="grid grid-cols-3 gap-4 text-center">
                 <div>
                   <p className="text-3xl mb-1">📰</p>

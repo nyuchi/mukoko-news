@@ -44,7 +44,7 @@ function StatCard({
   tint: string
 }) {
   return (
-    <div className="bg-surface rounded-xl p-5 border border-elevated">
+    <div className="bg-surface rounded-xl p-5 border border-outline">
       <div className="flex items-center gap-3 mb-3">
         <div className={`w-10 h-10 rounded-lg ${tint} flex items-center justify-center`}>
           <Icon className="w-5 h-5" />
@@ -116,7 +116,7 @@ export default async function AdminDashboard() {
             <Link
               key={section.href}
               href={section.href}
-              className="flex items-center p-5 bg-surface rounded-xl border border-elevated hover:border-primary/50 transition-colors"
+              className="flex items-center p-5 bg-surface rounded-xl border border-outline hover:border-primary/50 transition-colors"
             >
               <div
                 className={`w-12 h-12 rounded-xl ${section.color} flex items-center justify-center mr-4`}

@@ -32,7 +32,15 @@ const CSS = readFileSync(join(process.cwd(), 'src/app/globals.css'), 'utf8')
 const SNAPSHOT: Record<string, [string, string]> = {
   // backgrounds — the scale the app was missing five steps of
   '--background': ['#F3F3F1', '#0E0D0C'], // base
-  '--surface': ['#EEEEEC', '#131211'],
+  // ROLE ≠ STEP. Owner decision 2026-09-10: the card sits BELOW the matte page,
+  // because it is the surface that holds text. In light that is Mzizi `surface`
+  // (#EEEEEC, a step darker than base); in dark it is `void` (#080807, a step
+  // darker than base) — NOT `surface` (#131211), which is LIGHTER than the page
+  // and made the card a raised slab, the exact reading the 2026-09-05 doctrine
+  // rejected. `void` also stays clear of `--muted` (#050504), which is what
+  // made the previous #050504 wrong: a card and the inset row inside it were
+  // one colour. Both values are still genuine Mzizi steps — asserted below.
+  '--surface': ['#EEEEEC', '#080807'],
   '--muted': ['#FAF9F5', '#050504'],
   '--elevated': ['#E5E4E1', '#1E1D1A'], // container
   '--popover': ['#E0DFDC', '#23221F'], // overlay
@@ -116,6 +124,50 @@ describe('the two defects this file exists to prevent', () => {
       expect(declared(block, '--surface')).not.toBe(declared(block, '--muted'))
       expect(declared(block, '--card')).not.toBe(declared(block, '--muted'))
     }
+  })
+
+  it('every surface value is a real Mzizi step, not an invented hex', () => {
+    // This is what makes re-pointing a ROLE at a different STEP safe. The
+    // snapshot above says which step each role uses and a reviewer sees that
+    // choice in the diff; this says nobody may reach for a hex that is not in
+    // the scale at all, which is the failure the snapshot alone cannot catch
+    // once a role is allowed to move.
+    const SCALE = new Set(
+      [
+        ['#F3F3F1', '#0E0D0C'], // base
+        ['#EEEEEC', '#131211'], // surface
+        ['#FAF9F5', '#050504'], // muted
+        ['#E5E4E1', '#1E1D1A'], // container
+        ['#E0DFDC', '#23221F'], // overlay
+        ['#F8F8F7', '#080807'], // void
+        ['#FAFAFA', '#050505'], // pitch
+        ['#D6D5D1', '#2E2C29'], // raised
+      ].flat()
+    )
+    for (const [block, theme] of [
+      [light, 'light'],
+      [dark, 'dark'],
+      [root, 'root'],
+    ] as const) {
+      for (const token of ['--background', '--surface', '--card', '--muted', '--elevated']) {
+        const value = declared(block, token)?.toUpperCase()
+        expect(SCALE.has(value ?? ''), `${token} in ${theme} is ${value}`).toBe(true)
+      }
+    }
+  })
+
+  it('outlines are OFF by default and switched on by one selector', () => {
+    // The complaint this answers: every component carried a 1px border, so the
+    // product looked like a high-contrast theme nobody chose. A card separates
+    // by fill; the outline is a reader preference and an accessibility fallback.
+    for (const block of [root, light, dark]) {
+      expect(declared(block, '--outline')).toBe('transparent')
+    }
+    expect(CSS).toContain("[data-outlines='on']")
+    // …and it is NOT optional under forced/high contrast, where every surface
+    // collapses to Canvas and fill can no longer separate anything.
+    const contrast = CSS.slice(CSS.indexOf('@media (prefers-contrast: more)'))
+    expect(contrast.slice(0, contrast.indexOf('}'))).toContain('--outline: CanvasText')
   })
 
   it('no chart token is a literal colour', () => {

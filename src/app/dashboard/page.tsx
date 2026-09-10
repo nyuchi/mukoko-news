@@ -61,7 +61,7 @@ export default async function DashboardPage() {
             </p>
             <Link
               href="/profile"
-              className="inline-block px-5 py-2.5 bg-surface border border-elevated rounded-xl font-medium hover:bg-elevated transition-colors"
+              className="inline-block px-5 py-2.5 bg-surface border border-outline rounded-xl font-medium hover:bg-elevated transition-colors"
             >
               Back to profile
             </Link>

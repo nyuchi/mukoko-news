@@ -58,14 +58,14 @@ export function PublisherClaimsReview({ initialClaims }: PublisherClaimsReviewPr
   return (
     <div>
       {notice && (
-        <div className="mb-4 rounded-xl border border-elevated bg-surface px-4 py-3 text-sm text-foreground">
+        <div className="mb-4 rounded-xl border border-outline bg-surface px-4 py-3 text-sm text-foreground">
           {notice}
         </div>
       )}
 
       <div className="space-y-3">
         {claims.map((c) => (
-          <div key={c.id} className="rounded-xl border border-elevated bg-surface p-4">
+          <div key={c.id} className="rounded-xl border border-outline bg-surface p-4">
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
@@ -145,7 +145,7 @@ export function PublisherClaimsReview({ initialClaims }: PublisherClaimsReviewPr
                   value={reason}
                   onChange={(e) => setReason(e.target.value)}
                   placeholder="Reason for rejection (required)"
-                  className="flex-1 rounded-lg border border-elevated bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                  className="flex-1 rounded-lg border border-outline bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
                 />
                 <button
                   onClick={() => confirmReject(c.id)}
@@ -160,7 +160,7 @@ export function PublisherClaimsReview({ initialClaims }: PublisherClaimsReviewPr
         ))}
 
         {claims.length === 0 && (
-          <div className="rounded-xl border border-elevated bg-surface px-4 py-12 text-center text-text-tertiary">
+          <div className="rounded-xl border border-outline bg-surface px-4 py-12 text-center text-text-tertiary">
             No publisher claims awaiting review.
           </div>
         )}
