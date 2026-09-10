@@ -544,12 +544,21 @@ textarea {
   min-height: 44px;
 }
 
-/* Link styling — scoped out of .prose: this rule is unlayered, so an unscoped
-   `a` would override the layered @tailwindcss/typography link styles. Keeps
-   the original zero-ish specificity via :where(). */
-a:where(:not(.prose *)) {
-  color: inherit;
-  text-decoration: none;
+/* Link styling.
+   This MUST stay inside @layer base. Unlayered CSS outranks every layered rule
+   regardless of specificity, and Tailwind emits its utilities into
+   @layer utilities — so while this rule sat unlayered it beat `text-on-primary`
+   (and every other text-colour utility) on ANY <a>. Measured on /insights, the
+   primary CTA rendered #000000 on #4B0082 = 1.62:1 instead of the intended
+   white-on-tanzanite 12.9:1. :where() alone does not save it: specificity is
+   only compared within a layer. Inside @layer base the plain-anchor default
+   still applies, utilities win again, and the .prose scoping keeps the
+   @tailwindcss/typography link styles intact. */
+@layer base {
+  a:where(:not(.prose *)) {
+    color: inherit;
+    text-decoration: none;
+  }
 }
 
 /* Scrollbar styling */
