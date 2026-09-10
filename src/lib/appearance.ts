@@ -17,9 +17,13 @@
  * and switched on by `data-outlines="on"` on the root element.
  *
  * `prefers-contrast: more` turns them on regardless of this setting, and that
- * is not a courtesy: that media block replaces every surface with `Canvas`, so
- * page, card and hover row become one colour and fill can no longer separate
- * anything. The outline is the only separation left.
+ * is not a courtesy: a reader who asked their OS to make differences easier to
+ * see is asking for the edge, and fill is the subtler of the two signals.
+ *
+ * It is NOT because the surfaces stop separating — that block keeps every step
+ * of the Mzizi scale. An earlier version replaced them all with `Canvas`, and
+ * this comment used to cite that as the reason; see the corrected note under
+ * "Deferring to the system" in CLAUDE.md.
  *
  * ## Per-device, like the other preferences here
  *
