@@ -4,11 +4,15 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { AppIcon } from "@/components/ui/app-icon";
+import { SUPPORT_URL } from "@/lib/constants";
 
-// Footer links
+// Footer links. `external` marks a destination outside the app: the help centre
+// is an Intercom-hosted site, so it needs the new-tab + `noopener` treatment
+// rather than a client-side route transition.
 const footerLinks = [
   { href: "/about", label: "About" },
   { href: "/help", label: "Help" },
+  { href: SUPPORT_URL, label: "Support", external: true },
   { href: "/terms", label: "Terms" },
   { href: "/privacy", label: "Privacy" },
 ];
@@ -47,6 +51,7 @@ export function Footer() {
             <Link
               key={link.href}
               href={link.href}
+              {...(link.external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
               className="text-sm text-text-secondary hover:text-foreground transition-colors"
             >
               {link.label}
