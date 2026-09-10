@@ -1,0 +1,42 @@
+name: Dependency Review
+
+# Fails a pull request that introduces a dependency with a known vulnerability,
+# reading the manifest/lockfile diff the PR actually contains. Dependabot tells
+# you about what is already merged; this is the gate before it gets in.
+#
+# Requires Dependency graph + GitHub Advanced Security on the repository. It is
+# enabled here (this repo already runs CodeQL default setup and submits a
+# dependency graph); the same job had to be dropped from
+# nyuchi/mukoko-news-pipeline, where those settings are off.
+
+on:
+  pull_request:
+    branches: [ main ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  dependency-review:
+    name: Dependency Review
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Needed to post the summary comment on the PR.
+      pull-requests: write
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Dependency Review
+      uses: actions/dependency-review-action@v4
+      with:
+        # Start at `high`. This repo has never had the gate, so failing on
+        # `low` on day one would block unrelated work on pre-existing findings
+        # rather than on anything the PR introduced. Ratchet down once the
+        # backlog it reports is known.
+        fail-on-severity: high
+        comment-summary-in-pr: on-failure

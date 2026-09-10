@@ -15,7 +15,7 @@ Mukoko aggregates other newsrooms' reporting and does not publish it. Article re
 - [OAuth Authorization Server Metadata](https://news.mukoko.com/.well-known/oauth-authorization-server)
 - [OAuth Protected Resource Metadata](https://news.mukoko.com/.well-known/oauth-protected-resource)
 
-Any page also supports `Accept: text/markdown` — request `/` or `/article/<id>` with that header to get a clean markdown version. In-browser agents can use the WebMCP tools registered via `navigator.modelContext` (search, latest headlines, open article).
+`/` and `/article/<id>` support `Accept: text/markdown` — request either with that header (and without `text/html`) to get a clean markdown version. Other routes return HTML. In-browser agents can use the WebMCP tools registered via `navigator.modelContext` (search, latest headlines, open article).
 
 ## Open data
 

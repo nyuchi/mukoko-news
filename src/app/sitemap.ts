@@ -17,11 +17,15 @@ const CATEGORIES = Object.keys(CATEGORY_META).filter((slug) => slug !== 'all');
 // Static pages
 const STATIC_PAGES = [
   '',           // home
+  '/about',
   '/discover',
   '/newsbytes',
   '/search',
+  '/sources',
   '/categories',
   '/insights',
+  '/analytics',
+  '/publishers/claim',
   '/help',
   '/privacy',
   '/terms',
