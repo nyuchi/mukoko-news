@@ -51,6 +51,6 @@ export const config = {
     // Static assets + the public agent-discovery documents are excluded: they
     // carry no session and must stay cookie-free / cacheable for agents
     // (.well-known/* = MCP server card + OAuth metadata; auth.md = auth guide).
-    '/((?!_next/static|_next/image|favicon.ico|embed|robots.txt|sitemap.xml|sw.js|manifest.json|\\.well-known|auth\\.md).*)',
+    '/((?!_next/static|_next/image|favicon.ico|embed|robots.txt|sitemap.xml|sw.js|manifest.webmanifest|\\.well-known|auth\\.md).*)',
   ],
 }

@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Mukoko News is a Pan-African digital news aggregation platform. "Mukoko" means "Beehive" in Shona — where community gathers and stores knowledge. Primary market is Zimbabwe. **Scope is all 54 African Union member states; 16 are released and the rest are "coming soon"** — `RELEASED_COUNTRY_CODES` / `COVERAGE_CLAIM` in `src/lib/constants.ts` are the single source of that claim, and every public surface interpolates them rather than writing a number.
+Mukoko News is a Pan-African digital news aggregation platform. "Mukoko" means "Beehive" in Shona — where community gathers and stores knowledge. Primary market is Zimbabwe. **Scope is all 54 African Union member states; the live count is a QUERY, not a constant** — `getLiveCoverageAction()` (`src/lib/actions/coverage.ts`) counts the countries that actually cleared the aggregation bar in the last 30 days, and `coverageFragment(n)` / `coverageClaim(n)` in `src/lib/constants.ts` are the only sanctioned wording. Every public surface interpolates them rather than writing a number, so a country that starts producing appears on its own and one that goes dark drops off on its own. `FALLBACK_LIVE_COUNTRY_CODES` is a failure floor for when the read fails — never the source of the claim. (This **supersedes** the earlier "16 are released" line and its `RELEASED_COUNTRY_CODES` / `COVERAGE_CLAIM` symbols, which no longer exist.)
 
 ## Three-Repo Architecture
 

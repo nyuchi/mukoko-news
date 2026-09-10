@@ -1,14 +1,23 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import {
-  COUNTRIES,
-  RELEASED_COUNTRY_CODES,
-  RELEASED_COUNTRY_COUNT,
-  isReleasedCountry,
-} from '@/lib/constants';
+import { COUNTRIES } from '@/lib/constants';
 
-const { mockGetArticles } = vi.hoisted(() => ({ mockGetArticles: vi.fn() }));
+const { mockGetArticles, mockCoverage } = vi.hoisted(() => ({
+  mockGetArticles: vi.fn(),
+  mockCoverage: vi.fn(),
+}));
 
 vi.mock('@/lib/mongodb/articles', () => ({ getArticles: mockGetArticles }));
+vi.mock('@/lib/actions/coverage', () => ({ getLiveCoverageAction: mockCoverage }));
+
+/**
+ * A live set that is deliberately NOT the production sixteen.
+ *
+ * The sitemap now submits whatever the corpus says is live, so a fixture that
+ * happened to equal the real figure could pass while the sitemap ignored the
+ * read entirely and kept using a stale constant. Three arbitrary codes make
+ * that impossible to miss.
+ */
+const LIVE = ['NG', 'ZA', 'ZW'] as const;
 
 /**
  * The sitemap is a set of claims about what exists. It used to submit a
@@ -20,6 +29,14 @@ describe('sitemap country URLs', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetArticles.mockResolvedValue({ articles: [], total: 0 });
+    mockCoverage.mockResolvedValue({
+      codes: LIVE,
+      count: LIVE.length,
+      scopeTotal: COUNTRIES.length,
+      fragment: '',
+      claim: '',
+      stale: false,
+    });
   });
 
   async function countryUrls() {
@@ -31,22 +48,40 @@ describe('sitemap country URLs', () => {
       .map((url) => url.split('country=')[1]);
   }
 
-  it('submits exactly the released countries', async () => {
+  it('submits exactly the countries the corpus reports as live', async () => {
     const codes = await countryUrls();
-    expect(codes).toHaveLength(RELEASED_COUNTRY_COUNT);
-    expect(new Set(codes)).toEqual(new Set(RELEASED_COUNTRY_CODES));
+    expect(codes).toHaveLength(LIVE.length);
+    expect(new Set(codes)).toEqual(new Set(LIVE));
   });
 
   it('submits no country that is only in scope', async () => {
     const codes = await countryUrls();
-    const unreleased = COUNTRIES.filter((c) => !isReleasedCountry(c.code)).map((c) => c.code);
-    expect(unreleased.length).toBeGreaterThan(0);
-    for (const code of unreleased) expect(codes).not.toContain(code);
+    const notLive = COUNTRIES.filter((c) => !LIVE.includes(c.code as never)).map((c) => c.code);
+    expect(notLive.length).toBeGreaterThan(0);
+    for (const code of notLive) expect(codes).not.toContain(code);
+  });
+
+  it('follows the live set when it changes, with no code edit', async () => {
+    // The whole point of the change: a country that starts producing is
+    // submitted on the next revalidation rather than waiting for a constant to
+    // be edited. Nothing here but the read's answer is different.
+    mockCoverage.mockResolvedValue({
+      codes: [...LIVE, 'KE', 'GH'],
+      count: LIVE.length + 2,
+      scopeTotal: COUNTRIES.length,
+      fragment: '',
+      claim: '',
+      stale: false,
+    });
+    const codes = await countryUrls();
+    expect(codes).toHaveLength(LIVE.length + 2);
+    expect(codes).toContain('KE');
+    expect(codes).toContain('GH');
   });
 
   it('still degrades to a sitemap when the article read fails', async () => {
     mockGetArticles.mockRejectedValue(new Error('mongo down'));
     const codes = await countryUrls();
-    expect(codes).toHaveLength(RELEASED_COUNTRY_COUNT);
+    expect(codes).toHaveLength(LIVE.length);
   });
 });

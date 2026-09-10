@@ -49,7 +49,10 @@ const OFFLINE_URL = '/offline';
  */
 const PRECACHE_URLS = [
   OFFLINE_URL,
-  '/manifest.json',
+  // Served by `app/manifest.ts`, not from public/. Precaching the old
+  // '/manifest.json' path would have the service worker cache a 404 and hand
+  // it to every installed client thereafter.
+  '/manifest.webmanifest',
   '/favicon.svg',
   '/icon-192.png',
   '/icon-512.png',

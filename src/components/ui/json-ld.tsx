@@ -3,11 +3,25 @@ import {
   BASE_URL,
   getFullUrl,
   getArticleUrl,
-  COVERAGE_FRAGMENT,
-  RELEASED_COUNTRY_COUNT,
   COUNTRY_SCOPE_TOTAL,
 } from "@/lib/constants";
 import { toExcerpt } from "@/lib/excerpt";
+
+/**
+ * The coverage figure these schemas state, passed in rather than imported.
+ *
+ * This module is dual — it has no `"use client"` and is imported by both Server
+ * Components (layout, embed) and Client Components (breadcrumb, home, discover)
+ * — so it cannot `await` a Server Action and must not depend on a React
+ * context, which would force the whole module into the client bundle and ship
+ * structured data as JavaScript instead of markup. An explicit prop is the only
+ * shape that works on both sides of the boundary.
+ */
+export interface CoverageFacts {
+  count: number;
+  scopeTotal: number;
+  fragment: string;
+}
 
 interface NewsArticleSchema {
   "@context": "https://schema.org";
@@ -274,14 +288,14 @@ export function BreadcrumbJsonLd({ items }: { items: Array<{ name: string; href?
   );
 }
 
-export function OrganizationJsonLd() {
+export function OrganizationJsonLd({ coverage }: { coverage: CoverageFacts }) {
   const schema = {
     "@context": "https://schema.org",
     "@type": "NewsMediaOrganization",
     name: "Mukoko News",
     legalName: "Mukoko News by Nyuchi Technology",
     description:
-      `Pan-African digital news aggregation platform, ${COVERAGE_FRAGMENT}.`,
+      `Pan-African digital news aggregation platform, ${coverage.fragment}.`,
     url: BASE_URL,
     logo: {
       "@type": "ImageObject",
@@ -451,7 +465,7 @@ export function CollectionPageJsonLd({
  * @see https://schema.org/WebSite
  * @see https://developers.google.com/search/docs/appearance/sitelinks-searchbox
  */
-export function WebSiteJsonLd() {
+export function WebSiteJsonLd({ coverage }: { coverage: CoverageFacts }) {
   const schema = {
     "@context": "https://schema.org",
     "@type": "WebSite",
@@ -459,7 +473,7 @@ export function WebSiteJsonLd() {
     alternateName: "Mukoko",
     url: BASE_URL,
     description:
-      `Pan-African digital news aggregation platform. Breaking news, top stories and in-depth coverage — ${COVERAGE_FRAGMENT}.`,
+      `Pan-African digital news aggregation platform. Breaking news, top stories and in-depth coverage — ${coverage.fragment}.`,
     publisher: {
       "@type": "NewsMediaOrganization",
       name: "Mukoko News",
@@ -539,7 +553,7 @@ export function WebPageJsonLd({
  * Describes the embeddable news widget as a web application.
  * @see https://schema.org/SoftwareApplication
  */
-export function SoftwareApplicationJsonLd() {
+export function SoftwareApplicationJsonLd({ coverage }: { coverage: CoverageFacts }) {
   const schema = {
     "@context": "https://schema.org",
     "@type": "SoftwareApplication",
@@ -560,7 +574,7 @@ export function SoftwareApplicationJsonLd() {
       url: BASE_URL,
     },
     featureList:
-      `5 layouts (cards, compact, hero, ticker, list), 4 feed types, ${RELEASED_COUNTRY_COUNT} African countries live (${COUNTRY_SCOPE_TOTAL} in scope), dark/light theme, responsive design`,
+      `5 layouts (cards, compact, hero, ticker, list), 4 feed types, ${coverage.count} African countries live (${coverage.scopeTotal} in scope), dark/light theme, responsive design`,
     softwareVersion: "1.0",
     isAccessibleForFree: true,
   };

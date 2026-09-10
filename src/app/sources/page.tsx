@@ -14,8 +14,10 @@ import {
 import { SourceIcon } from "@/components/ui/source-icon";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { Skeleton } from "@/components/ui/skeleton";
-import { getSourcesAction } from "@/lib/actions/feed";
-import { COUNTRIES, getFullUrl, COVERAGE_FRAGMENT } from "@/lib/constants";
+import { getSourcesAction, getSourceAuthorsAction } from "@/lib/actions/feed";
+import type { SourceAuthor } from "@/lib/mongodb/sources";
+import { COUNTRIES, getFullUrl } from "@/lib/constants";
+import { useCoverage } from "@/contexts/coverage-context";
 import { WebPageJsonLd } from "@/components/ui/json-ld";
 import { formatTimeAgo } from "@/lib/utils";
 
@@ -37,6 +39,16 @@ interface Source {
   latest_article_at?: string;
   verified?: boolean;
   publisher_tier?: string;
+  /**
+   * The newsroom (masthead) this feed delivers.
+   *
+   *   publisher / entity → newsroom (masthead) → source (this row)
+   *
+   * Optional because the organisation may not resolve, and an unresolved one is
+   * grouped under no newsroom rather than under a placeholder.
+   */
+  newsroom_id?: string;
+  newsroom_name?: string;
 }
 
 type SortKey = "articles" | "name" | "recent" | "errors";
@@ -50,19 +62,32 @@ function hasHighErrorRate(source: Source): boolean {
 }
 
 export default function SourcesPage() {
+  const coverage = useCoverage();
   const [sources, setSources] = useState<Source[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const deferredSearch = useDeferredValue(search);
   const [countryFilter, setCountryFilter] = useState<string>("all");
+  const [newsroomFilter, setNewsroomFilter] = useState<string>("all");
+  const [authorFilter, setAuthorFilter] = useState<string>("");
+  const deferredAuthor = useDeferredValue(authorFilter);
+  const [authors, setAuthors] = useState<SourceAuthor[]>([]);
   const [sortBy, setSortBy] = useState<SortKey>("articles");
 
   useEffect(() => {
     async function fetchSources() {
       try {
-        const sources = await getSourcesAction();
+        const [sources, authorIndex] = await Promise.all([
+          getSourcesAction(),
+          // Fetched alongside rather than after: the author filter is a
+          // control on this page, so waiting for the directory first would
+          // leave it disabled for a second on a cold cache for no reason.
+          // Its own failure is contained — the action already fails soft to [].
+          getSourceAuthorsAction(),
+        ]);
         setSources(sources);
+        setAuthors(authorIndex);
       } catch (err) {
         console.error("Failed to fetch sources:", err);
         setError("Unable to load sources. Please try again later.");
@@ -79,6 +104,51 @@ export default function SourcesPage() {
     return COUNTRIES.filter((c) => codes.has(c.code));
   }, [sources]);
 
+  /**
+   * Newsrooms with at least one source, narrowed by the country filter.
+   *
+   * Narrowed deliberately: 537 mastheads in one select is not a control, it is
+   * a scroll. Choosing a country first cuts it to that country's own — Kenya's
+   * 24, Lesotho's 1 — which is how the two filters are actually used together.
+   */
+  const availableNewsrooms = useMemo(() => {
+    const byId = new Map<string, string>();
+    for (const s of sources) {
+      if (!s.newsroom_id || !s.newsroom_name) continue;
+      if (countryFilter !== "all" && s.country_id !== countryFilter) continue;
+      byId.set(s.newsroom_id, s.newsroom_name);
+    }
+    return [...byId.entries()]
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [sources, countryFilter]);
+
+  /**
+   * The feed ids the typed byline files to, or null when no byline is typed.
+   *
+   * Matched on a case-insensitive substring so a half-typed name narrows as you
+   * go, and `null` (not an empty Set) means "no author filter" — an empty Set
+   * would be indistinguishable from "this author files to nothing" and would
+   * silently blank the directory.
+   */
+  const authorSourceIds = useMemo(() => {
+    const q = deferredAuthor.trim().toLowerCase();
+    if (!q) return null;
+    const ids = new Set<string>();
+    for (const a of authors) {
+      if (a.name.toLowerCase().includes(q)) for (const id of a.sourceIds) ids.add(id);
+    }
+    return ids;
+  }, [authors, deferredAuthor]);
+
+  // A country change can strand a newsroom selection that is not in the new
+  // country. Clearing it is the honest reset: leaving it would filter to a
+  // newsroom the country select says is not there, and show nothing.
+  useEffect(() => {
+    if (newsroomFilter === "all") return;
+    if (!availableNewsrooms.some((n) => n.id === newsroomFilter)) setNewsroomFilter("all");
+  }, [availableNewsrooms, newsroomFilter]);
+
   // Stats
   const stats = useMemo(() => {
     const total = sources.length;
@@ -92,6 +162,8 @@ export default function SourcesPage() {
   const filteredSources = useMemo(() => {
     let list = sources.filter((s) => {
       if (countryFilter !== "all" && s.country_id !== countryFilter) return false;
+      if (newsroomFilter !== "all" && s.newsroom_id !== newsroomFilter) return false;
+      if (authorSourceIds && !authorSourceIds.has(s.id)) return false;
       if (deferredSearch) {
         const q = deferredSearch.toLowerCase();
         return (
@@ -122,7 +194,7 @@ export default function SourcesPage() {
     });
 
     return list;
-  }, [sources, countryFilter, deferredSearch, sortBy]);
+  }, [sources, countryFilter, newsroomFilter, authorSourceIds, deferredSearch, sortBy]);
 
   if (loading) {
     return <SourcesPageSkeleton />;
@@ -138,7 +210,7 @@ export default function SourcesPage() {
     >
       <WebPageJsonLd
         name="News Sources — Mukoko News"
-        description={`Browse all news sources on Mukoko News. View source health, article counts and coverage — ${COVERAGE_FRAGMENT}.`}
+        description={`Browse all news sources on Mukoko News. View source health, article counts and coverage — ${coverage.fragment}.`}
         url={getFullUrl("/sources")}
       />
       <div className="mx-auto w-full max-w-[var(--width-wide)] px-[var(--page-gutter)] sm:px-[var(--page-gutter-sm)] py-8">
@@ -204,6 +276,54 @@ export default function SourcesPage() {
               </option>
             ))}
           </select>
+          {/* Newsroom — the masthead a feed delivers. Separate from country
+              because one masthead can be delivered by several feeds, so this is
+              how a reader collapses The Herald's two endpoints into one
+              newsroom. Hidden when the current country has nothing to choose
+              between: a select with one option is a control that does nothing. */}
+          {availableNewsrooms.length > 1 && (
+            <select
+              aria-label="Filter sources by newsroom"
+              value={newsroomFilter}
+              onChange={(e) => setNewsroomFilter(e.target.value)}
+              className="px-4 py-2.5 bg-surface rounded-xl border border-elevated text-foreground text-sm outline-none focus:ring-2 focus:ring-primary/50 max-w-[220px]"
+            >
+              <option value="all">All Newsrooms</option>
+              {availableNewsrooms.map((n) => (
+                <option key={n.id} value={n.id}>
+                  {n.name}
+                </option>
+              ))}
+            </select>
+          )}
+
+          {/* Author — a typeahead, not a select. There are 3,092 distinct
+              bylines in a 30-day window; no dropdown holds that. The datalist
+              offers the most prolific as suggestions while the input still
+              accepts anything, so a partial name narrows as you type. Hidden
+              entirely when the index failed to load rather than rendering a
+              control that silently matches nothing. */}
+          {authors.length > 0 && (
+            <div className="relative">
+              <input
+                type="text"
+                list="source-authors"
+                value={authorFilter}
+                onChange={(e) => setAuthorFilter(e.target.value)}
+                placeholder="Filter by author..."
+                aria-label="Filter sources by author byline"
+                className="w-full sm:w-[200px] px-4 py-2.5 bg-surface rounded-xl border border-elevated text-foreground placeholder:text-text-tertiary text-sm outline-none focus:ring-2 focus:ring-primary/50"
+              />
+              <datalist id="source-authors">
+                {authors.map((a) => (
+                  <option key={a.name} value={a.name}>
+                    {a.articleCount} articles
+                  </option>
+                ))}
+              </datalist>
+            </div>
+          )}
+
           <select
             aria-label="Sort sources"
             value={sortBy}
