@@ -1,6 +1,5 @@
 'use server';
 
-import { withAuth } from '@workos-inc/authkit-nextjs';
 import { resolveTier, canAccessAdmin } from '@/lib/auth/roles';
 import { idSchema } from '@/lib/safety';
 import { getArticleProvenance, type ArticleProvenance } from '@/lib/mongodb/article-metrics';
@@ -40,6 +39,12 @@ export async function getArticleProvenanceAction(
   if (!parsed.success) return null;
 
   try {
+    // Lazy import, following `lib/engagement.ts`: authkit is a server-only
+    // module. This action is imported by a CLIENT component (the article page's
+    // metrics panel), so pulling the whole AuthKit server chain at module load
+    // would put it in the article route's import graph — where it does not
+    // resolve, and where nothing needs it until a staff caller actually asks.
+    const { withAuth } = await import('@workos-inc/authkit-nextjs');
     const { user, organizationId, role, permissions } = await withAuth();
     if (!user) return null;
     if (!canAccessAdmin(resolveTier({ organizationId, role, permissions }))) return null;
