@@ -274,7 +274,14 @@ export default function ArticleDetailClient({
 
       {/* Bottom padding clears the pinned action bar, so the last paragraph is
           never sitting underneath it. */}
-      <PageContainer as="main" width="reading" className="pb-28">
+      {/* Bottom padding clears whichever shape the action bar is in: on mobile
+          the floating nav pill plus the rail beside it (`--bottom-nav-clearance`
+          plus a line of breathing room), on desktop the full-width bar. */}
+      <PageContainer
+        as="main"
+        width="reading"
+        className="pb-[calc(var(--bottom-nav-clearance)_+_1rem)] md:pb-28"
+      >
         {/* Back control, in the content column rather than pinned to the
             viewport edge: on a wide screen an `absolute left-6` button sits
             hundreds of pixels from the column it acts on and reads as page

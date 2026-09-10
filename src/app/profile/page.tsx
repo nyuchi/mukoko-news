@@ -25,6 +25,7 @@ import { ProfileIdentity } from "@/components/profile/profile-identity";
 import { ProfilePreferences } from "@/components/profile/profile-preferences";
 import { ProfileOrganizations } from "@/components/profile/profile-organizations";
 import { ProfileAppearance } from "@/components/profile/profile-appearance";
+import { ProfileNavigation } from "@/components/profile/profile-navigation";
 import { ProfileAdminLink } from "@/components/profile/profile-admin-link";
 
 function ProfileContent() {
@@ -103,6 +104,10 @@ function ProfileContent() {
         </div>
 
         <SettingsCard themeIcon={getThemeIcon()} themeLabel={getThemeLabel()} onTheme={cycleTheme} />
+        {/* The full site map. It is on the signed-OUT branch too: an anonymous
+            reader who taps Profile from the bottom bar is the reader most
+            likely to be looking for a way around the app, not for an account. */}
+        <ProfileNavigation />
         <AboutCard />
         <Footer />
       </div>
@@ -135,6 +140,9 @@ function ProfileContent() {
       <ProfileOrganizations />
 
       <ProfileAppearance />
+
+      {/* The full site map — see ProfileNavigation for why it lives here. */}
+      <ProfileNavigation signedIn />
 
       {/* Publisher tools — the Tier-2 claim entry point. */}
       <div className="bg-surface border border-outline rounded-2xl overflow-hidden mb-6">

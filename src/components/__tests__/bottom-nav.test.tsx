@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { BottomNav } from '../layout/bottom-nav';
+import { BOTTOM_NAV_HREFS } from '@/lib/navigation';
 
 // Mock next/navigation
 const mockUsePathname = vi.fn();
@@ -26,20 +27,49 @@ describe('BottomNav', () => {
     expect(screen.getByText('Profile')).toBeInTheDocument();
   });
 
-  it('should not render on NewsBytes page', () => {
+  // These two used to assert the OPPOSITE, and that is the bug this change
+  // fixes. The bar returned null on /newsbytes and on every article page, so
+  // the two surfaces a reader is most likely to arrive on from a shared link
+  // were the two with no visible route anywhere else — the only ways out were
+  // the browser's back gesture or knowing to tap the wordmark. TikTok, the
+  // reference for both surfaces, keeps its bar up over fullscreen video and
+  // moves the CONTENT actions to a side rail; that is what this app does now.
+  it('renders on NewsBytes, over the video', () => {
     mockUsePathname.mockReturnValue('/newsbytes');
+
+    render(<BottomNav />);
+
+    expect(screen.getByRole('navigation', { name: /main navigation/i })).toBeInTheDocument();
+  });
+
+  it('renders on article pages', () => {
+    mockUsePathname.mockReturnValue('/article/123');
+
+    render(<BottomNav />);
+
+    expect(screen.getByRole('navigation', { name: /main navigation/i })).toBeInTheDocument();
+  });
+
+  it('renders nothing inside the embed iframe', () => {
+    // The one place our navigation does not belong: our markup inside
+    // somebody else's page.
+    mockUsePathname.mockReturnValue('/embed/iframe');
 
     const { container } = render(<BottomNav />);
 
     expect(container.firstChild).toBeNull();
   });
 
-  it('should not render on article pages', () => {
-    mockUsePathname.mockReturnValue('/article/123');
+  it('carries its own dark ground over full-bleed video', () => {
+    // Over a playing frame the translucent page background has nothing to sit
+    // against, so the pill would dissolve into whatever is behind it.
+    mockUsePathname.mockReturnValue('/newsbytes');
 
-    const { container } = render(<BottomNav />);
+    render(<BottomNav />);
 
-    expect(container.firstChild).toBeNull();
+    const nav = screen.getByRole('navigation', { name: /main navigation/i });
+    expect(nav).toHaveClass('bg-black/70');
+    expect(nav).not.toHaveClass('bg-background/90');
   });
 
   it('should render on discover page', () => {
@@ -110,6 +140,20 @@ describe('BottomNav', () => {
     expect(screen.getByRole('navigation')).toBeInTheDocument();
   });
 
+  it('takes its slots from the shared destination registry', () => {
+    // The bar, the header menu, the footer site map and /profile all read
+    // `@/lib/navigation` now. Before that each carried its own array and they
+    // had drifted far enough that no surface in the app could reach every
+    // page. `pick()` throws on an unknown href, so a renamed route fails here
+    // rather than silently shortening the bar to four items.
+    mockUsePathname.mockReturnValue('/');
+
+    render(<BottomNav />);
+
+    const hrefs = screen.getAllByRole('link').map((a) => a.getAttribute('href'));
+    expect(hrefs).toEqual([...BOTTOM_NAV_HREFS]);
+  });
+
   describe('floating pill design', () => {
     it('should float inset from the viewport edges (not flush bottom)', () => {
       mockUsePathname.mockReturnValue('/');
@@ -117,8 +161,21 @@ describe('BottomNav', () => {
       render(<BottomNav />);
 
       const nav = screen.getByRole('navigation', { name: /main navigation/i });
-      expect(nav).toHaveClass('fixed', 'left-4', 'right-4', 'rounded-2xl');
+      expect(nav).toHaveClass('fixed', 'left-4', 'right-4');
       expect(nav).not.toHaveClass('bottom-0');
+    });
+
+    it('is a pill, not a rounded rectangle', () => {
+      // Owner decision: it floats because this is a web app with no OS tab bar
+      // to dock against, and a floating bar is a pill. `rounded-2xl` read as a
+      // card that happened to be sitting at the bottom of the screen.
+      mockUsePathname.mockReturnValue('/');
+
+      render(<BottomNav />);
+
+      const nav = screen.getByRole('navigation', { name: /main navigation/i });
+      expect(nav).toHaveClass('rounded-full');
+      expect(nav).not.toHaveClass('rounded-2xl');
     });
 
     it('should lift above the home-indicator via the safe-area inset', () => {
@@ -137,6 +194,7 @@ describe('BottomNav', () => {
 
       const nav = screen.getByRole('navigation', { name: /main navigation/i });
       expect(nav).toHaveClass('bg-background/90', 'backdrop-blur-xl', 'border', 'shadow-lg');
+      // …on a reading route. The immersive variant is asserted above.
     });
 
     it('should keep 48px minimum touch targets on nav items', () => {

@@ -27,6 +27,14 @@
   /* The full Mzizi background scale. Five steps were missing, which is why
      menus reused the hover-row colour, the share modal hand-rolled its own
      backdrop, and article heroes had no media-well token. */
+  /* How much bottom space the floating mobile nav needs kept clear: its own
+     height (4rem) + the 0.75rem it floats by + a 0.75rem breathing gap, on top
+     of the home-indicator inset. Every surface that pins something to the
+     bottom on mobile reads this, so the pill and an action rail can never be
+     lifted by different amounts again. Zero above `md`, where the pill is not
+     rendered — consumers apply `md:` themselves since a CSS variable cannot
+     carry a breakpoint. */
+  --bottom-nav-clearance: calc(env(safe-area-inset-bottom, 0px) + 5.5rem);
   --void: #080807;      /* app shell behind base */
   --pitch: #050505;     /* deepest — media wells, splash */
   --raised: #2E2C29;    /* above overlay — menus, toasts */
@@ -34,7 +42,7 @@
   --wash: color-mix(in oklab, var(--surface) 88%, var(--brand-accent));
   --background: #0E0D0C;   /* Mzizi `base`      — matte page */
   --foreground: #FFFFFF;
-  --surface: #080807;   /* Mzizi `void` — the card sits BELOW the matte page, not above it */
+  --surface: #131211;   /* Mzizi `surface` — the card / panel step (P7) */
   --elevated: #1E1D1A;     /* Mzizi `container` — hover rows, menus, raised chrome */
 
   /* Text hierarchy */
@@ -113,7 +121,7 @@
   /* UI Elements */
   --muted: #050504;
   --muted-foreground: #E8E8E4;   /* was #B8B8B3 — Lc 63 on the card, under the floor */
-  --card: #080807;               /* = --surface. The card IS the well, not a lighter slab */
+  --card: #131211;               /* = --surface. Mzizi `surface`, the card / panel step */
   --card-foreground: #FFFFFF;
   --popover: #23221F;   /* Mzizi backgrounds.overlay (was container) */            /* popovers rise ABOVE the card, so they lighten */
   --popover-foreground: #FFFFFF;
@@ -137,7 +145,7 @@
   --wash: color-mix(in oklab, var(--surface) 88%, var(--brand-accent));
   --background: #0E0D0C;   /* Mzizi `base`      — matte page */
   --foreground: #FFFFFF;
-  --surface: #080807;   /* Mzizi `void` — the card sits BELOW the matte page, not above it */
+  --surface: #131211;   /* Mzizi `surface` — the card / panel step (P7) */
   --elevated: #1E1D1A;     /* Mzizi `container` — hover rows, menus, raised chrome */
 
   /* Text hierarchy - AAA compliant (7:1+ contrast on #0A0A0A) */
@@ -215,7 +223,7 @@
   /* UI Elements */
   --muted: #050504;
   --muted-foreground: #E8E8E4;   /* was #B8B8B3 — Lc 63 on the card, under the floor */
-  --card: #080807;               /* = --surface. The card IS the well, not a lighter slab */
+  --card: #131211;               /* = --surface. Mzizi `surface`, the card / panel step */
   --card-foreground: #FFFFFF;
   --popover: #23221F;   /* Mzizi backgrounds.overlay (was container) */            /* popovers rise ABOVE the card, so they lighten */
   --popover-foreground: #FFFFFF;

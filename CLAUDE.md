@@ -71,29 +71,54 @@ pnpm add <package>    # or: npm install <package>
 ```
 src/
   app/                     # App Router pages (kebab-case dirs)
-    page.tsx               # Home feed
+    page.tsx               # Home feed (home-client.tsx = its client half)
     article/[id]/          # Article detail (server page + client component)
+    author/[...slug]/      # Byline page — /author/<person> or /author/<newsroom>/<desk>
     topic/[slug]/          # Developing-story timeline (Mzizi nyuchi-timeline, ISR 300s)
     discover/ search/ saved/ categories/ sources/ newsbytes/ insights/ analytics/
+    profile/ dashboard/ publishers/claim/
+    about/ help/ privacy/ terms/ offline/
     admin/                 # RBAC-gated admin app (layout.tsx enforces tier)
+                           # analytics/ articles/ publishers/ sources/ system/ users/
     embed/ embed/iframe/   # Embeddable widget renderer
+    sign-in/               # The single sign-in entry point
+    auth/login/route.ts    # AuthKit initiate-login (the only getSignInUrl call site)
     auth/callback/route.ts # WorkOS OAuth callback
-    api/                   # Route Handlers (engagement + health) — see below
-    sitemap.ts globals.css layout.tsx
+    .well-known/           # MCP + OAuth discovery documents
+    api/                   # Route Handlers — see Data Flow below
+    llms.txt/ robots.txt/ auth.md/ api/agent-md/   # agent-readable docs, served as routes
+    sitemap.ts manifest.ts globals.css layout.tsx error.tsx global-error.tsx
   components/              # UI + feature components
     ui/                    # Primitives (button, card, skeleton, error-boundary, json-ld, …)
-    admin/ auth/ layout/   # Feature-scoped components (auth/ = inline-sign-in)
+    admin/ agent/ article/ brand/ layout/ profile/ publisher/ pwa/
     article-card.tsx hero-card.tsx compact-card.tsx story-cluster.tsx share-modal.tsx …
-  contexts/               # React Context providers
+  contexts/               # React Context providers (preferences, coverage)
   lib/
-    actions/              # 'use server' Server Actions (feed.ts, refresh.ts)
-    mongodb/              # Mongo client + collection queries (articles, categories, sources, admin)
+    actions/              # 'use server' Server Actions — feed, authors, analytics,
+                          # insights, coverage, profile, article-metrics, refresh, …
+    mongodb/              # Mongo client + collection queries (articles, authors,
+                          # analytics, insights, coverage, identity, entity, places, …)
     admin/gateway.ts      # The ONLY frontend→gateway calls (admin mutations)
-    auth/                 # roles.ts (RBAC tiers), actions.ts
-    api.ts constants.ts utils.ts rate-limit.ts source-profiles.ts publisher-icon.ts
+    auth/                 # roles.ts (RBAC tiers), entity-access.ts, actions.ts
+    publisher/ pwa/
+    api.ts constants.ts countries.ts utils.ts safety.ts rate-limit.ts
+    author-identity.ts publisher-icon.ts source-profiles.ts image.ts
+    appearance.ts engagement.ts weather.ts security-headers.ts agent-discovery.ts …
   middleware.ts           # AuthKit session-refresh middleware
   __tests__/setup.ts      # Vitest global setup
 ```
+
+### Navigation (`src/lib/navigation.ts`)
+
+**One registry, four surfaces.** `DESTINATIONS` is every page a reader can go to, grouped; the header's "jump to" dropdown, the mobile bottom bar, the footer site map and `/profile` all read it. Each used to carry its own hand-written array and they had drifted — the header dropdown named ten destinations and omitted `/sources`, `/about`, `/terms`, `/privacy` and `/publishers/claim`; the footer named five, none of them a reading surface — so **no surface in the app could reach every page**. `pick(...hrefs)` **throws** on an unknown href rather than rendering a shorter bar, and `navigation.test.ts` walks the App Router directory and fails when a route has a page but is neither registered nor listed in `NOT_DESTINATIONS` with a reason. Adding a page and linking it from nowhere is now a CI failure. `/admin` is deliberately excluded: it is RBAC-gated, and listing it for everyone advertises a door almost nobody can open.
+
+**The bottom nav is on every route** (owner decision 2026-09-10, TikTok as the reference). It used to return `null` on `/newsbytes` and on every article page, so the two surfaces a reader is most likely to arrive on from a shared link were the two with no visible way out — the only routes back were the browser's own back gesture or knowing to tap the wordmark. It read as a deliberate immersive choice in the code and as being stranded in the product. `hidesAppChrome()` is now true for **one** route, `/embed/iframe`, which is our markup inside somebody else's page.
+
+**Navigation owns the bottom edge; content actions move to a right rail.** That is the split TikTok uses on a fullscreen video, and `/newsbytes` already had the rail. `ArticleActionBar` now matches it: a vertical rail on mobile, the horizontal bar it always was from `md` up (where there is no floating pill). It is **one DOM tree that reshapes with responsive classes**, not two that take turns behind `md:hidden` — jsdom applies no media queries, so two `role="toolbar"` regions with the same accessible name would make every `getByRole` in the suite match both.
+
+**`--bottom-nav-clearance`** (`globals.css`) is how much bottom space the floating pill needs kept clear — its height, its lift, a breathing gap and the home-indicator inset. The page padding in `layout.tsx`, the NewsBytes caption column and action rail, and the article page all read it, so the pill and whatever sits above it can never be lifted by different amounts. Consumers apply the `md:` reset themselves, since a CSS variable cannot carry a breakpoint.
+
+**The pill is `rounded-full`.** It floats because this is a web app rather than an installed one: there is no OS-drawn tab bar to sit flush against, and a full-width bar welded to the bottom of a browser viewport collides with the browser's own toolbar and the home-indicator gesture zone. A floating bar is a pill; `rounded-2xl` read as a card that happened to be at the bottom of the screen.
 
 ### Data Flow (reads)
 
@@ -119,6 +144,8 @@ All news data reads go through Server Actions → MongoDB Atlas (`news` database
 
 **Analytics query console (`/analytics`)** — the deep dive `/insights` links into. `src/lib/mongodb/analytics.ts` holds the corpus query engine: `runCorpusQuery` returns every panel from a single `$facet` (daily series, source/country/category/keyword/named-entity/byline breakdowns, sentiment, quality, sample articles) plus the **normalized** query it actually ran, so the UI captions results with the filters that were applied rather than the ones requested. A text term leads with Atlas Search (`articles_text_search`) and falls back to a bounded substring `$match`, flagged on the result as `usedSearchIndex` so the page can say so. `getCoverageConcentration` answers the editorial question the old page faked — sources per country, top-source share, HHI, and the countries with no coverage at all. `getQueryFacets` populates the controls. All three are wrapped fail-soft like the Insights reads. `src/lib/actions/analytics.ts` exposes them, validating **every** input through the `@/lib/safety` schemas first (Server Actions are a public RPC surface); the two query-independent reads are wrapped in `unstable_cache` (600s, tag `analytics-facets`) so the `force-dynamic` page costs one aggregation per view, not three. `src/app/api/analytics/export/route.ts` exports one query as JSON or a labelled multi-table CSV — cells are RFC-4180 quoted **and** formula-neutralised (a leading `=`/`+`/`-`/`@` is prefixed with `'`, because the file carries publisher-controlled text: source names, bylines, `aiKeywords`, `aiNamedEntities`). It is per-caller by design so it is NOT edge-cached; 10 req/min/IP instead.
 
+**Byline pages (`/author/[...slug]`)** — `src/lib/mongodb/authors.ts` answers two reads. `getBylineDirectory()` is one aggregation over the attributed corpus, cached for an hour and shared by every author page: it folds spelling variants onto a single key (diacritics included, so "José Silva" and "Jose Silva" are one journalist), names each by its most-published spelling, and is what makes slug → byline resolution *exact* rather than a reconstruction. `getAuthorProfile()` answers all seven panels from a single `$facet`. `src/lib/author-identity.ts` is the pure module that decides whether a byline is a **person** or a **desk** — a closed lexicon, word-boundary matched without `\b` (which is defined on `\w` and so excludes the accented letters this corpus carries). A person gets one page over the whole corpus; a desk gets one page *per newsroom* (`/author/<newsroom>/<desk>`), because "Staff Reporter" is measurably the desk byline of ten mastheads in four countries and one page for it would assert a single writer filed all 198 articles. A desk with no resolvable newsroom renders as plain text and gets no page — there is nothing to scope it to, and plain text is a smaller loss than a false attribution. Both reads are windowed to 365 days so they ride `status_1_datePublished_-1` as a range seek, and byline matching is `$in` **equality, never regex**, so an index on `{'author.name': 1, datePublished: -1}` would serve them if one is ever added (a live-cluster change, not made here). A failed directory read returns empty and 404s rather than rendering a real person's name above "0 articles". `src/lib/actions/authors.ts` is the Server-Action door.
+
 ### Data Flow (writes / mutations)
 
 - **Engagement** (like / view / save) — Next.js **Route Handlers** under `src/app/api/articles/[id]/{like,view,save}/route.ts` (`POST`, `runtime = 'nodejs'`), rate-limited via `src/lib/rate-limit.ts` (`checkRateLimit` — **async** — and `getRequestIp`). When `UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN` are set the limit is enforced globally via the Upstash REST API (fixed window, fails open); otherwise it's the in-memory per-instance window. Likes/saves are keyed to an **engagement subject** (`src/lib/engagement.ts`): the signed-in WorkOS user (`user:<id>` — follows the account across devices; anonymous cookie history is claimed on first signed-in interaction) or the `mukoko_session` cookie. The stored field remains `sessionId` — an opaque subject key to the gateway/pipeline. `src/app/api/health/route.ts` is the health probe.
@@ -141,7 +168,11 @@ Used for client-side fetches and the embed widget, and exports the shared `Artic
 
 ## Testing
 
-**~1,000 frontend tests across 64 files** — Vitest 4 with jsdom + React Testing Library.
+**Vitest 4 with jsdom + React Testing Library.** `npm run test` prints the current count;
+no figure is written down here, for the same reason the README carries no coverage number —
+a count in a document nothing checks is stale by the next merge. (It went stale inside a
+single branch once already: this line was corrected from "~1,000 across 64", then a later
+commit on the same branch added 19 tests.)
 
 - Config: `vitest.config.ts` (globals on, `@` alias, `include: src/**/*.{test,spec}.*`)
 - Setup: `src/__tests__/setup.ts`
@@ -260,13 +291,13 @@ The MCP OAuth server (`news.mukoko.com/.well-known/oauth-authorization-server`, 
 - **`--warning` is Mzizi's semantic warning** (`#7A5C00` / `#FFD866`), not terracotta. Terracotta is a mineral that already means *community and warmth*, so warnings and community surfaces were indistinguishable. Measured as text on the card: terracotta 4.83:1 light / 10.4:1 dark; Mzizi 5.38 / 13.6 — better in both. ⚠️ The light value still does **not** clear Mzizi's own APCA floor; reported upstream rather than patched with a Mukoko-only variant.
 - **`--ring` is cobalt**, deliberately not the brand hue, so a focus ring is never read as a brand fill on a primary button.
 
-**Surfaces (2026-09-05)** — the Mzizi background scale (`mzizi_get_tokens: backgrounds`). The page is the **matte base**; the card sits **below** it, nearer black, so a card reads as a well rather than a raised grey slab; hover rows, menus and popovers rise above both. This inverted the previous order, where every card was *lighter* than the page it sat on.
+**Surfaces** — the Mzizi background scale (`mzizi_get_tokens: backgrounds`), and **every role takes the step that carries its name**: `--surface` is Mzizi `surface`, `--elevated` is `container`, `--popover` is `overlay`, and so on. Mzizi is the source of truth for the scale AND for which step a role uses; this app does not re-point one on its own reading (owner decision 2026-09-10 — see the note below).
 
 | token | light | dark | Mzizi name |
 | --- | --- | --- | --- |
 | `--void` | `#F8F8F7` | `#080807` | `void` — app shell behind base |
 | `--background` | `#F3F3F1` | `#0E0D0C` | `base` — matte page |
-| `--surface` / `--card` | `#EEEEEC` | `#080807` | `surface` (light) / `void` (dark) — the card |
+| `--surface` / `--card` | `#EEEEEC` | `#131211` | `surface` — the card |
 | `--muted` | `#FAF9F5` | `#050504` | `muted` — deepest fill, inset/metadata rows |
 | `--elevated` | `#E5E4E1` | `#1E1D1A` | `container` — hover rows |
 | `--popover` | `#E0DFDC` | `#23221F` | `overlay` — menus, dialogs |
@@ -276,7 +307,7 @@ The MCP OAuth server (`news.mukoko.com/.well-known/oauth-authorization-server`, 
 | `--wash` | surface + 7% brand | surface + 12% brand | cover-colour page tint |
 | `--border` | `#E7E5E0` | `#2A2927` | `border` — warm stone, not cool grey |
 
-> **Owner correction 2026-09-10 (second).** The card is **below** the page in BOTH themes, because the card is the surface that holds text. The first correction that day fixed a token-naming mistake by reversing the visual intent: it moved dark `--surface` to Mzizi's `surface` (`#131211`), which is *lighter* than the matte page — a raised grey slab, the exact reading the 2026-09-05 doctrine rejected — while the prose above it still said "nearer black". Prose and values had contradicted each other ever since. Dark now uses Mzizi's **`void`** (`#080807`): a step darker than the page, and still clear of `--muted` (`#050504`), which is what made the original `#050504` wrong (a card and the inset row inside it were one colour). **Role ≠ step**: a semantic token may point at whichever Mzizi step the doctrine calls for, and `design-tokens.test.ts` now asserts both halves — the snapshot pins which step each role uses (so a re-point is visible in the diff) and a second assertion requires every surface value to be a genuine step in the scale (so nobody reaches for an invented hex).
+> **Owner decision 2026-09-10 (third and final on this token) — Mzizi is the source of truth.** Dark `--surface`/`--card` is Mzizi **`surface`** (`#131211`). It had been re-pointed at Mzizi **`void`** (`#080807`) earlier the same day to keep the card a step *darker* than the matte page — a reading of the scale this app invented and Mzizi does not make. A role now takes the step that carries its name, full stop, and `design-tokens.test.ts` asserts exactly that (`--surface`→`surface`, `--elevated`→`container`, `--popover`→`overlay`, …) in all three theme blocks. That replaces the weaker "is *a* real step in the scale" check, which only existed to accommodate the re-point: with no role diverging, a mismatch is a bug rather than a decision, and the test names which step the value should have come from. The one invariant that survives every revision of this token is the failure that started it — `--surface` must never equal `--muted` (`#050504`), or a card and the inset row inside it are one colour and the metadata well has no edge. That is still asserted separately.
 >
 > **Components separate by FILL, not by a drawn edge** (owner decision 2026-09-10). Every card, panel and chip carried `border border-border`, so the product looked like a high-contrast theme nobody chose — and with everything boxed, nothing read as emphasised. There is now one token: **`--outline`, transparent by default**, and every boxed component draws `border border-outline`. The border stays in the box model, so switching it on shifts no layout. `--border` keeps its colour and stays visible for **separators** (`border-b`, `border-t`, `divide-y`, the byline rule) — a line meaning "these two things are different" is a different job from a line meaning "here is an edge", which is why they are now different tokens. Two things turn outlines on: `data-outlines="on"` (the reader's own choice, from **/profile → Accessibility**, applied pre-paint by the bootstrap script in `layout.tsx`) and **`prefers-contrast: more`**, where it is not optional — that block replaces every surface with `Canvas`, so page, card and hover row become one colour and fill can no longer separate anything. A **control's** edge is a different job again and gets its own token, **`--control`** (always visible, aliased to `--border` so it follows into the high-contrast block): an `<input>` or `<select>` painted with the transparent `--outline` would be an undiscoverable field, and a button's `outline` variant IS its edge. There are deliberately **no file-level exemptions** in the check — exempting a file would let a future card in that same file slip through, which is how the borders got everywhere in the first place. `src/lib/__tests__/appearance.test.ts` structurally forbids a box outline drawn on `--border`/`--elevated` anywhere else. ⚠️ This **diverges from the Mzizi card spec**, which specifies "a full 1px border" (`mzizi_get_tokens: componentSpecs`) — reported upstream rather than silently forked.
 >

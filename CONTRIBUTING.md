@@ -28,7 +28,7 @@ This repo is the Next.js frontend only. It reads data from MongoDB Atlas via Ser
 - UI components (`src/components/`)
 - Page layouts and routing (`src/app/`)
 - Utility functions (`src/lib/utils.ts`, `src/lib/constants.ts`)
-- Tests (all 448 tests mock the Server Actions — no live DB needed)
+- Tests (every test mocks the Server Actions — no live DB needed)
 - The embed widget (`public/embed/widget.js`)
 
 **For live data**, you need a `MONGODB_URI` — contact the maintainers.
@@ -83,7 +83,7 @@ pnpm vitest run -t "formatTimeAgo"
 
 1. `pnpm lint` — fix any ESLint errors
 2. `pnpm typecheck` — fix any TypeScript errors
-3. `pnpm test` — all 448 tests must pass
+3. `pnpm test` — the whole suite must pass
 4. `pnpm build` — build must succeed
 5. Test your change manually in the browser (golden path + edge cases)
 
@@ -193,7 +193,7 @@ chore: update lucide-react to 0.470
 All tests mock Server Actions — no MongoDB connection required.
 
 ```bash
-pnpm test             # Run all 448 tests
+pnpm test             # Run the whole suite
 pnpm test:watch       # Watch mode during development
 pnpm test:coverage    # Coverage report (thresholds: 60% lines, 50% branches)
 ```
