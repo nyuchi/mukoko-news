@@ -1,6 +1,22 @@
 /**
- * News Source Profiles and Favicon Service
- * Uses Google's Favicon API for reliable icon fetching
+ * News source brand profiles — colours, initials and a small table of publisher
+ * domains for the mastheads Mukoko has hand-styled.
+ *
+ * ## This table is NOT how favicons are resolved any more
+ *
+ * It used to be: `getFaviconUrl(name)` looked a publisher up here and returned an
+ * icon only on a hit. Measured on the live cluster (2026-09-10) it hit **38 of
+ * 587** feed sources, and because the lookup falls back to a SUBSTRING test,
+ * **11 of those 38 hits were the wrong publisher** — "National Geographic" and
+ * "Amnesty International" both contain "Nation", so both were served the Daily
+ * Nation's icon.
+ *
+ * Icons now come from the publisher's own record — see `@/lib/publisher-icon`,
+ * which resolves a domain for 587 of 587 sources and consults this table only on
+ * an EXACT name match, as a last resort before initials. The colours and initials
+ * below still drive the fallback avatar, where the substring match is cosmetic.
+ *
+ * The hex values are third-party publisher brand colours and are intentional.
  */
 
 interface SourceProfile {
@@ -240,10 +256,23 @@ export function getSourceProfile(sourceName: string): SourceProfile {
   };
 }
 
-export function getFaviconUrl(sourceName: string, size = 32): string | null {
-  const profile = getSourceProfile(sourceName);
-  if (profile.domain) {
-    return `https://www.google.com/s2/favicons?domain=${profile.domain}&sz=${size}`;
+/**
+ * The brand-table domain for an EXACT (case-insensitive) name match, or null.
+ *
+ * Deliberately not `getSourceProfile().domain`: that one falls through to a
+ * substring test, which is fine for picking an avatar colour and actively wrong
+ * for picking whose logo to show. This is the only domain lookup the icon
+ * resolver is allowed to use, and it is the last tier before initials.
+ */
+export function getExactProfileDomain(sourceName: string | null | undefined): string | null {
+  const trimmed = sourceName?.trim();
+  if (!trimmed) return null;
+
+  if (SOURCE_PROFILES[trimmed]?.domain) return SOURCE_PROFILES[trimmed].domain;
+
+  const normalized = trimmed.toLowerCase();
+  for (const [key, profile] of Object.entries(SOURCE_PROFILES)) {
+    if (key.toLowerCase() === normalized) return profile.domain;
   }
   return null;
 }

@@ -4,7 +4,7 @@ import type { Article } from "@/lib/api";
 import { isValidImageUrl, formatTimeAgo } from "@/lib/utils";
 import { imageProxyUrl } from "@/lib/image";
 import { NyuchiArticleCard } from "@/components/brand/nyuchi-article-card";
-import { SourceBadge } from "@/components/ui/source-icon";
+import { SourceBadge, sourceIconProps } from "@/components/ui/source-icon";
 
 interface CompactCardProps {
   article: Article;
@@ -30,7 +30,7 @@ export function CompactCard({ article, index }: CompactCardProps) {
       category={category}
       publishedAt={formatTimeAgo(article.published_at)}
       index={index}
-      sourceSlot={<SourceBadge source={article.source} iconSize={14} />}
+      sourceSlot={<SourceBadge {...sourceIconProps(article)} iconSize={14} />}
     />
   );
 }

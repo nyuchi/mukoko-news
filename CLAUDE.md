@@ -89,7 +89,7 @@ src/
     mongodb/              # Mongo client + collection queries (articles, categories, sources, admin)
     admin/gateway.ts      # The ONLY frontend→gateway calls (admin mutations)
     auth/                 # roles.ts (RBAC tiers), actions.ts
-    api.ts constants.ts utils.ts rate-limit.ts source-profiles.ts
+    api.ts constants.ts utils.ts rate-limit.ts source-profiles.ts publisher-icon.ts
   middleware.ts           # AuthKit session-refresh middleware
   __tests__/setup.ts      # Vitest global setup
 ```
@@ -125,6 +125,14 @@ All news data reads go through Server Actions → MongoDB Atlas (`news` database
 - **Own-profile reads/writes** (owner decision 2026-09-01) — **`identity.persons` is the source for user profile data, not the WorkOS session claims.** It carries strictly more: the profile picture is hosted on `profile-images.mukoko.com` (absent from the token), plus `preferredUsername` and `interests`. `src/lib/mongodb/identity.ts` reads/writes the caller's own record (matched on `workosUserId`, `$set` restricted to an explicit allowlist — `givenName`/`familyName`/`name`/`preferredUsername`/`interests`; never `bundu`, `role`, `workosUserId`, or the merge bookkeeping, and **never upserts** since the gateway webhook creates the record). `src/lib/actions/profile.ts` exposes `getMyProfileAction()`, `updateProfileAction()` and `updateInterestsAction()`; each takes **no user id** — it comes from the verified session, so a crafted request cannot retarget another account. A name write updates the DB record first (that is what the platform reads) and then **mirrors to WorkOS best-effort** so the IdP does not drift; the mirror round-trips back through the gateway's `user.updated` webhook into the same record, so a WorkOS failure must not report failure to a user whose canonical copy saved. ⚠️ `mukoko-news-gateway/CLAUDE.md` still says the gateway is the only writer of the `identity` domain — that doc needs updating to match this decision.
 - **Pipeline refresh** — `src/lib/actions/refresh.ts` `triggerFeedCollection()` fire-and-forget `POST`s to `FLY_WORKER_URL/trigger/collect` with `FLY_TRIGGER_TOKEN`.
 - **Open-data export** (read-only, public) — `src/app/api/insights/export/route.ts` (`GET`, `runtime = 'nodejs'`, `revalidate = 600`) returns the aggregated Insights bundle. `?format=json` (default) emits the full `InsightsBundle`; `?format=csv` emits one CSV with three labelled tables — `## media_organizations`, `## topic_distribution`, `## country_coverage` (RFC-4180 quoted). Rate-limited via `checkRateLimit`/`getRequestIp` (20 req/min/IP → `429` + `Retry-After`); edge-cached (`Cache-Control: public, s-maxage=600, stale-while-revalidate=1800`). Linked from the `/insights` page ("Download open data"). This is a plain Route Handler → MongoDB, not a gateway call.
+
+### Publisher icons (`src/lib/publisher-icon.ts`)
+
+Source favicons resolve from the **publisher's own record**, never from a table of names and never from anything stored on the article. `resolvePublisherIcon()` tries, in order: the organisation's `logo` → the organisation's own `url` → the feed source's own URL (`Article.source_url`, derived on read from `feedSources.sourceUrl ?? feedUrl`) → the article's `externalUrl` host → the `source-profiles.ts` brand table on an **exact** name match → coloured initials. `SourceIcon` (`components/ui/source-icon.tsx`) renders it and falls back to initials on any load failure; `sourceIconProps(article)` is the single place the preference order is expressed.
+
+Why it exists: the old `getFaviconUrl()` only answered for the ~20 hardcoded profiles. Measured 2026-09-10 on the live cluster — **38 of 587** feed sources matched, and because the lookup falls through to a *substring* test **11 of those 38 matched the wrong publisher** ("National Geographic" and "Amnesty International" both contain "Nation", so both were served the Daily Nation's icon). All **537** organisations carry an http(s) `url` and all 587 sources resolve to one, so a domain is now derivable for **587 of 587**. Nothing is written to `news.articles`: publisher identity — including verification — has exactly one instance, on the publisher record, and the article's `mediaOrganizationId` / `feedSourceId` is the whole link.
+
+**Privacy**: the favicon service URL is never handed to the browser. It is wrapped in `imageProxyUrl()` so the request goes to the image worker (`assets.mukoko.com/i/*`), which fetches it server-side and caches it in R2 — so no reader IP, UA, cookie or `Referer` reaches a third party, and one fetch serves every reader. A publisher-hosted `/favicon.ico` is deliberately not tried: `image/x-icon` is not on the worker's content-type allowlist.
 
 ### API Client (`src/lib/api.ts`)
 
