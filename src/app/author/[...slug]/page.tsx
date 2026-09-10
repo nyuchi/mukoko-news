@@ -125,7 +125,7 @@ function FacetRows({ rows, icon }: { rows: LabelledFacet[]; icon: 'source' | 'ne
 
 function Panel({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-[var(--radius-card)] border border-border bg-card p-4">
+    <section className="rounded-[var(--radius-card)] border border-outline bg-card p-4">
       <h2 className="mb-3 font-mono text-[11px] uppercase tracking-wide text-text-tertiary">
         {title}
       </h2>
