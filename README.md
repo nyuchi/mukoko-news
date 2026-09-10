@@ -1,12 +1,43 @@
+<div align="center">
+
 # Mukoko News
 
 **Pan-African news, in one place.**
 
-"Mukoko" means "Beehive" in Shona — where community gathers and stores knowledge. Mukoko News aggregates news from 100+ sources across all 54 African Union member states, surfacing the stories that matter to the continent.
+"Mukoko" means *beehive* in Shona — where the community gathers and stores knowledge.
+Mukoko News aggregates hundreds of African newsrooms into one feed, so a reader in Harare
+can follow Lagos, Nairobi and Dakar without opening twenty tabs.
 
+All **54** African Union member states are in scope. How many are *live* is a number the
+app measures rather than asserts — see [Coverage](#coverage).
+
+[**Read the news →**](https://news.mukoko.com) &nbsp;·&nbsp;
+[**Join the Discord →**](https://discord.gg/Ga2XusN6Ty) &nbsp;·&nbsp;
+[**Contribute →**](CONTRIBUTING.md)
+
+<br />
+
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Next.js](https://img.shields.io/badge/Next.js-15-000000?logo=nextdotjs&logoColor=white)](https://nextjs.org/)
+[![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=000)](https://react.dev/)
+[![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-4-06B6D4?logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
+[![MongoDB](https://img.shields.io/badge/MongoDB_Atlas-7-47A248?logo=mongodb&logoColor=white)](https://www.mongodb.com/atlas)
+[![Vitest](https://img.shields.io/badge/Vitest-4-6E9F18?logo=vitest&logoColor=white)](https://vitest.dev/)
+[![Vercel](https://img.shields.io/badge/Vercel-deployed-000000?logo=vercel&logoColor=white)](https://vercel.com/)
+
+[![Discord](https://img.shields.io/badge/Discord-join_the_hive-5865F2?logo=discord&logoColor=white)](https://discord.gg/Ga2XusN6Ty)
 [![Live site](https://img.shields.io/badge/live-news.mukoko.com-brightgreen)](https://news.mukoko.com)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+
+</div>
+
+---
+
+> **The sibling repos.** This one is the reader-facing web app. The
+> [gateway](https://github.com/nyuchi/mukoko-news-gateway) is the public API and MCP server;
+> the [pipeline](https://github.com/nyuchi/mukoko-news-pipeline) does the ingestion and
+> enrichment. Issues land in whichever repo owns the code.
 
 ---
 
@@ -26,10 +57,7 @@ The frontend reads news data directly from MongoDB Atlas via Next.js Server Acti
 
 ## Features
 
-- **Pan-African coverage** — all 54 African Union member states are in scope; the number
-  currently *live* is a measured figure, not a claim in this file. `coverageFragment()` /
-  `coverageClaim()` in `src/lib/constants.ts` are the only sanctioned way to state it, and
-  `getLiveCoverageAction()` resolves the count from the corpus at read time.
+- **Pan-African coverage** — see [Coverage](#coverage) for what that claim means
 - **Discover** — browse by country, category, or source
 - **NewsBytes** — TikTok-style vertical swipe feed for quick headlines
 - **Search** — full-text search across all articles
@@ -40,11 +68,30 @@ The frontend reads news data directly from MongoDB Atlas via Next.js Server Acti
 
 ---
 
+---
+
+## Coverage
+
+**All 54 African Union member states are in scope. The number that is *live* is a query, not a constant.**
+
+`getLiveCoverageAction()` counts the countries that actually cleared the publishing bar in
+the last 30 days, and `coverageFragment(n)` / `coverageClaim(n)` in `src/lib/constants.ts`
+are the only sanctioned wording — every page, meta tag and JSON-LD blurb interpolates one
+of them. So a country that starts producing appears on its own, and one that goes quiet
+drops off on its own, with no code change and nobody editing a number in a file.
+
+This README deliberately does not print the current figure. A hard-coded count in a
+document nothing tests is exactly how the app came to claim "16 African countries" on nine
+surfaces that had each drifted apart. `src/lib/__tests__/coverage-claim.test.ts` enforces
+the rule for `src/`; here it is enforced by not writing one down.
+
 ## Contributing
 
-We welcome contributions to the frontend — UI improvements, new features, bug fixes, accessibility, tests, and documentation are all fair game. **You do not need a database connection to contribute**: all 448 tests run against mocked data, and most UI work can be done with the dev server pointed at the live API.
+We welcome contributions to the frontend — UI improvements, new features, bug fixes, accessibility, tests, and documentation are all fair game. **You do not need a database connection to contribute**: the whole suite runs against mocked data, and most UI work can be done with the dev server pointed at the live API.
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide, and come say hello in
+[**the Discord**](https://discord.gg/Ga2XusN6Ty) — it is the fastest way to get a question
+answered or to find out whether someone is already on the issue you picked.
 
 ### Quick start for contributors
 
@@ -69,7 +116,7 @@ Open [http://localhost:3000](http://localhost:3000).
 - All React components in `src/components/`
 - Page layouts and routing in `src/app/`
 - The embed widget script in `public/embed/`
-- Any of the 448 unit and integration tests — they all mock the data layer
+- Any of the unit and integration tests — they all mock the data layer
 - Documentation and accessibility improvements
 
 ### Running tests
@@ -98,16 +145,23 @@ pnpm test:coverage    # with coverage report
 
 ### Design system
 
-Nyuchi Brand v6 — African Minerals palette:
+**[Mzizi](https://mzizi.nyuchi.com) is the source of truth** — the palette, the background
+scale and the type ramp are read from its MCP (`mzizi_get_tokens`), not defined here.
+`src/app/globals.css` holds this app's copy, and `src/app/__tests__/design-tokens.test.ts`
+asserts every value against a checked-in Mzizi snapshot, so a drift fails CI rather than
+shipping.
 
-| Token | Colour | Name |
-|---|---|---|
-| Primary | `#4B0082` | Tanzanite |
-| Secondary | `#0047AB` | Cobalt |
-| Accent | `#5D4037` | Gold |
-| Surface | `#FAF9F5` | Warm Cream |
+Seven **African Minerals** carry the brand; these four are the ones you meet first:
 
-Fonts: Noto Serif (headings) + Plus Jakarta Sans (body).
+| Role | Light | Dark | Mineral |
+|---|---|---|---|
+| `--primary` | `#4B0082` | `#B388FF` | Tanzanite |
+| `--secondary` | `#0047AB` | `#00B0FF` | Cobalt |
+| `--success` | `#004D40` | `#64FFDA` | Malachite |
+| `--surface` | `#EEEEEC` | `#131211` | *(Mzizi `surface` — a background step, not a mineral)* |
+
+Fonts: **Noto Serif** (display/headings), **Noto Sans** (UI/body), **JetBrains Mono**
+(data and labels) — self-hosted via `next/font`.
 
 ---
 

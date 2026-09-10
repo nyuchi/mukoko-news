@@ -32,15 +32,15 @@ const CSS = readFileSync(join(process.cwd(), 'src/app/globals.css'), 'utf8')
 const SNAPSHOT: Record<string, [string, string]> = {
   // backgrounds — the scale the app was missing five steps of
   '--background': ['#F3F3F1', '#0E0D0C'], // base
-  // ROLE ≠ STEP. Owner decision 2026-09-10: the card sits BELOW the matte page,
-  // because it is the surface that holds text. In light that is Mzizi `surface`
-  // (#EEEEEC, a step darker than base); in dark it is `void` (#080807, a step
-  // darker than base) — NOT `surface` (#131211), which is LIGHTER than the page
-  // and made the card a raised slab, the exact reading the 2026-09-05 doctrine
-  // rejected. `void` also stays clear of `--muted` (#050504), which is what
-  // made the previous #050504 wrong: a card and the inset row inside it were
-  // one colour. Both values are still genuine Mzizi steps — asserted below.
-  '--surface': ['#EEEEEC', '#080807'],
+  // Mzizi `surface` in BOTH themes (owner decision 2026-09-10, third and
+  // final on this token: Mzizi is the source of truth, so a role takes the
+  // step that carries its name unless the design system itself says
+  // otherwise). This reverses the same-day decision that pointed dark
+  // `--surface` at `void` (#080807) to keep the card below the matte page —
+  // an app-local reading of the scale that Mzizi does not make. It stays
+  // clear of `--muted` (#050504), which is the failure that started this:
+  // a card and the inset row inside it must never be one colour.
+  '--surface': ['#EEEEEC', '#131211'],
   '--muted': ['#FAF9F5', '#050504'],
   '--elevated': ['#E5E4E1', '#1E1D1A'], // container
   '--popover': ['#E0DFDC', '#23221F'], // overlay
@@ -126,32 +126,54 @@ describe('the two defects this file exists to prevent', () => {
     }
   })
 
-  it('every surface value is a real Mzizi step, not an invented hex', () => {
-    // This is what makes re-pointing a ROLE at a different STEP safe. The
-    // snapshot above says which step each role uses and a reviewer sees that
-    // choice in the diff; this says nobody may reach for a hex that is not in
-    // the scale at all, which is the failure the snapshot alone cannot catch
-    // once a role is allowed to move.
-    const SCALE = new Set(
-      [
-        ['#F3F3F1', '#0E0D0C'], // base
-        ['#EEEEEC', '#131211'], // surface
-        ['#FAF9F5', '#050504'], // muted
-        ['#E5E4E1', '#1E1D1A'], // container
-        ['#E0DFDC', '#23221F'], // overlay
-        ['#F8F8F7', '#080807'], // void
-        ['#FAFAFA', '#050505'], // pitch
-        ['#D6D5D1', '#2E2C29'], // raised
-      ].flat()
-    )
-    for (const [block, theme] of [
-      [light, 'light'],
-      [dark, 'dark'],
-      [root, 'root'],
-    ] as const) {
-      for (const token of ['--background', '--surface', '--card', '--muted', '--elevated']) {
-        const value = declared(block, token)?.toUpperCase()
-        expect(SCALE.has(value ?? ''), `${token} in ${theme} is ${value}`).toBe(true)
+  it('every surface role takes the Mzizi step that carries its name', () => {
+    // Stronger than "is a real step somewhere in the scale", and it is what
+    // "Mzizi is the source of truth" actually means: `--surface` is Mzizi
+    // `surface`, `--elevated` is `container`, and so on, in both themes.
+    //
+    // The weaker version of this check existed because one role had been
+    // deliberately re-pointed at another role's step (dark `--surface` at
+    // `void`), so the app could only promise the value came from the scale,
+    // not that it came from the right place in it. With that re-point undone,
+    // a divergence is a bug rather than a decision, and this catches it at the
+    // point it is introduced instead of leaving it to a reviewer's eye.
+    //
+    // Refresh MZIZI_STEPS from `mzizi_get_tokens: backgrounds` when the design
+    // system publishes new values — never by editing an expectation to match
+    // whatever globals.css happens to say.
+    const MZIZI_STEPS: Record<string, [string, string]> = {
+      base: ['#F3F3F1', '#0E0D0C'],
+      surface: ['#EEEEEC', '#131211'],
+      muted: ['#FAF9F5', '#050504'],
+      container: ['#E5E4E1', '#1E1D1A'],
+      overlay: ['#E0DFDC', '#23221F'],
+      void: ['#F8F8F7', '#080807'],
+      pitch: ['#FAFAFA', '#050505'],
+      raised: ['#D6D5D1', '#2E2C29'],
+    }
+    const ROLE_TO_STEP: Record<string, keyof typeof MZIZI_STEPS> = {
+      '--background': 'base',
+      '--surface': 'surface',
+      '--card': 'surface',
+      '--muted': 'muted',
+      '--elevated': 'container',
+      '--popover': 'overlay',
+      '--void': 'void',
+      '--pitch': 'pitch',
+      '--raised': 'raised',
+    }
+    for (const [token, step] of Object.entries(ROLE_TO_STEP)) {
+      const [wantLight, wantDark] = MZIZI_STEPS[step]
+      expect(declared(light, token)?.toUpperCase(), `${token} (light) must be Mzizi \`${step}\``).toBe(
+        wantLight.toUpperCase()
+      )
+      for (const [block, name] of [
+        [dark, 'dark'],
+        [root, 'root'],
+      ] as const) {
+        expect(declared(block, token)?.toUpperCase(), `${token} (${name}) must be Mzizi \`${step}\``).toBe(
+          wantDark.toUpperCase()
+        )
       }
     }
   })
