@@ -54,7 +54,7 @@ function SavedContent() {
 
       {/* Anonymous saves live in this browser only — nudge toward the account. */}
       {!authLoading && !user && (
-        <div className="mb-6 flex flex-wrap items-center gap-3 rounded-2xl border border-elevated bg-surface px-4 py-3 text-sm">
+        <div className="mb-6 flex flex-wrap items-center gap-3 rounded-2xl border border-outline bg-surface px-4 py-3 text-sm">
           <CloudUpload className="w-4 h-4 text-secondary shrink-0" aria-hidden="true" />
           <span className="text-text-secondary">
             Saved articles are stored on this device.{" "}

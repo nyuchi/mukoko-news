@@ -195,3 +195,105 @@ describe("DiscoverPage - Sources Section", () => {
     expect(screen.queryByText("Browse by Source")).not.toBeInTheDocument();
   });
 });
+
+describe("country grid figures come from the corpus, not the loaded slice", () => {
+  /**
+   * The card used to read `articles.filter(...).length` — the count within the
+   * CURRENTLY LOADED page of articles. Nigeria has 11,025 articles in the last
+   * 30 days and the card showed whatever handful were in the client's current
+   * slice, labelled flatly as "N Articles": a smaller number than the truth,
+   * presented as the truth, and different every time the feed was filtered.
+   */
+  const LIVE_COVERAGE = {
+    codes: ["NG", "KE"],
+    countries: [
+      { code: "NG", recent: 11025, sources: 71, newsrooms: 70 },
+      { code: "KE", recent: 2349, sources: 27, newsrooms: 24 },
+    ],
+    count: 2,
+    scopeTotal: 54,
+    fragment: "live in 2 African countries, with all 54 in scope",
+    claim: "Live in 2 African countries…",
+    stale: false,
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // Exactly ONE Nigerian article in the loaded slice, against 11,025 in the
+    // corpus. If the card ever prints "1" for Nigeria again, it has gone back
+    // to counting the slice.
+    mockGetArticles.mockResolvedValue({
+      articles: [
+        {
+          id: "a1",
+          title: "A Nigerian story",
+          source: "Punch",
+          published_at: "2026-09-09T08:00:00.000Z",
+          country: "NG",
+        },
+      ],
+      total: 1,
+    });
+    mockGetCategories.mockResolvedValue([]);
+    mockGetSources.mockResolvedValue([]);
+  });
+
+  async function renderWithCoverage() {
+    const { CoverageProvider } = await import("@/contexts/coverage-context");
+    render(
+      <CoverageProvider value={LIVE_COVERAGE}>
+        <DiscoverPage />
+      </CoverageProvider>
+    );
+    await waitFor(() => expect(screen.queryByTestId("loading-skeleton")).toBeNull());
+  }
+
+  it("shows the corpus article count, not the number in the loaded slice", async () => {
+    await renderWithCoverage();
+    expect(screen.getByText(/71 sources · 70 newsrooms · 11,025 articles/)).toBeInTheDocument();
+    // The slice held exactly one Nigerian article; that must not be what shows.
+    expect(screen.queryByText(/^1 Articles$/)).toBeNull();
+  });
+
+  it("reports sources and newsrooms as the different numbers they are", async () => {
+    // Kenya is 27 feed sources across 24 mastheads. Collapsing them into one
+    // figure would either inflate the newsroom count or under-report the feeds,
+    // and which of the two a reader wants depends on the question they are
+    // asking — so the card answers both rather than picking for them.
+    await renderWithCoverage();
+    expect(screen.getByText(/27 sources · 24 newsrooms · 2,349 articles/)).toBeInTheDocument();
+  });
+
+  it("singularises a one-source country", async () => {
+    const { CoverageProvider } = await import("@/contexts/coverage-context");
+    render(
+      <CoverageProvider
+        value={{
+          ...LIVE_COVERAGE,
+          codes: ["LS"],
+          countries: [{ code: "LS", recent: 511, sources: 1, newsrooms: 1 }],
+          count: 1,
+        }}
+      >
+        <DiscoverPage />
+      </CoverageProvider>
+    );
+    await waitFor(() => expect(screen.queryByTestId("loading-skeleton")).toBeNull());
+    expect(screen.getByText(/1 source · 1 newsroom · 511 articles/)).toBeInTheDocument();
+  });
+
+  it("invents no figures when the corpus read fell back", async () => {
+    // `countries` is empty on the fallback path by design. A card that filled
+    // in a plausible-looking number here would be fabricating precision at
+    // exactly the moment the platform knows least.
+    const { CoverageProvider } = await import("@/contexts/coverage-context");
+    render(
+      <CoverageProvider value={{ ...LIVE_COVERAGE, countries: [], stale: true }}>
+        <DiscoverPage />
+      </CoverageProvider>
+    );
+    await waitFor(() => expect(screen.queryByTestId("loading-skeleton")).toBeNull());
+    expect(screen.queryByText(/sources ·/)).toBeNull();
+    expect(screen.getAllByText(/Browse news|Coming soon/).length).toBeGreaterThan(0);
+  });
+});

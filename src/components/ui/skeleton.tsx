@@ -123,7 +123,7 @@ export function InsightsPageSkeleton() {
       {/* Stats grid */}
       <div className="grid grid-cols-3 gap-4 mb-8">
         {Array.from({ length: 3 }).map((_, i) => (
-          <div key={i} className="bg-surface rounded-2xl p-6 border border-elevated">
+          <div key={i} className="bg-surface rounded-2xl p-6 border border-outline">
             <Skeleton className="h-8 w-8 rounded-full mx-auto mb-3" />
             <Skeleton className="h-8 w-20 mx-auto mb-2" />
             <Skeleton className="h-4 w-16 mx-auto" />
@@ -135,7 +135,7 @@ export function InsightsPageSkeleton() {
       <Skeleton className="h-6 w-40 mb-4" />
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {Array.from({ length: 8 }).map((_, i) => (
-          <div key={i} className="bg-surface rounded-xl p-4 border border-elevated">
+          <div key={i} className="bg-surface rounded-xl p-4 border border-outline">
             <Skeleton className="h-8 w-8 mb-3" />
             <Skeleton className="h-5 w-24 mb-2" />
             <Skeleton className="h-3 w-16" />

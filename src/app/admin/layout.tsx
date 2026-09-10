@@ -49,7 +49,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   if (!canAccessAdmin(tier)) {
     return (
       <div className="min-h-[70vh] flex items-center justify-center px-6 py-12">
-        <div className="w-full max-w-md rounded-2xl border border-elevated bg-surface p-8 text-center">
+        <div className="w-full max-w-md rounded-2xl border border-outline bg-surface p-8 text-center">
           <div className="w-16 h-16 bg-warning/10 rounded-full flex items-center justify-center mx-auto mb-4">
             <ShieldAlert className="w-8 h-8 text-warning" />
           </div>
@@ -63,7 +63,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           <div className="flex items-center justify-center gap-3">
             <Link
               href="/"
-              className="px-5 py-2.5 bg-surface border border-elevated text-foreground font-medium rounded-xl hover:bg-elevated transition-colors"
+              className="px-5 py-2.5 bg-surface border border-outline text-foreground font-medium rounded-xl hover:bg-elevated transition-colors"
             >
               Back to news
             </Link>

@@ -232,7 +232,7 @@ function ProvenanceSection({ provenance }: { provenance: ArticleProvenance }) {
   const enhancedOn = formatDate(newsdataEnhancedAt);
 
   return (
-    <section className="mt-6 rounded-2xl border border-border bg-elevated p-5" aria-label="Pipeline provenance">
+    <section className="mt-6 rounded-2xl border border-outline bg-elevated p-5" aria-label="Pipeline provenance">
       <div className="flex flex-wrap items-center gap-2">
         <h3 className="font-serif text-base font-bold text-foreground">Pipeline provenance</h3>
         <Badge tone="bg-container-sodalite text-on-container-sodalite">Staff only</Badge>
@@ -399,7 +399,7 @@ export function ArticleMetricsPanel({ article }: { article: ArticleMetricsInput 
         About this article
       </h2>
 
-      <dl className="mt-2 divide-y divide-border rounded-2xl border border-border bg-surface px-5 py-1">
+      <dl className="mt-2 divide-y divide-border rounded-2xl border border-outline bg-surface px-5 py-1">
         {length.length > 0 && (
           <MetaRow label="Length">
             <span className="flex items-center gap-1.5">

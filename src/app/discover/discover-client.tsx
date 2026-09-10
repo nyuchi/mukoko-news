@@ -10,14 +10,12 @@ import { DiscoverPageSkeleton } from "@/components/ui/discover-skeleton";
 import { type Article, type Category } from "@/lib/api";
 import { getArticlesAction, getCategoriesAction, getSourcesAction } from "@/lib/actions/feed";
 import { categoryTone } from "@/lib/category-tone";
+import { useCoverage } from "@/contexts/coverage-context";
 import {
   COUNTRIES,
   CATEGORY_META,
   getFullUrl,
-  COVERAGE_FRAGMENT,
   COUNTRY_SCOPE_TOTAL,
-  RELEASED_COUNTRY_COUNT,
-  isReleasedCountry,
 } from "@/lib/constants";
 import { WebPageJsonLd } from "@/components/ui/json-ld";
 
@@ -53,6 +51,27 @@ export default function DiscoverClient({
   initialCategories = null,
   initialSources = null,
 }: DiscoverClientProps) {
+  // One shared figure: the page description, the "coming soon" test and the
+  // country grid must all agree, and they only can if they read the same value.
+  const coverage = useCoverage();
+  const liveCodes = useMemo(() => new Set(coverage.codes), [coverage.codes]);
+  /**
+   * Per-country figures from the corpus, keyed by code.
+   *
+   * The card used to read `articles.filter(...).length` — the count within the
+   * CURRENTLY LOADED page of articles, not the country's coverage. Nigeria has
+   * 11,025 articles in the last 30 days and the card was showing whatever
+   * handful of them happened to be in the client's current slice, labelled
+   * flatly as "N Articles". That is a smaller number than the truth, presented
+   * as the truth, and it moved every time the feed was filtered.
+   *
+   * Empty on the fallback path, in which case the card says "Browse news"
+   * rather than inventing a figure.
+   */
+  const countryStats = useMemo(
+    () => new Map(coverage.countries.map((c) => [c.code, c])),
+    [coverage.countries]
+  );
   const searchParams = useSearchParams();
   const router = useRouter();
   const [articles, setArticles] = useState<Article[]>(initialArticles ?? []);
@@ -159,7 +178,7 @@ export default function DiscoverClient({
   // A country that is in scope but not released yet. Its page is honest about
   // that rather than rendering an empty result set, which reads to a reader as
   // "we lost the articles" and to a crawler as a soft-404.
-  const countryComingSoon = !!activeCountry && !isReleasedCountry(activeCountry);
+  const countryComingSoon = !!activeCountry && !liveCodes.has(activeCountry);
 
   if (loading) {
     return <DiscoverPageSkeleton />;
@@ -189,7 +208,7 @@ export default function DiscoverClient({
     <ErrorBoundary fallback={<div className="p-8 text-center text-text-secondary">Failed to load discover page</div>}>
       <WebPageJsonLd
         name="Discover — Mukoko News"
-        description={`Explore African news by category, country and trending topics. Browse sources and discover stories — ${COVERAGE_FRAGMENT}.`}
+        description={`Explore African news by category, country and trending topics. Browse sources and discover stories — ${coverage.fragment}.`}
         url={getFullUrl("/discover")}
       />
       <div className="mx-auto w-full max-w-[var(--width-wide)] px-[var(--page-gutter)] sm:px-[var(--page-gutter-sm)] py-8">
@@ -209,7 +228,7 @@ export default function DiscoverClient({
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="Search articles, topics, or sources..."
-          className="w-full pl-12 pr-4 py-4 bg-surface rounded-2xl border border-elevated outline-none text-foreground placeholder:text-text-tertiary focus:ring-2 focus:ring-primary/50 focus:border-primary/50"
+          className="w-full pl-12 pr-4 py-4 bg-surface rounded-2xl border border-outline outline-none text-foreground placeholder:text-text-tertiary focus:ring-2 focus:ring-primary/50 focus:border-primary/50"
         />
       </form>
 
@@ -254,8 +273,8 @@ export default function DiscoverClient({
                     {COUNTRIES.find((c) => c.code === activeCountry)?.name} is coming soon
                   </p>
                   <p className="text-text-secondary text-sm mt-2 max-w-md mx-auto">
-                    Mukoko News is live in {RELEASED_COUNTRY_COUNT} African countries today, with
-                    all {COUNTRY_SCOPE_TOTAL} African Union member states in scope. We have not
+                    Mukoko News is live in {coverage.count} African countries today, with
+                    all {coverage.scopeTotal} African Union member states in scope. We have not
                     onboarded a newsroom here yet.
                   </p>
                   <Link
@@ -309,7 +328,7 @@ export default function DiscoverClient({
                   <Link
                     key={category.id}
                     href={`/discover?category=${category.id}`}
-                    className="flex items-center gap-3 p-4 bg-surface rounded-xl border border-elevated hover:border-primary/30 hover:bg-elevated transition-all group"
+                    className="flex items-center gap-3 p-4 bg-surface rounded-xl border border-outline hover:border-primary/30 hover:bg-elevated transition-all group"
                   >
                     <div
                       className={`flex h-10 w-10 items-center justify-center rounded-full text-lg ${categoryTone(category.id)}`}
@@ -335,13 +354,13 @@ export default function DiscoverClient({
             <h2 className="text-xl font-bold text-foreground mb-6">Browse by Country</h2>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
               {COUNTRIES.map((country) => {
-                const articleCount = articles.filter(a => (a.country_id || a.country) === country.code).length;
-                const released = isReleasedCountry(country.code);
+                const stats = countryStats.get(country.code);
+                const released = liveCodes.has(country.code);
                 return (
                   <Link
                     key={country.code}
                     href={`/discover?country=${country.code}`}
-                    className="flex items-center gap-3 p-4 bg-surface rounded-xl border border-elevated hover:border-primary/30 hover:bg-elevated transition-all group"
+                    className="flex items-center gap-3 p-4 bg-surface rounded-xl border border-outline hover:border-primary/30 hover:bg-elevated transition-all group"
                   >
                     {/* Neutral, not a per-country hue: the flag is the
                         country's identity and the circle is just the shape it
@@ -354,8 +373,8 @@ export default function DiscoverClient({
                         {country.name}
                       </p>
                       <p className="text-xs text-text-tertiary">
-                        {articleCount > 0
-                          ? `${articleCount} Articles`
+                        {stats
+                          ? `${stats.sources} ${stats.sources === 1 ? "source" : "sources"} · ${stats.newsrooms} ${stats.newsrooms === 1 ? "newsroom" : "newsrooms"} · ${stats.recent.toLocaleString()} articles`
                           : released
                             ? "Browse news"
                             : "Coming soon"}
@@ -403,7 +422,7 @@ function SourcesSection({ sources }: { sources: Source[] }) {
             <Link
               key={source.id}
               href={`/discover?source=${encodeURIComponent(source.name)}`}
-              className="flex items-center gap-3 p-4 bg-surface rounded-xl border border-elevated hover:border-primary/30 hover:bg-elevated transition-all group"
+              className="flex items-center gap-3 p-4 bg-surface rounded-xl border border-outline hover:border-primary/30 hover:bg-elevated transition-all group"
             >
               <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
                 <Newspaper className="w-5 h-5 text-primary" />
@@ -447,7 +466,7 @@ function KeywordCloud({ keywords }: { keywords: Keyword[] }) {
             <Link
               key={keyword.id}
               href={`/search?q=${encodeURIComponent(keyword.name)}`}
-              className="inline-block bg-surface rounded-full border border-elevated hover:border-primary/30 hover:bg-elevated transition-all text-foreground hover:text-primary whitespace-nowrap"
+              className="inline-block bg-surface rounded-full border border-outline hover:border-primary/30 hover:bg-elevated transition-all text-foreground hover:text-primary whitespace-nowrap"
               style={{
                 fontSize: `${fontSize}rem`,
                 fontWeight,

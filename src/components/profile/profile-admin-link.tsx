@@ -50,7 +50,7 @@ export function ProfileAdminLink() {
   if (!access?.canAccessAdmin) return null;
 
   return (
-    <div className="bg-surface border border-elevated rounded-2xl overflow-hidden mb-6">
+    <div className="bg-surface border border-outline rounded-2xl overflow-hidden mb-6">
       <Link
         href="/admin"
         className="flex items-center gap-3 px-4 py-4 hover:bg-elevated transition-colors"

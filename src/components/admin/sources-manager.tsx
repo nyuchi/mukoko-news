@@ -47,12 +47,12 @@ export function SourcesManager({ initialSources }: SourcesManagerProps) {
       </div>
 
       {notice && (
-        <div className="mb-4 rounded-xl border border-elevated bg-surface px-4 py-3 text-sm text-foreground">
+        <div className="mb-4 rounded-xl border border-outline bg-surface px-4 py-3 text-sm text-foreground">
           {notice}
         </div>
       )}
 
-      <div className="overflow-x-auto rounded-xl border border-elevated">
+      <div className="overflow-x-auto rounded-xl border border-outline">
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-elevated/40 text-left text-text-tertiary">
@@ -105,7 +105,7 @@ export function SourcesManager({ initialSources }: SourcesManagerProps) {
                   <button
                     onClick={() => toggle(s)}
                     disabled={busyId === s.id}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-elevated px-3 py-1.5 text-xs font-medium text-foreground hover:bg-elevated transition-colors disabled:opacity-60"
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-outline px-3 py-1.5 text-xs font-medium text-foreground hover:bg-elevated transition-colors disabled:opacity-60"
                   >
                     {busyId === s.id && <Loader2 className="w-3 h-3 animate-spin" />}
                     {s.isActive ? 'Deactivate' : 'Activate'}

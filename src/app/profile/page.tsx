@@ -24,6 +24,7 @@ import type { MyProfile } from "@/lib/mongodb/identity";
 import { ProfileIdentity } from "@/components/profile/profile-identity";
 import { ProfilePreferences } from "@/components/profile/profile-preferences";
 import { ProfileOrganizations } from "@/components/profile/profile-organizations";
+import { ProfileAppearance } from "@/components/profile/profile-appearance";
 import { ProfileAdminLink } from "@/components/profile/profile-admin-link";
 
 function ProfileContent() {
@@ -133,8 +134,10 @@ function ProfileContent() {
           Renders nothing when there are none. */}
       <ProfileOrganizations />
 
+      <ProfileAppearance />
+
       {/* Publisher tools — the Tier-2 claim entry point. */}
-      <div className="bg-surface border border-elevated rounded-2xl overflow-hidden mb-6">
+      <div className="bg-surface border border-outline rounded-2xl overflow-hidden mb-6">
         <h2 className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-text-tertiary border-b border-elevated">
           Publisher
         </h2>
@@ -155,7 +158,7 @@ function ProfileContent() {
         </Link>
       </div>
 
-      <div className="bg-surface border border-elevated rounded-2xl overflow-hidden">
+      <div className="bg-surface border border-outline rounded-2xl overflow-hidden">
         <h2 className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-text-tertiary border-b border-elevated">
           Settings
         </h2>
@@ -188,7 +191,7 @@ function ProfileContent() {
 
       <button
         onClick={() => signOut({ returnTo: "/" })}
-        className="mt-6 w-full flex items-center justify-center gap-2 px-6 py-3 bg-surface border border-elevated text-foreground font-medium rounded-xl hover:bg-elevated transition-colors"
+        className="mt-6 w-full flex items-center justify-center gap-2 px-6 py-3 bg-surface border border-outline text-foreground font-medium rounded-xl hover:bg-elevated transition-colors"
       >
         <LogOut className="w-4 h-4" />
         Sign out
@@ -209,7 +212,7 @@ function SettingsCard({
   onTheme: () => void;
 }) {
   return (
-    <div className="bg-surface border border-elevated rounded-2xl overflow-hidden">
+    <div className="bg-surface border border-outline rounded-2xl overflow-hidden">
       <h2 className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-text-tertiary border-b border-elevated">
         Settings
       </h2>
@@ -237,7 +240,7 @@ function AboutCard() {
     { href: "/privacy", label: "Privacy Policy", icon: Shield },
   ];
   return (
-    <div className="bg-surface border border-elevated rounded-2xl overflow-hidden mt-6">
+    <div className="bg-surface border border-outline rounded-2xl overflow-hidden mt-6">
       <h2 className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-text-tertiary border-b border-elevated">
         About
       </h2>

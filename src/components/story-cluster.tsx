@@ -18,7 +18,7 @@ export function StoryCluster({ cluster }: StoryClusterProps) {
   const timeAgo = formatTimeAgo(primaryArticle.published_at);
 
   return (
-    <div className="rounded-[var(--radius-card)] overflow-hidden bg-surface border border-border">
+    <div className="rounded-[var(--radius-card)] overflow-hidden bg-surface border border-outline">
       {/* Primary Article */}
       <Link href={`/article/${primaryArticle.id}`} className="block group">
         {/* Image */}
@@ -131,7 +131,7 @@ export function StoryClusterCompact({ cluster }: StoryClusterProps) {
   return (
     <Link
       href={`/article/${primaryArticle.id}`}
-      className="block w-[280px] flex-shrink-0 rounded-xl overflow-hidden bg-surface border border-border hover:border-primary/60 transition-colors"
+      className="block w-[280px] flex-shrink-0 rounded-xl overflow-hidden bg-surface border border-outline hover:border-primary/60 transition-colors"
     >
       {/* Image */}
       {hasImage && (

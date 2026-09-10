@@ -21,7 +21,7 @@ export default function GlobalError({
     <html lang="en" className="dark">
       <body className="font-sans antialiased">
         <div className="flex min-h-screen items-center justify-center p-6">
-          <div className="w-full max-w-md rounded-card border border-border bg-surface p-8 text-center">
+          <div className="w-full max-w-md rounded-card border border-outline bg-surface p-8 text-center">
             <h2 className="font-serif text-xl font-semibold text-foreground">
               Something went wrong loading Mukoko News
             </h2>

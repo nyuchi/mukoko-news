@@ -10,7 +10,8 @@ import { OnboardingModal } from '@/components/onboarding-modal';
 import { ServiceWorkerRegister } from '@/components/pwa/sw-register';
 import { WebMcpProvider } from '@/components/agent/webmcp-provider';
 import { OrganizationJsonLd, WebSiteJsonLd } from '@/components/ui/json-ld';
-import { COVERAGE_FRAGMENT } from '@/lib/constants';
+import { getLiveCoverageAction } from '@/lib/actions/coverage';
+import { CoverageProvider } from '@/contexts/coverage-context';
 import { AuthKitProvider } from '@workos-inc/authkit-nextjs/components';
 
 // Fonts are self-hosted via next/font (downloaded at build time, served from
@@ -38,88 +39,101 @@ const jetbrainsMono = JetBrains_Mono({
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://news.mukoko.com';
 
-export const metadata: Metadata = {
-  metadataBase: new URL(BASE_URL),
-  title: {
-    default: 'Mukoko News - Pan-African News Hub',
-    template: '%s | Mukoko News',
-  },
-  description: `Pan-African digital news aggregation platform. Your trusted source for breaking news, top stories and in-depth coverage — ${COVERAGE_FRAGMENT}.`,
-  keywords: [
-    'African news',
-    'Pan-African news',
-    'Zimbabwe news',
-    'Africa headlines',
-    'breaking news Africa',
-    'South Africa news',
-    'Kenya news',
-    'Nigeria news',
-    'African politics',
-    'African economy',
-    'news aggregator',
-  ],
-  authors: [{ name: 'Nyuchi', url: 'https://nyuchi.com' }],
-  creator: 'Nyuchi',
-  publisher: 'Mukoko News',
-  formatDetection: {
-    email: false,
-    address: false,
-    telephone: false,
-  },
-  openGraph: {
-    title: 'Mukoko News - Pan-African News Hub',
-    description: `Your trusted source for breaking news and top stories from across Africa — ${COVERAGE_FRAGMENT}.`,
-    url: BASE_URL,
-    siteName: 'Mukoko News',
-    images: [
-      {
-        url: '/mukoko-icon-dark.png',
-        width: 512,
-        height: 512,
-        alt: 'Mukoko News - Pan-African News Hub',
-      },
+/**
+ * Async because the coverage claim is a live count now, not a constant.
+ *
+ * `getLiveCoverageAction` reads through `unstable_cache`, so this stays a
+ * cached data read rather than a request read — routes remain statically
+ * renderable. That is the same reason `withAuth()` is deliberately kept out of
+ * this file: cookies would make every route dynamic, cached data does not.
+ */
+export async function generateMetadata(): Promise<Metadata> {
+  const coverage = await getLiveCoverageAction();
+  return {
+    metadataBase: new URL(BASE_URL),
+    title: {
+      default: 'Mukoko News - Pan-African News Hub',
+      template: '%s | Mukoko News',
+    },
+    description: `Pan-African digital news aggregation platform. Your trusted source for breaking news, top stories and in-depth coverage — ${coverage.fragment}.`,
+    keywords: [
+      'African news',
+      'Pan-African news',
+      'Zimbabwe news',
+      'Africa headlines',
+      'breaking news Africa',
+      'South Africa news',
+      'Kenya news',
+      'Nigeria news',
+      'African politics',
+      'African economy',
+      'news aggregator',
     ],
-    locale: 'en_US',
-    type: 'website',
-  },
-  twitter: {
-    card: 'summary',
-    title: 'Mukoko News - Pan-African News Hub',
-    description: 'Your trusted source for breaking news and top stories from across Africa.',
-    images: ['/mukoko-icon-dark.png'],
-    site: '@mukokoafrica',
-    creator: '@mukokoafrica',
-  },
-  robots: {
-    index: true,
-    follow: true,
-    googleBot: {
+    authors: [{ name: 'Nyuchi', url: 'https://nyuchi.com' }],
+    creator: 'Nyuchi',
+    publisher: 'Mukoko News',
+    formatDetection: {
+      email: false,
+      address: false,
+      telephone: false,
+    },
+    openGraph: {
+      title: 'Mukoko News - Pan-African News Hub',
+      description: `Your trusted source for breaking news and top stories from across Africa — ${coverage.fragment}.`,
+      url: BASE_URL,
+      siteName: 'Mukoko News',
+      images: [
+        {
+          url: '/mukoko-icon-dark.png',
+          width: 512,
+          height: 512,
+          alt: 'Mukoko News - Pan-African News Hub',
+        },
+      ],
+      locale: 'en_US',
+      type: 'website',
+    },
+    twitter: {
+      card: 'summary',
+      title: 'Mukoko News - Pan-African News Hub',
+      description: 'Your trusted source for breaking news and top stories from across Africa.',
+      images: ['/mukoko-icon-dark.png'],
+      site: '@mukokoafrica',
+      creator: '@mukokoafrica',
+    },
+    robots: {
       index: true,
       follow: true,
-      'max-video-preview': -1,
-      'max-image-preview': 'large',
-      'max-snippet': -1,
+      googleBot: {
+        index: true,
+        follow: true,
+        'max-video-preview': -1,
+        'max-image-preview': 'large',
+        'max-snippet': -1,
+      },
     },
-  },
-  // NOTE: no `alternates.canonical` here. App Router inherits root metadata
-  // per top-level field, so a canonical set at the root is emitted verbatim on
-  // every route that does not override it — which made /about, /topic/[slug]
-  // and /publishers/claim all self-canonicalise to the homepage. Each route
-  // now declares its own canonical (see src/app/page.tsx for the home one).
-  category: 'news',
-  classification: 'News Aggregator',
-  referrer: 'origin-when-cross-origin',
-  icons: {
-    icon: [
-      { url: '/favicon.svg', type: 'image/svg+xml' },
-      { url: '/favicon-32.png', sizes: '32x32', type: 'image/png' },
-      { url: '/favicon-16.png', sizes: '16x16', type: 'image/png' },
-      { url: '/favicon.ico', sizes: '48x48' },
-    ],
-    apple: [{ url: '/apple-touch-icon.png', sizes: '180x180', type: 'image/png' }],
-  },
-  manifest: '/manifest.json',
-};
+    // NOTE: no `alternates.canonical` here. App Router inherits root metadata
+    // per top-level field, so a canonical set at the root is emitted verbatim on
+    // every route that does not override it — which made /about, /topic/[slug]
+    // and /publishers/claim all self-canonicalise to the homepage. Each route
+    // now declares its own canonical (see src/app/page.tsx for the home one).
+    category: 'news',
+    classification: 'News Aggregator',
+    referrer: 'origin-when-cross-origin',
+    icons: {
+      icon: [
+        { url: '/favicon.svg', type: 'image/svg+xml' },
+        { url: '/favicon-32.png', sizes: '32x32', type: 'image/png' },
+        { url: '/favicon-16.png', sizes: '16x16', type: 'image/png' },
+        { url: '/favicon.ico', sizes: '48x48' },
+      ],
+      apple: [{ url: '/apple-touch-icon.png', sizes: '180x180', type: 'image/png' }],
+    },
+    // No explicit `manifest:` — `app/manifest.ts` is served at
+    // /manifest.webmanifest and Next links it automatically. The old
+    // '/manifest.json' path no longer exists and would 404.
+  };
+}
 
 export const viewport: Viewport = {
   width: 'device-width',
@@ -131,11 +145,16 @@ export const viewport: Viewport = {
   viewportFit: 'cover',
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // Resolved once here and handed down: the structured data below needs it, and
+  // so do four client components further in. One cached read serves all of them
+  // and guarantees they cannot disagree with each other on the same screen.
+  const coverage = await getLiveCoverageAction();
+
   return (
     <html
       lang="en"
@@ -144,21 +163,29 @@ export default function RootLayout({
     >
       <head>
         {/* Fonts are self-hosted via next/font — no Google Fonts preconnect needed */}
-        {/* Theme bootstrap: applies the stored theme class before first paint so
-            ThemeProvider can render SSR HTML without a wrong-theme flash.
-            Static script (no interpolation); key must match ThemeProvider's
-            storageKey ("mukoko-news-theme"). */}
+        {/* Appearance bootstrap: applies the stored theme class AND the outline
+            preference before first paint, so SSR HTML never flashes the wrong
+            theme or an un-outlined frame.
+
+            Static script (no interpolation). It runs before any module is
+            evaluated, so both storage keys are string literals here and cannot
+            import their constants — `appearance.test.ts` asserts this script
+            still agrees with `ThemeProvider`'s storageKey ("mukoko-news-theme")
+            and with `OUTLINE_STORAGE_KEY` / `OUTLINE_ATTRIBUTE`, which is the
+            only thing standing between a rename and a setting that silently
+            stops applying. */}
         <script
           dangerouslySetInnerHTML={{
             __html:
-              "(function(){try{var t=localStorage.getItem('mukoko-news-theme');var d=t==='light'?false:t==='dark'?true:window.matchMedia('(prefers-color-scheme: dark)').matches;var c=document.documentElement.classList;c.remove('light','dark');c.add(d?'dark':'light');}catch(e){}})()",
+              "(function(){try{var t=localStorage.getItem('mukoko-news-theme');var d=t==='light'?false:t==='dark'?true:window.matchMedia('(prefers-color-scheme: dark)').matches;var c=document.documentElement.classList;c.remove('light','dark');c.add(d?'dark':'light');if(localStorage.getItem('mukoko-news-outlines')==='on')document.documentElement.setAttribute('data-outlines','on');}catch(e){}})()",
           }}
         />
-        <OrganizationJsonLd />
-        <WebSiteJsonLd />
+        <OrganizationJsonLd coverage={coverage} />
+        <WebSiteJsonLd coverage={coverage} />
       </head>
       <body className="font-sans antialiased min-h-screen flex flex-col">
         <AuthKitProvider>
+        <CoverageProvider value={coverage}>
         <ThemeProvider defaultTheme="system" storageKey="mukoko-news-theme">
           <PreferencesProvider>
             {/* Five African Minerals vertical stripe */}
@@ -194,6 +221,7 @@ export default function RootLayout({
             <WebMcpProvider />
           </PreferencesProvider>
         </ThemeProvider>
+        </CoverageProvider>
         </AuthKitProvider>
       </body>
     </html>

@@ -24,7 +24,7 @@ export default function AdminUsersPage() {
       </div>
 
       {/* Honest empty state — no user data source is wired up yet */}
-      <div className="bg-surface rounded-xl border border-elevated p-12 flex flex-col items-center text-center">
+      <div className="bg-surface rounded-xl border border-outline p-12 flex flex-col items-center text-center">
         <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center mb-4">
           <Users className="w-7 h-7 text-primary" />
         </div>

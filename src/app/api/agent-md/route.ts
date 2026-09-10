@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { getArticleAction, getArticlesAction } from '@/lib/actions/feed'
-import { BASE_URL, getArticleUrl, COVERAGE_CLAIM } from '@/lib/constants'
+import { BASE_URL, getArticleUrl } from '@/lib/constants'
+import { getLiveCoverageAction } from '@/lib/actions/coverage'
 import { articleExcerpt } from '@/lib/excerpt'
 
 // Markdown-for-Agents responder. The middleware rewrites GET requests that carry
@@ -73,10 +74,13 @@ async function articleMarkdown(id: string): Promise<Response> {
 
 /** Render the homepage as a markdown index of the latest headlines. */
 async function homepageMarkdown(): Promise<Response> {
-  const { articles } = await getArticlesAction({ sort: 'latest', limit: 30 })
+  const [{ articles }, coverage] = await Promise.all([
+    getArticlesAction({ sort: 'latest', limit: 30 }),
+    getLiveCoverageAction(),
+  ])
   const lines: string[] = [
     '# Mukoko News',
-    `Pan-African news aggregation. ${COVERAGE_CLAIM}`,
+    `Pan-African news aggregation. ${coverage.claim}`,
     '',
     '## Latest headlines',
     '',

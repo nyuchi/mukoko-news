@@ -37,7 +37,7 @@ function StatCard({
   tint: string
 }) {
   return (
-    <div className="bg-surface rounded-xl p-5 border border-elevated">
+    <div className="bg-surface rounded-xl p-5 border border-outline">
       <Icon className={`w-6 h-6 mb-3 ${tint}`} />
       <div className="text-2xl font-bold text-foreground">{value.toLocaleString()}</div>
       <p className="text-sm text-text-secondary">{label}</p>
@@ -138,7 +138,7 @@ export default async function AdminAnalyticsPage() {
       {/* Top categories — live article counts */}
       {categories.length > 0 && (
         <section className="mb-8">
-          <div className="bg-surface rounded-xl border border-elevated p-6">
+          <div className="bg-surface rounded-xl border border-outline p-6">
             <h3 className="font-semibold text-foreground mb-4">Top Categories by Article Count</h3>
             <div className="space-y-3">
               {categories.map((cat) => (
@@ -162,7 +162,7 @@ export default async function AdminAnalyticsPage() {
 
       {/* Honest placeholder for metrics with no backing data yet */}
       <section>
-        <div className="bg-surface rounded-xl border border-elevated p-6 flex items-start gap-4">
+        <div className="bg-surface rounded-xl border border-outline p-6 flex items-start gap-4">
           <BarChart3 className="w-6 h-6 text-text-tertiary shrink-0 mt-0.5" />
           <div>
             <h3 className="font-semibold text-foreground mb-1">Not tracked yet</h3>

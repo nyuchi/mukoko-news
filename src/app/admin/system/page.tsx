@@ -31,7 +31,7 @@ export default async function AdminSystemPage() {
       <section className="mb-8">
         <h2 className="text-lg font-semibold text-foreground mb-4">Status</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="bg-surface rounded-xl border border-elevated p-5">
+          <div className="bg-surface rounded-xl border border-outline p-5">
             <div className="flex items-center gap-3 mb-3">
               <Database
                 className={`w-6 h-6 ${dbPing.ok ? 'text-success' : 'text-warning'}`}
@@ -50,7 +50,7 @@ export default async function AdminSystemPage() {
             </div>
           </div>
 
-          <div className="bg-surface rounded-xl border border-elevated p-5">
+          <div className="bg-surface rounded-xl border border-outline p-5">
             <div className="flex items-center gap-3 mb-3">
               <Activity className="w-6 h-6 text-secondary" />
               <span className="font-medium text-foreground">Health Probe</span>
@@ -82,7 +82,7 @@ export default async function AdminSystemPage() {
 
       <section>
         <h2 className="text-lg font-semibold text-foreground mb-4">Pipeline</h2>
-        <div className="bg-surface rounded-xl border border-elevated p-5 flex items-start gap-4">
+        <div className="bg-surface rounded-xl border border-outline p-5 flex items-start gap-4">
           <Workflow className="w-6 h-6 text-text-tertiary shrink-0 mt-0.5" />
           <div>
             <p className="font-medium text-foreground mb-1">Ingestion &amp; enrichment</p>
