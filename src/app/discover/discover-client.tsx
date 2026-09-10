@@ -374,7 +374,7 @@ export default function DiscoverClient({
                       </p>
                       <p className="text-xs text-text-tertiary">
                         {stats
-                          ? `${stats.sources} ${stats.sources === 1 ? "source" : "sources"} · ${stats.recent.toLocaleString()} articles`
+                          ? `${stats.sources} ${stats.sources === 1 ? "source" : "sources"} · ${stats.newsrooms} ${stats.newsrooms === 1 ? "newsroom" : "newsrooms"} · ${stats.recent.toLocaleString()} articles`
                           : released
                             ? "Browse news"
                             : "Coming soon"}

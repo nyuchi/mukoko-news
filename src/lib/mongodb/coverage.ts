@@ -22,27 +22,38 @@ export interface CoveredCountry {
   code: string
   /** Articles published in the window. */
   recent: number
-  /**
-   * Distinct NEWSROOMS that published here in the window — not feed endpoints.
-   *
-   * The two differ and the gap is not noise. One publisher routinely holds
-   * several feed sources: newsdata.io registers an outlet under the id it was
-   * discovered with, so an outlet already ingested over RSS gets a second
-   * record. Measured on the live cluster in the same window, Kenya has **27
-   * feed sources across 24 newsrooms**, South Africa 60 across 58, Zimbabwe 37
-   * across 35, Nigeria 71 across 70.
-   *
-   * A reader asking "how many sources cover Kenya" means newsrooms. Counting
-   * endpoints would tell them 27 when three of those are the same three
-   * mastheads delivering twice — an inflation of exactly the kind
-   * `services/source_identity.py` and the feed-source dedup exist to remove.
-   *
-   * Counted from `mediaOrganizationId`, which is the article's reference to the
-   * publisher record. Articles whose organisation never resolved are counted
-   * under a single `null` bucket rather than as one newsroom each, so an
-   * unresolved publisher can never inflate this.
-   */
+  /** Distinct FEED SOURCES that published here in the window. */
   sources: number
+  /**
+   * Distinct NEWSROOMS (mastheads) that published here in the window.
+   *
+   * ## The three levels, and which one this is
+   *
+   *   publisher / entity   the publishing house      `entity.entities`
+   *     └── newsroom       the masthead              `news.newsMediaOrganizations`
+   *           └── source   the feed endpoint         `news.feedSources`
+   *
+   * A publishing house runs several mastheads and each masthead can be
+   * delivered by several feeds, so the three counts are genuinely different
+   * questions. This is the middle one. Measured live in the same window:
+   * Kenya 27 sources across 24 newsrooms, South Africa 60 across 58, Zimbabwe
+   * 37 across 35, Nigeria 71 across 70.
+   *
+   * ## The publisher level is NOT derivable from this data today
+   *
+   * `newsMediaOrganizations.entityId` exists, but measured on the live cluster
+   * there are 537 organisations and 536 distinct entity ids — it is 1:1. The
+   * Herald, Chronicle Zimbabwe, Manica Post, Sunday Mail and H-Metro are all
+   * Zimpapers mastheads and every one carries a DIFFERENT `entityId`. So
+   * grouping by entity would not group anything; a "publishers" count taken
+   * from it would silently equal the newsroom count and read as a fact.
+   * Nothing here claims a publisher count until the entity domain groups them.
+   *
+   * Counted from `mediaOrganizationId`. Articles whose organisation never
+   * resolved collapse into a single `null` bucket rather than counting as one
+   * newsroom each, so a resolution failure cannot inflate this.
+   */
+  newsrooms: number
 }
 
 /**
@@ -63,7 +74,7 @@ export async function getTopCountriesByRecentVolume(
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000)
     const rows = await db
       .collection('articles')
-      .aggregate<{ _id: string; recent: number; sources: number }>([
+      .aggregate<{ _id: string; recent: number; sources: number; newsrooms: number }>([
         {
           $match: {
             status: { $ne: 'rejected' },
@@ -76,10 +87,17 @@ export async function getTopCountriesByRecentVolume(
           $group: {
             _id: '$countryCode',
             recent: { $sum: 1 },
-            publishers: { $addToSet: '$mediaOrganizationId' },
+            feedSources: { $addToSet: '$feedSourceId' },
+            newsrooms: { $addToSet: '$mediaOrganizationId' },
           },
         },
-        { $project: { recent: 1, sources: { $size: '$publishers' } } },
+        {
+          $project: {
+            recent: 1,
+            sources: { $size: '$feedSources' },
+            newsrooms: { $size: '$newsrooms' },
+          },
+        },
         { $sort: { recent: -1 } },
         { $limit: limit },
       ])
@@ -89,6 +107,7 @@ export async function getTopCountriesByRecentVolume(
       code: String(r._id).trim().toUpperCase(),
       recent: r.recent,
       sources: r.sources,
+      newsrooms: r.newsrooms,
     }))
   } catch (error) {
     console.error('[coverage.getTopCountriesByRecentVolume]', error)
@@ -142,7 +161,7 @@ export async function getLiveCountries(): Promise<CoveredCountry[]> {
     const since = new Date(Date.now() - LIVE_COUNTRY_WINDOW_DAYS * 24 * 60 * 60 * 1000)
     const rows = await db
       .collection('articles')
-      .aggregate<{ _id: string; recent: number; sources: number }>([
+      .aggregate<{ _id: string; recent: number; sources: number; newsrooms: number }>([
         {
           $match: {
             status: { $ne: 'rejected' },
@@ -155,14 +174,21 @@ export async function getLiveCountries(): Promise<CoveredCountry[]> {
           $group: {
             _id: '$countryCode',
             recent: { $sum: 1 },
-            // $addToSet on the same pass rather than a second query: the
+            // Both sets on the same pass rather than extra queries: the
             // grouping is already the expensive part on a 1.5 GB collection,
-            // and the set is bounded by the number of publishers in a country
-            // (71 at the largest), not by the article count.
-            publishers: { $addToSet: '$mediaOrganizationId' },
+            // and each set is bounded by the count for one country (71 at the
+            // largest), not by the article count.
+            feedSources: { $addToSet: '$feedSourceId' },
+            newsrooms: { $addToSet: '$mediaOrganizationId' },
           },
         },
-        { $project: { recent: 1, sources: { $size: '$publishers' } } },
+        {
+          $project: {
+            recent: 1,
+            sources: { $size: '$feedSources' },
+            newsrooms: { $size: '$newsrooms' },
+          },
+        },
         // Filter AFTER grouping: the threshold is on the country's total, not
         // on any one article, so it cannot be pushed into the $match.
         { $match: { recent: { $gte: LIVE_COUNTRY_MIN_RECENT_ARTICLES } } },
@@ -174,6 +200,7 @@ export async function getLiveCountries(): Promise<CoveredCountry[]> {
       code: String(r._id).trim().toUpperCase(),
       recent: r.recent,
       sources: r.sources,
+      newsrooms: r.newsrooms,
     }))
   } catch (error) {
     console.error('[coverage.getLiveCountries]', error)

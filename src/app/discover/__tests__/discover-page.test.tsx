@@ -207,8 +207,8 @@ describe("country grid figures come from the corpus, not the loaded slice", () =
   const LIVE_COVERAGE = {
     codes: ["NG", "KE"],
     countries: [
-      { code: "NG", recent: 11025, sources: 70 },
-      { code: "KE", recent: 2349, sources: 24 },
+      { code: "NG", recent: 11025, sources: 71, newsrooms: 70 },
+      { code: "KE", recent: 2349, sources: 27, newsrooms: 24 },
     ],
     count: 2,
     scopeTotal: 54,
@@ -250,14 +250,18 @@ describe("country grid figures come from the corpus, not the loaded slice", () =
 
   it("shows the corpus article count, not the number in the loaded slice", async () => {
     await renderWithCoverage();
-    expect(screen.getByText(/70 sources · 11,025 articles/)).toBeInTheDocument();
+    expect(screen.getByText(/71 sources · 70 newsrooms · 11,025 articles/)).toBeInTheDocument();
     // The slice held exactly one Nigerian article; that must not be what shows.
     expect(screen.queryByText(/^1 Articles$/)).toBeNull();
   });
 
-  it("counts newsrooms per country", async () => {
+  it("reports sources and newsrooms as the different numbers they are", async () => {
+    // Kenya is 27 feed sources across 24 mastheads. Collapsing them into one
+    // figure would either inflate the newsroom count or under-report the feeds,
+    // and which of the two a reader wants depends on the question they are
+    // asking — so the card answers both rather than picking for them.
     await renderWithCoverage();
-    expect(screen.getByText(/24 sources · 2,349 articles/)).toBeInTheDocument();
+    expect(screen.getByText(/27 sources · 24 newsrooms · 2,349 articles/)).toBeInTheDocument();
   });
 
   it("singularises a one-source country", async () => {
@@ -267,7 +271,7 @@ describe("country grid figures come from the corpus, not the loaded slice", () =
         value={{
           ...LIVE_COVERAGE,
           codes: ["LS"],
-          countries: [{ code: "LS", recent: 511, sources: 1 }],
+          countries: [{ code: "LS", recent: 511, sources: 1, newsrooms: 1 }],
           count: 1,
         }}
       >
@@ -275,7 +279,7 @@ describe("country grid figures come from the corpus, not the loaded slice", () =
       </CoverageProvider>
     );
     await waitFor(() => expect(screen.queryByTestId("loading-skeleton")).toBeNull());
-    expect(screen.getByText(/1 source · 511 articles/)).toBeInTheDocument();
+    expect(screen.getByText(/1 source · 1 newsroom · 511 articles/)).toBeInTheDocument();
   });
 
   it("invents no figures when the corpus read fell back", async () => {

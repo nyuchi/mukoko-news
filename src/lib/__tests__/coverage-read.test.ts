@@ -38,21 +38,21 @@ describe('getLiveCountries', () => {
 
   it('returns the countries the corpus reports, with articles and sources', async () => {
     stub([
-      { _id: 'NG', recent: 11025, sources: 70 },
-      { _id: 'KE', recent: 2349, sources: 24 },
+      { _id: 'NG', recent: 11025, sources: 71, newsrooms: 70 },
+      { _id: 'KE', recent: 2349, sources: 27, newsrooms: 24 },
     ]);
 
     await expect(getLiveCountries()).resolves.toEqual([
-      { code: 'NG', recent: 11025, sources: 70 },
-      { code: 'KE', recent: 2349, sources: 24 },
+      { code: 'NG', recent: 11025, sources: 71, newsrooms: 70 },
+      { code: 'KE', recent: 2349, sources: 27, newsrooms: 24 },
     ]);
   });
 
-  it('counts NEWSROOMS, not feed endpoints', async () => {
-    // The distinction this field exists for. One publisher routinely holds
-    // several feed sources — measured live, Kenya is 27 feed sources across 24
-    // newsrooms. Counting `feedSourceId` would tell a reader 27 when three of
-    // those are the same three mastheads delivering twice.
+  it('counts feed sources and newsrooms from their own fields', async () => {
+    // These are two different questions and the pipeline must not conflate
+    // them. A masthead can be delivered by several feeds — Kenya is 27 feed
+    // sources across 24 newsrooms — so reading one count off the other field
+    // would be wrong in whichever direction it was done.
     stub([]);
     await getLiveCountries();
 
@@ -60,8 +60,21 @@ describe('getLiveCountries', () => {
     const group = pipeline.find((s) => '$group' in (s as object)) as {
       $group: Record<string, unknown>;
     };
-    expect(group.$group.publishers).toEqual({ $addToSet: '$mediaOrganizationId' });
-    expect(JSON.stringify(pipeline)).not.toContain('feedSourceId');
+    expect(group.$group.feedSources).toEqual({ $addToSet: '$feedSourceId' });
+    expect(group.$group.newsrooms).toEqual({ $addToSet: '$mediaOrganizationId' });
+  });
+
+  it('claims no PUBLISHER count, because the data cannot support one', async () => {
+    // publisher (entity) → newsroom (masthead) → source (feed) is the intended
+    // model, but `newsMediaOrganizations.entityId` is 1:1 on the live cluster
+    // — 537 organisations, 536 distinct entity ids — and the Zimpapers
+    // mastheads (Herald, Chronicle, Manica Post, Sunday Mail, H-Metro) each
+    // carry a different one. Grouping by entity would group nothing and yield
+    // a "publishers" figure identical to the newsroom count, presented as a
+    // separate fact. Nothing here touches `entityId` until it groups.
+    stub([]);
+    await getLiveCountries();
+    expect(JSON.stringify(articles.aggregateCalls[0].pipeline)).not.toContain('entityId');
   });
 
   it('gets the source count from the SAME pass as the article count', async () => {
@@ -111,7 +124,7 @@ describe('getLiveCountries', () => {
   });
 
   it('normalises the country code', async () => {
-    stub([{ _id: '  ke  ', recent: 900, sources: 4 }]);
+    stub([{ _id: '  ke  ', recent: 900, sources: 4, newsrooms: 4 }]);
     const [row] = await getLiveCountries();
     expect(row.code).toBe('KE');
   });
@@ -131,7 +144,7 @@ describe('getTopCountriesByRecentVolume', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     articles = collectionStub({
-      aggregate: [[{ _id: 'NG', recent: 11025, sources: 70 }]],
+      aggregate: [[{ _id: 'NG', recent: 11025, sources: 71, newsrooms: 70 }]],
     });
     mockGetDb.mockResolvedValue(dbStub({ articles }));
   });
@@ -141,7 +154,7 @@ describe('getTopCountriesByRecentVolume', () => {
     // the onboarding picker and the discover grid would disagree about the
     // same country on the same corpus.
     await expect(getTopCountriesByRecentVolume(6)).resolves.toEqual([
-      { code: 'NG', recent: 11025, sources: 70 },
+      { code: 'NG', recent: 11025, sources: 71, newsrooms: 70 },
     ]);
   });
 
