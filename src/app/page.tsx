@@ -1,7 +1,15 @@
+import type { Metadata } from "next";
 import HomeClient from "./home-client";
 import { getSectionedFeedAction, getCategoriesAction, type SectionedFeed } from "@/lib/actions/feed";
-import { DEFAULT_FEED_COUNTRIES } from "@/lib/constants";
+import { DEFAULT_FEED_COUNTRIES, BASE_URL } from "@/lib/constants";
 import type { Category } from "@/lib/api";
+
+// The home canonical is declared here rather than inherited from the root
+// layout: a root-level canonical is emitted on every route that does not set
+// its own, which pointed unrelated pages at "/".
+export const metadata: Metadata = {
+  alternates: { canonical: BASE_URL },
+};
 
 // ISR: serve cached HTML with real feed content on first paint; regenerate at
 // most every 3 minutes (news staleness budget). Client-side refetch still

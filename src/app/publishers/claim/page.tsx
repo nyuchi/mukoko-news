@@ -1,11 +1,13 @@
 import type { Metadata } from 'next'
 import { BadgeCheck } from 'lucide-react'
+import { getFullUrl } from '@/lib/constants'
 import { PublisherClaimForm } from '@/components/publisher/publisher-claim-form'
 
 export const metadata: Metadata = {
   title: 'Claim your publication',
   description:
     'Verify that you represent a news source on Mukoko News. Verified publishers earn a trust boost on their sources.',
+  alternates: { canonical: getFullUrl('/publishers/claim') },
 }
 
 export default function PublisherClaimPage() {
