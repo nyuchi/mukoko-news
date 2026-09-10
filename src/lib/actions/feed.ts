@@ -258,9 +258,16 @@ export async function getSourcesAction() {
 }
 
 export async function getStatsAction() {
-  return safeRead('stats', () => getStats(), {
-    database: { total_articles: 0, active_sources: 0, categories: 0, today_articles: 0 },
-  })
+  // The category count is composed here rather than queried: `news.categories`
+  // is deprecated (it always counted 0), and the honest number is the size of
+  // the derived list — which `cachedCategories` already has in hand.
+  const [stats, categories] = await Promise.all([
+    safeRead('stats', () => getStats(), {
+      database: { total_articles: 0, active_sources: 0, today_articles: 0 },
+    }),
+    safeRead('categories', () => cachedCategories(), [] as Awaited<ReturnType<typeof getCategories>>),
+  ])
+  return { database: { ...stats.database, categories: categories.length } }
 }
 
 export async function getTrendingAuthorsAction(limit = 5) {

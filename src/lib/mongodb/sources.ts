@@ -125,7 +125,6 @@ export async function getStats(): Promise<{
   database: {
     total_articles: number
     active_sources: number
-    categories: number
     today_articles: number
   }
 }> {
@@ -133,7 +132,7 @@ export async function getStats(): Promise<{
   const today = new Date()
   today.setHours(0, 0, 0, 0)
 
-  const [total_articles, active_sources, categories, today_articles] = await Promise.all([
+  const [total_articles, active_sources, today_articles] = await Promise.all([
     // `estimatedDocumentCount` reads collection metadata — O(1). The exact
     // version (`countDocuments({status: {$in: [...]}})`) cannot use an index
     // here: `status` is the SECOND key of `status_1_datePublished_-1`, so it is
@@ -147,7 +146,6 @@ export async function getStats(): Promise<{
     // handful that are rejected.
     db.collection('articles').estimatedDocumentCount(),
     db.collection('feedSources').countDocuments({ isActive: true }, { maxTimeMS: QUERY_MAX_TIME_MS }),
-    db.collection('categories').countDocuments({}, { maxTimeMS: QUERY_MAX_TIME_MS }),
     // Index-backed: `datePublished` IS the prefix, so this is a range seek.
     db.collection('articles').countDocuments(
       {
@@ -158,5 +156,10 @@ export async function getStats(): Promise<{
     ),
   ])
 
-  return { database: { total_articles, active_sources, categories, today_articles } }
+  // `categories` is deliberately absent: it used to count `news.categories`,
+  // which is deprecated and empty, so the figure the search page rendered was
+  // always 0. The real count comes from the derived category list, which the
+  // action layer already holds cached — composing it there costs nothing, while
+  // deriving it here would put a 1.4s aggregation behind /api/health.
+  return { database: { total_articles, active_sources, today_articles } }
 }

@@ -7,14 +7,6 @@ import { getDb, QUERY_MAX_TIME_MS } from './client'
 import { clampInt, MAX_LIMIT } from '@/lib/safety'
 import type { Category } from '@/lib/api'
 
-interface MongoCategory {
-  _id: string
-  categorySlug: string
-  name: string
-  description?: string
-  sortOrder: number
-}
-
 interface MongoTag {
   _id: string
   tagSlug: string
@@ -96,23 +88,23 @@ function slugToName(slug: string): string {
     .join(' ')
 }
 
+/**
+ * The category list, derived from what articles are ACTUALLY classified into.
+ *
+ * `news.categories` is DEPRECATED (owner decision 2026-09-10) and is no longer
+ * consulted. It is empty on the live cluster and its content is superseded by
+ * the interest-category vocabulary; leaving the branch in would mean that
+ * re-populating a stale collection could silently override live classification
+ * with names that no longer match anything on an article.
+ *
+ * The source of truth for what a category IS is now
+ * `article.engagement.interest_categories` — the denormalised slug cache the
+ * enrichment pipeline writes and the frontend is documented to read.
+ */
 export async function getCategories(): Promise<Category[]> {
   const db = await getDb()
 
-  // Prefer curated category docs when the collection is populated…
-  const curated = await db.collection<MongoCategory>('categories')
-    .find({})
-    .sort({ sortOrder: 1 })
-    .toArray()
-  if (curated.length > 0) {
-    return curated.map(d => ({
-      id: d._id,
-      name: d.name,
-      slug: d.categorySlug,
-    }))
-  }
-
-  // …otherwise derive the list from the categories articles are ACTUALLY
+  // Derive the list from the categories articles are ACTUALLY
   // classified into. AI enrichment writes slugs to
   // `engagement.interest_categories`; the legacy `articleSection` is hardcoded
   // "general" at ingestion, so grouping on it (the old behaviour) collapsed the
