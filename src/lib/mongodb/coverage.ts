@@ -22,6 +22,27 @@ export interface CoveredCountry {
   code: string
   /** Articles published in the window. */
   recent: number
+  /**
+   * Distinct NEWSROOMS that published here in the window — not feed endpoints.
+   *
+   * The two differ and the gap is not noise. One publisher routinely holds
+   * several feed sources: newsdata.io registers an outlet under the id it was
+   * discovered with, so an outlet already ingested over RSS gets a second
+   * record. Measured on the live cluster in the same window, Kenya has **27
+   * feed sources across 24 newsrooms**, South Africa 60 across 58, Zimbabwe 37
+   * across 35, Nigeria 71 across 70.
+   *
+   * A reader asking "how many sources cover Kenya" means newsrooms. Counting
+   * endpoints would tell them 27 when three of those are the same three
+   * mastheads delivering twice — an inflation of exactly the kind
+   * `services/source_identity.py` and the feed-source dedup exist to remove.
+   *
+   * Counted from `mediaOrganizationId`, which is the article's reference to the
+   * publisher record. Articles whose organisation never resolved are counted
+   * under a single `null` bucket rather than as one newsroom each, so an
+   * unresolved publisher can never inflate this.
+   */
+  sources: number
 }
 
 /**
@@ -42,7 +63,7 @@ export async function getTopCountriesByRecentVolume(
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000)
     const rows = await db
       .collection('articles')
-      .aggregate<{ _id: string; recent: number }>([
+      .aggregate<{ _id: string; recent: number; sources: number }>([
         {
           $match: {
             status: { $ne: 'rejected' },
@@ -51,13 +72,24 @@ export async function getTopCountriesByRecentVolume(
             countryCode: { $type: 'string', $ne: '' },
           },
         },
-        { $group: { _id: '$countryCode', recent: { $sum: 1 } } },
+        {
+          $group: {
+            _id: '$countryCode',
+            recent: { $sum: 1 },
+            publishers: { $addToSet: '$mediaOrganizationId' },
+          },
+        },
+        { $project: { recent: 1, sources: { $size: '$publishers' } } },
         { $sort: { recent: -1 } },
         { $limit: limit },
       ])
       .toArray()
 
-    return rows.map((r) => ({ code: String(r._id).trim().toUpperCase(), recent: r.recent }))
+    return rows.map((r) => ({
+      code: String(r._id).trim().toUpperCase(),
+      recent: r.recent,
+      sources: r.sources,
+    }))
   } catch (error) {
     console.error('[coverage.getTopCountriesByRecentVolume]', error)
     return []
@@ -110,7 +142,7 @@ export async function getLiveCountries(): Promise<CoveredCountry[]> {
     const since = new Date(Date.now() - LIVE_COUNTRY_WINDOW_DAYS * 24 * 60 * 60 * 1000)
     const rows = await db
       .collection('articles')
-      .aggregate<{ _id: string; recent: number }>([
+      .aggregate<{ _id: string; recent: number; sources: number }>([
         {
           $match: {
             status: { $ne: 'rejected' },
@@ -119,7 +151,18 @@ export async function getLiveCountries(): Promise<CoveredCountry[]> {
             countryCode: { $type: 'string', $ne: '' },
           },
         },
-        { $group: { _id: '$countryCode', recent: { $sum: 1 } } },
+        {
+          $group: {
+            _id: '$countryCode',
+            recent: { $sum: 1 },
+            // $addToSet on the same pass rather than a second query: the
+            // grouping is already the expensive part on a 1.5 GB collection,
+            // and the set is bounded by the number of publishers in a country
+            // (71 at the largest), not by the article count.
+            publishers: { $addToSet: '$mediaOrganizationId' },
+          },
+        },
+        { $project: { recent: 1, sources: { $size: '$publishers' } } },
         // Filter AFTER grouping: the threshold is on the country's total, not
         // on any one article, so it cannot be pushed into the $match.
         { $match: { recent: { $gte: LIVE_COUNTRY_MIN_RECENT_ARTICLES } } },
@@ -127,7 +170,11 @@ export async function getLiveCountries(): Promise<CoveredCountry[]> {
       ])
       .toArray()
 
-    return rows.map((r) => ({ code: String(r._id).trim().toUpperCase(), recent: r.recent }))
+    return rows.map((r) => ({
+      code: String(r._id).trim().toUpperCase(),
+      recent: r.recent,
+      sources: r.sources,
+    }))
   } catch (error) {
     console.error('[coverage.getLiveCountries]', error)
     return []

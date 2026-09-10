@@ -60,6 +60,7 @@ export function useCoverage(): LiveCoverage {
   const count = FALLBACK_LIVE_COUNTRY_CODES.length
   return {
     codes: FALLBACK_LIVE_COUNTRY_CODES,
+    countries: [],
     count,
     scopeTotal: COUNTRY_SCOPE_TOTAL,
     fragment: coverageFragment(count),

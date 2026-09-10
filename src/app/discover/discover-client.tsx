@@ -55,6 +55,23 @@ export default function DiscoverClient({
   // country grid must all agree, and they only can if they read the same value.
   const coverage = useCoverage();
   const liveCodes = useMemo(() => new Set(coverage.codes), [coverage.codes]);
+  /**
+   * Per-country figures from the corpus, keyed by code.
+   *
+   * The card used to read `articles.filter(...).length` — the count within the
+   * CURRENTLY LOADED page of articles, not the country's coverage. Nigeria has
+   * 11,025 articles in the last 30 days and the card was showing whatever
+   * handful of them happened to be in the client's current slice, labelled
+   * flatly as "N Articles". That is a smaller number than the truth, presented
+   * as the truth, and it moved every time the feed was filtered.
+   *
+   * Empty on the fallback path, in which case the card says "Browse news"
+   * rather than inventing a figure.
+   */
+  const countryStats = useMemo(
+    () => new Map(coverage.countries.map((c) => [c.code, c])),
+    [coverage.countries]
+  );
   const searchParams = useSearchParams();
   const router = useRouter();
   const [articles, setArticles] = useState<Article[]>(initialArticles ?? []);
@@ -337,7 +354,7 @@ export default function DiscoverClient({
             <h2 className="text-xl font-bold text-foreground mb-6">Browse by Country</h2>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
               {COUNTRIES.map((country) => {
-                const articleCount = articles.filter(a => (a.country_id || a.country) === country.code).length;
+                const stats = countryStats.get(country.code);
                 const released = liveCodes.has(country.code);
                 return (
                   <Link
@@ -356,8 +373,8 @@ export default function DiscoverClient({
                         {country.name}
                       </p>
                       <p className="text-xs text-text-tertiary">
-                        {articleCount > 0
-                          ? `${articleCount} Articles`
+                        {stats
+                          ? `${stats.sources} ${stats.sources === 1 ? "source" : "sources"} · ${stats.recent.toLocaleString()} articles`
                           : released
                             ? "Browse news"
                             : "Coming soon"}

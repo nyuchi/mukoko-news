@@ -89,7 +89,14 @@ jobs:
     - name: Validate JSON files
       if: matrix.check == 'JSON validity'
       run: |
+        # `-type f` is load-bearing, not tidiness. Next's App Router names a
+        # route directory after the path it serves, so serving
+        # /.well-known/mcp/server-card.json requires a DIRECTORY called
+        # `server-card.json`. Without -type f, `find` hands that directory to
+        # json.tool, which reports "Is a directory" and fails the whole check —
+        # a valid route breaking a lint job that has nothing to say about it.
         find . \
+          -type f \
           -name "*.json" \
           -not -path "*/node_modules/*" \
           -not -path "*/.git/*" \

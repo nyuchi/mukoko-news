@@ -2,7 +2,7 @@
 
 import { unstable_cache } from 'next/cache'
 
-import { getLiveCountries } from '@/lib/mongodb/coverage'
+import { getLiveCountries, type CoveredCountry } from '@/lib/mongodb/coverage'
 import {
   FALLBACK_LIVE_COUNTRY_CODES,
   COUNTRY_SCOPE_TOTAL,
@@ -20,6 +20,17 @@ import {
  */
 export interface LiveCoverage {
   codes: readonly string[]
+  /**
+   * Per-country detail, busiest first: how many articles and how many distinct
+   * NEWSROOMS (not feed endpoints — see `CoveredCountry.sources`) published
+   * there in the window.
+   *
+   * Empty when the fallback is in use: the pinned list is a set of codes and
+   * nothing more, and inventing per-country figures to go with it would be
+   * exactly the fabricated-precision failure the fallback exists to avoid.
+   * Callers must render country detail only when this has an entry.
+   */
+  countries: readonly CoveredCountry[]
   count: number
   scopeTotal: number
   fragment: string
@@ -65,6 +76,8 @@ const loadCoverage = unstable_cache(
     const count = codes.length
     return {
       codes,
+      // Deliberately empty on the fallback path — see the field's note.
+      countries: stale ? [] : live,
       count,
       scopeTotal: COUNTRY_SCOPE_TOTAL,
       fragment: coverageFragment(count),
@@ -92,6 +105,7 @@ export async function getLiveCoverageAction(): Promise<LiveCoverage> {
     const count = FALLBACK_LIVE_COUNTRY_CODES.length
     return {
       codes: FALLBACK_LIVE_COUNTRY_CODES,
+      countries: [],
       count,
       scopeTotal: COUNTRY_SCOPE_TOTAL,
       fragment: coverageFragment(count),
