@@ -11,6 +11,24 @@ export const MONGO_CLIENT_OPTIONS: MongoClientOptions = {
   socketTimeoutMS: 20000,
 }
 
+/**
+ * Server-side ceiling for a single read, passed as `maxTimeMS`.
+ *
+ * `socketTimeoutMS` above is the LAST line of defence, not the first, and on its
+ * own it is the wrong one: when the driver's socket timer fires it tears down the
+ * connection while the server happily keeps executing the query, so a slow read
+ * costs a pooled connection AND still burns cluster CPU to produce a result
+ * nobody is listening for. Under load that is how one expensive query becomes an
+ * outage — which is exactly what happened here (2026-09-10): unbounded feed
+ * reads over a 1.47 GB `articles` collection blew past 20s, the driver killed
+ * each socket, and every Server Action 500'd.
+ *
+ * `maxTimeMS` is checked by the server itself, so the operation is abandoned at
+ * the source and the connection stays usable. Set below the socket timeout so
+ * this is always what fires first.
+ */
+export const QUERY_MAX_TIME_MS = 15000
+
 // Lazily initialised so next build can collect page data without a live DB.
 let clientPromise: Promise<MongoClient> | null = null
 

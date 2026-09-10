@@ -9,6 +9,12 @@ on:
 permissions:
   contents: read
   pull-requests: read
+  # `vercel/repository-dispatch/actions/status` posts a commit status
+  # (statuses: write) and reads this run's job/step conclusions to decide
+  # success vs failure (actions: read). Without both it fails at the post step,
+  # after the real check has already passed — a confusing way to break CI.
+  statuses: write
+  actions: read
 
 jobs:
   # ── Repo hygiene linters (file/format checks) ──────────────────────────────
@@ -24,6 +30,29 @@ jobs:
         check: [actionlint, "JSON validity", prettier, markdownlint, yamllint]
 
     steps:
+    # Reports this check to Vercel as a named commit status.
+    #
+    # MUST be the first step. The action registers a `post` hook, and the hook is
+    # what actually reports the outcome: it scans this job's steps for a failure
+    # once they have all run. A step that is never reached never registers its
+    # post hook, so placing this at the end would report nothing in exactly the
+    # case that matters — a failing check.
+    #
+    # KNOWN LIMIT on `pull_request` runs: the action takes the commit from
+    # GITHUB_SHA, which on that event is the ephemeral merge commit
+    # (refs/pull/N/merge) rather than the PR head, so the status lands on a
+    # commit GitHub does not display. Measured twice — run 34425929192 wrote to
+    # 18e10b1 for head 92b65cf, run 34426047263 to 76b1e4b for head f5e08ad.
+    # It cannot be redirected: the action exposes no `sha` input, and GitHub
+    # documents that "you can't overwrite the value of the default environment
+    # variables named GITHUB_* and RUNNER_*", so setting GITHUB_SHA here is
+    # silently ignored (tried; it is why that second measurement exists).
+    # Push runs are unaffected — there GITHUB_SHA is the real commit.
+    - name: Notify Vercel
+      uses: vercel/repository-dispatch/actions/status@v1
+      with:
+        name: 'Vercel - mukoko-news: lint / ${{ matrix.check }}'
+
     - uses: actions/checkout@v4
 
     - name: Run actionlint
@@ -76,6 +105,11 @@ jobs:
     runs-on: ubuntu-latest
     name: ESLint
     steps:
+    - name: Notify Vercel
+      uses: vercel/repository-dispatch/actions/status@v1
+      with:
+        name: 'Vercel - mukoko-news: ESLint'
+
     - uses: actions/checkout@v4
     - uses: actions/setup-node@v4
       with:
@@ -90,6 +124,11 @@ jobs:
     name: Typecheck
     needs: eslint
     steps:
+    - name: Notify Vercel
+      uses: vercel/repository-dispatch/actions/status@v1
+      with:
+        name: 'Vercel - mukoko-news: Typecheck'
+
     - uses: actions/checkout@v4
     - uses: actions/setup-node@v4
       with:
@@ -104,6 +143,11 @@ jobs:
     name: Test
     needs: typecheck
     steps:
+    - name: Notify Vercel
+      uses: vercel/repository-dispatch/actions/status@v1
+      with:
+        name: 'Vercel - mukoko-news: Test'
+
     - uses: actions/checkout@v4
     - uses: actions/setup-node@v4
       with:
@@ -118,6 +162,11 @@ jobs:
     name: Build
     needs: test
     steps:
+    - name: Notify Vercel
+      uses: vercel/repository-dispatch/actions/status@v1
+      with:
+        name: 'Vercel - mukoko-news: Build'
+
     - uses: actions/checkout@v4
     - uses: actions/setup-node@v4
       with:
