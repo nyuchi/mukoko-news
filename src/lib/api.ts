@@ -10,6 +10,16 @@ interface Article {
   content_markdown?: string;
   source: string;
   source_id?: string;
+  /**
+   * The publisher's own website, resolved on read from its feed-source record.
+   *
+   * DERIVED, never stored on the article. Publisher identity has exactly one
+   * instance — the feed source / organisation record — and this is a per-request
+   * projection of it, so a corrected domain (or a revoked verification) takes
+   * effect everywhere on the next read instead of needing 63,832 rewrites.
+   * Consumed by the source icon; see `@/lib/publisher-icon`.
+   */
+  source_url?: string;
   slug: string;
   category?: string;
   category_id?: string;  // API returns category_id

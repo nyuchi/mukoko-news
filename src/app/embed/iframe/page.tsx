@@ -8,7 +8,7 @@ import { getArticlesAction } from "@/lib/actions/feed";
 import { getArticleUrl, BASE_URL, COUNTRIES } from "@/lib/constants";
 import { isValidImageUrl, formatTimeAgo, safeCssUrl } from "@/lib/utils";
 import { imageProxyUrl } from "@/lib/image";
-import { SourceIcon } from "@/components/ui/source-icon";
+import { SourceIcon, sourceIconProps } from "@/components/ui/source-icon";
 
 const REFRESH_INTERVAL = 5 * 60 * 1000; // 5 minutes
 
@@ -67,7 +67,7 @@ function HeroEmbed({ article }: { article: Article }) {
           )}
           <div className="flex items-center gap-3 mt-3 text-white/60 text-[11px]">
             <div className="flex items-center gap-1.5">
-              <SourceIcon source={article.source} size={14} showBorder={false} />
+              <SourceIcon {...sourceIconProps(article)} size={14} showBorder={false} />
               <span>{article.source}</span>
             </div>
             <time className="flex items-center gap-1" dateTime={article.published_at}>
@@ -106,7 +106,7 @@ function CardEmbed({ article }: { article: Article }) {
             {article.title}
           </h3>
           <div className="flex items-center gap-2 mt-2 text-text-tertiary">
-            <SourceIcon source={article.source} size={12} showBorder={false} />
+            <SourceIcon {...sourceIconProps(article)} size={12} showBorder={false} />
             <span className="text-[11px] truncate">{article.source}</span>
             <time className="flex items-center gap-0.5 text-[11px] shrink-0 ml-auto" dateTime={article.published_at}>
               <Clock className="w-2.5 h-2.5" />
@@ -129,7 +129,7 @@ function CompactEmbed({ article }: { article: Article }) {
       <article className="flex items-start gap-3 p-3 rounded-xl hover:bg-elevated transition-colors border border-transparent hover:border-primary/30">
         {/* Rank indicator */}
         <div className="w-6 h-6 rounded-full bg-primary/10 text-primary text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5">
-          <SourceIcon source={article.source} size={14} showBorder={false} />
+          <SourceIcon {...sourceIconProps(article)} size={14} showBorder={false} />
         </div>
         <div className="flex-1 min-w-0">
           {category && (
@@ -179,7 +179,7 @@ function ListEmbed({ article }: { article: Article }) {
             {article.title}
           </h3>
           <div className="flex items-center gap-2 mt-1 text-text-tertiary">
-            <SourceIcon source={article.source} size={12} showBorder={false} />
+            <SourceIcon {...sourceIconProps(article)} size={12} showBorder={false} />
             <span className="text-[11px] truncate">{article.source}</span>
             <time className="flex items-center gap-0.5 text-[11px] shrink-0" dateTime={article.published_at}>
               <Clock className="w-2.5 h-2.5" />

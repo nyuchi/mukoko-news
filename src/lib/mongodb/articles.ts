@@ -66,6 +66,31 @@ interface MongoFeedSource {
   name: string
   countryCode: string
   mediaOrganizationId: string
+  /**
+   * The publisher's own site and feed endpoint. Measured 2026-09-10: `feedUrl`
+   * is an http(s) URL on 587 of 587 sources, `sourceUrl` on 479. Both are
+   * already in every document these reads fetch (the feed-source lookups are
+   * unprojected), so carrying them costs no extra IO.
+   */
+  feedUrl?: string
+  sourceUrl?: string
+}
+
+/**
+ * The publisher's own website for a feed source, or undefined.
+ *
+ * `sourceUrl` is the site; `feedUrl` is the RSS endpoint on that same site, so
+ * its host is the publisher's either way. Only the host is consumed downstream
+ * (`@/lib/publisher-icon`), which is why the feed URL is an acceptable second
+ * choice rather than a guess.
+ */
+function resolveSourceSiteUrl(source?: MongoFeedSource): string | undefined {
+  const candidates = [source?.sourceUrl, source?.feedUrl]
+  for (const candidate of candidates) {
+    const trimmed = candidate?.trim()
+    if (trimmed && /^https?:\/\//i.test(trimmed)) return trimmed
+  }
+  return undefined
 }
 
 /**
@@ -188,6 +213,7 @@ function toArticle(
       : undefined,
     source: source?.name || doc.feedSourceId,
     source_id: doc.feedSourceId,
+    source_url: resolveSourceSiteUrl(source),
     slug: doc.slug,
     category: resolveCategory(doc),
     keywords: resolveKeywords(doc),

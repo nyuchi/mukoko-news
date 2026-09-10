@@ -4,7 +4,7 @@ import type { Article } from "@/lib/api";
 import { isValidImageUrl, formatTimeAgo } from "@/lib/utils";
 import { imageProxyUrl } from "@/lib/image";
 import { NyuchiArticleCard } from "@/components/brand/nyuchi-article-card";
-import { SourceBadge } from "@/components/ui/source-icon";
+import { SourceBadge, sourceIconProps } from "@/components/ui/source-icon";
 import { InlineEngagement } from "@/components/ui/engagement-bar";
 
 interface ArticleCardProps {
@@ -35,7 +35,7 @@ export function ArticleCard({ article, index }: ArticleCardProps) {
       category={category}
       publishedAt={formatTimeAgo(article.published_at)}
       index={index}
-      sourceSlot={<SourceBadge source={article.source} iconSize={16} />}
+      sourceSlot={<SourceBadge {...sourceIconProps(article)} iconSize={16} />}
       footer={
         hasEngagement ? (
           <div className="mt-3 pt-3 border-t border-elevated">
