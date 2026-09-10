@@ -163,10 +163,21 @@ export default function RootLayout({
             {/* Five African Minerals vertical stripe */}
             <div className="minerals-stripe" />
 
+            {/* Skip link: the header carries the brand, primary nav, search and
+                the account control, so without this a keyboard or switch user
+                re-traverses all of it on every page (WCAG 2.4.1). Visually
+                hidden until focused. */}
+            <a
+              href="#main-content"
+              className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[200] focus:rounded-xl focus:bg-primary focus:px-4 focus:py-3 focus:text-on-primary focus:font-medium focus:outline focus:outline-2 focus:outline-offset-2"
+            >
+              Skip to main content
+            </a>
+
             <Header />
             {/* Bottom padding on mobile keeps the floating nav pill from
                 covering the last row of content (nav height + lift + safe area) */}
-            <main className="flex-1 relative z-10 pb-[calc(env(safe-area-inset-bottom,0px)_+_5.5rem)] md:pb-0">
+            <main id="main-content" tabIndex={-1} className="flex-1 relative z-10 pb-[calc(env(safe-area-inset-bottom,0px)_+_5.5rem)] md:pb-0">
               {children}
             </main>
             <Footer />

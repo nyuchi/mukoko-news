@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useId } from "react";
 import { X, Link, Check, Twitter, Facebook, Linkedin, MessageCircle, Share2 } from "lucide-react";
 import type { Article } from "@/lib/api";
 
@@ -12,10 +12,53 @@ interface ShareModalProps {
 
 export function ShareModal({ article, isOpen, onClose }: ShareModalProps) {
   const [copied, setCopied] = useState(false);
+  const titleId = useId();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const restoreFocusRef = useRef<HTMLElement | null>(null);
 
   // Reset copied state when modal closes
   useEffect(() => {
     if (!isOpen) setCopied(false);
+  }, [isOpen]);
+
+  // Move focus into the dialog on open and hand it back to the trigger on
+  // close. Without this a keyboard or screen-reader user is never taken to the
+  // dialog, and on close focus falls back to <body> and they restart the page.
+  useEffect(() => {
+    if (!isOpen) return;
+    restoreFocusRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    dialogRef.current?.focus();
+    return () => {
+      restoreFocusRef.current?.focus?.();
+    };
+  }, [isOpen]);
+
+  // Keep Tab inside the dialog while it is open (WCAG 2.4.3): the page behind
+  // stays in the tab order otherwise, so the "modal" is only visually modal.
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Tab") return;
+      const root = dialogRef.current;
+      if (!root) return;
+      const focusable = root.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement;
+      if (e.shiftKey && (active === first || active === root)) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
   }, [isOpen]);
 
   // Handle escape key
@@ -96,25 +139,37 @@ export function ShareModal({ article, isOpen, onClose }: ShareModalProps) {
 
   return (
     <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center">
-      {/* Backdrop */}
+      {/* Backdrop. aria-hidden because Escape and the labelled close button are
+          the accessible ways out; this is a pointer convenience only. */}
       <div
+        aria-hidden="true"
         className="absolute inset-0 bg-black/60 backdrop-blur-sm"
         onClick={onClose}
       />
 
       {/* Modal */}
-      <div className="relative w-full max-w-md bg-surface rounded-t-3xl sm:rounded-3xl overflow-hidden animate-in slide-in-from-bottom duration-300">
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+        className="relative w-full max-w-md bg-surface rounded-t-3xl sm:rounded-3xl overflow-hidden animate-in slide-in-from-bottom duration-300 motion-reduce:animate-none focus:outline-none">
         {/* Handle bar (mobile) */}
         <div className="w-12 h-1 rounded-full bg-text-tertiary/30 mx-auto mt-3 sm:hidden" />
 
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-elevated">
-          <h2 className="text-lg font-semibold text-foreground">Share Article</h2>
+          <h2 id={titleId} className="text-lg font-semibold text-foreground">
+            Share Article
+          </h2>
           <button
+            type="button"
             onClick={onClose}
+            aria-label="Close share dialog"
             className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-elevated transition-colors"
           >
-            <X className="w-5 h-5 text-text-secondary" />
+            <X className="w-5 h-5 text-text-secondary" aria-hidden="true" />
           </button>
         </div>
 
@@ -133,7 +188,7 @@ export function ShareModal({ article, isOpen, onClose }: ShareModalProps) {
                 onClick={option.onClick}
                 className={`flex flex-col items-center gap-2 p-3 rounded-xl transition-colors ${option.color}`}
               >
-                <option.icon className="w-6 h-6" />
+                <option.icon className="w-6 h-6" aria-hidden="true" />
                 <span className="text-xs font-medium">{option.label}</span>
               </button>
             ))}
@@ -146,8 +201,10 @@ export function ShareModal({ article, isOpen, onClose }: ShareModalProps) {
           >
             {copied ? (
               <>
-                <Check className="w-5 h-5 text-green-500" />
-                <span className="text-green-500">Copied!</span>
+                <Check className="w-5 h-5 text-green-500" aria-hidden="true" />
+                <span className="text-green-500" role="status">
+                  Copied!
+                </span>
               </>
             ) : (
               <>
