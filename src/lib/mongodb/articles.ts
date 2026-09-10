@@ -8,6 +8,7 @@ import type { Collection, Filter } from 'mongodb'
 import { getDb, QUERY_MAX_TIME_MS } from './client'
 import { stripHtml } from '@/lib/utils'
 import { clampInt, MAX_LIMIT, MAX_PAGE } from '@/lib/safety'
+import { getPublisherOrganization, type PublisherOrganization } from './organizations'
 import type { Article } from '@/lib/api'
 
 interface MongoArticle {
@@ -155,7 +156,7 @@ const LIST_PROJECTION = {
 function toArticle(
   doc: MongoArticle,
   source?: MongoFeedSource,
-  opts: { fullContent?: boolean } = {}
+  opts: { fullContent?: boolean; organization?: PublisherOrganization } = {}
 ): Article {
   const imageUrl = resolveImageUrl(doc)
   return {
@@ -188,6 +189,14 @@ function toArticle(
       : undefined,
     source: source?.name || doc.feedSourceId,
     source_id: doc.feedSourceId,
+    // The publishing newsroom, RESOLVED — never stored. Only the reads that
+    // actually emit a publisher pass it in (the single-article path); list reads
+    // leave it undefined rather than pay a catalogue read per feed request, and
+    // an undefined publisher degrades to the feed-source name downstream. It is
+    // deliberately NOT derived from `source`: one masthead can hold several feed
+    // sources under names that disagree, and collapsing the two is the bug this
+    // field exists to fix.
+    publisher: opts.organization,
     slug: doc.slug,
     category: resolveCategory(doc),
     keywords: resolveKeywords(doc),
@@ -443,13 +452,32 @@ export async function getArticles(params: {
   }
 }
 
+/**
+ * The single-article reads are the ONLY place a publisher is resolved.
+ *
+ * They are also the only place a full `NewsArticle` is emitted, which is the
+ * one document that carries a `publisher`. Resolving it here costs a single
+ * cached catalogue read (`getPublisherOrganization`, in-process, 60s) shared
+ * across every article view, rather than a join per feed card on the hottest
+ * path in the app. The feed-source lookup beside it is unchanged — the two
+ * answer different questions and both are wanted: `source` is where the article
+ * was fetched from, `publisher` is who published it.
+ */
+async function resolveArticleDetail(doc: MongoArticle): Promise<Article> {
+  const db = await getDb()
+  const [source, organization] = await Promise.all([
+    db.collection<MongoFeedSource>('feedSources').findOne({ _id: doc.feedSourceId }),
+    getPublisherOrganization(doc.mediaOrganizationId),
+  ])
+  return toArticle(doc, source || undefined, { fullContent: true, organization })
+}
+
 export async function getArticleBySlug(slug: string): Promise<Article | null> {
   const db = await getDb()
   const doc = await db.collection<MongoArticle>('articles').findOne({ slug })
   if (!doc) return null
 
-  const source = await db.collection<MongoFeedSource>('feedSources').findOne({ _id: doc.feedSourceId })
-  return toArticle(doc, source || undefined, { fullContent: true })
+  return resolveArticleDetail(doc)
 }
 
 export async function getArticleById(id: string): Promise<Article | null> {
@@ -457,8 +485,7 @@ export async function getArticleById(id: string): Promise<Article | null> {
   const doc = await db.collection<MongoArticle>('articles').findOne({ _id: id })
   if (!doc) return null
 
-  const source = await db.collection<MongoFeedSource>('feedSources').findOne({ _id: doc.feedSourceId })
-  return toArticle(doc, source || undefined, { fullContent: true })
+  return resolveArticleDetail(doc)
 }
 
 export async function getRelatedArticles(articleId: string, limit = 5): Promise<Article[]> {
