@@ -119,6 +119,7 @@
   --popover-foreground: #FFFFFF;
   --border: #2A2927;             /* Mzizi `border` — warm stone, not cool grey */
   --outline: transparent;        /* component OUTLINES are off by default — see the block below */
+  --control: var(--border);      /* the EDGE OF A CONTROL — an input/select is not a surface */
   --input: #100F0E;   /* Mzizi semantic.input — a SURFACE, not the border colour it used to copy */
   --ring: var(--cobalt);   /* Mzizi semantic.ring — deliberately NOT the brand hue, so a focus ring is never read as a brand fill */
   --radius: 0.75rem;
@@ -220,6 +221,7 @@
   --popover-foreground: #FFFFFF;
   --border: #2A2927;             /* Mzizi `border` — warm stone, not cool grey */
   --outline: transparent;        /* component OUTLINES are off by default — see the block below */
+  --control: var(--border);      /* the EDGE OF A CONTROL — an input/select is not a surface */
   --input: #100F0E;   /* Mzizi semantic.input — a SURFACE, not the border colour it used to copy */
   --ring: var(--cobalt);   /* Mzizi semantic.ring — deliberately NOT the brand hue, so a focus ring is never read as a brand fill */
 }
@@ -308,6 +310,7 @@
   --popover-foreground: #000000;
   --border: #E7E5E0;             /* Mzizi `border` — warm stone, not cool grey */
   --outline: transparent;        /* component OUTLINES are off by default — see the block below */
+  --control: var(--border);      /* the EDGE OF A CONTROL — an input/select is not a surface */
   --input: #FFFFFF;   /* Mzizi semantic.input — a SURFACE, not the border colour it used to copy */
   --ring: var(--cobalt);   /* Mzizi semantic.ring — deliberately NOT the brand hue, so a focus ring is never read as a brand fill */
 }
@@ -348,6 +351,7 @@
   --color-popover-foreground: var(--popover-foreground);
   --color-border: var(--border);
   --color-outline: var(--outline);
+  --color-control: var(--control);
   --color-input: var(--input);
   --color-ring: var(--ring);
 

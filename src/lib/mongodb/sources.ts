@@ -22,7 +22,7 @@ interface MongoFeedSource {
 
 interface MongoFeedSourceWithOrg extends MongoFeedSource {
   mediaOrganizationId?: string
-  org?: { isVerified?: boolean; publisherTier?: string; url?: string } | null
+  org?: { isVerified?: boolean; publisherTier?: string; url?: string; name?: string } | null
 }
 
 export async function getSources(): Promise<Array<{
@@ -46,6 +46,22 @@ export async function getSources(): Promise<Array<{
   /** True when the org behind this source is a verified publisher (Tier-2). */
   verified?: boolean
   publisher_tier?: string
+  /**
+   * The NEWSROOM (masthead) this feed delivers, from `mediaOrganizationId`.
+   *
+   *   publisher / entity   the publishing house      `entity.entities`
+   *     └── newsroom       the masthead              `news.newsMediaOrganizations`
+   *           └── source   the feed endpoint         THIS ROW
+   *
+   * One masthead can be delivered by several feeds, which is why the directory
+   * can group by it: 587 sources across 537 newsrooms, and the multi-feed cases
+   * are real (Daily Maverick's `/dmrss/` and `/rss`, KTN News and The Standard
+   * on `standardmedia.co.ke`). Absent when the organisation did not resolve —
+   * absent means unknown, and such a row is grouped under no newsroom rather
+   * than under a made-up one.
+   */
+  newsroom_id?: string
+  newsroom_name?: string
 }>> {
   const db = await getDb()
   // $lookup the publisher (newsMediaOrganizations) so the directory can badge
@@ -62,7 +78,7 @@ export async function getSources(): Promise<Array<{
           localField: 'mediaOrganizationId',
           foreignField: '_id',
           as: 'org',
-          pipeline: [{ $project: { isVerified: 1, publisherTier: 1, url: 1 } }],
+          pipeline: [{ $project: { isVerified: 1, publisherTier: 1, url: 1, name: 1 } }],
         },
       },
       { $set: { org: { $first: '$org' } } },
@@ -81,6 +97,8 @@ export async function getSources(): Promise<Array<{
     last_error: d.lastFetchError || undefined,
     verified: d.org?.isVerified === true,
     publisher_tier: d.org?.publisherTier || undefined,
+    newsroom_id: d.mediaOrganizationId || undefined,
+    newsroom_name: d.org?.name || undefined,
   }))
 }
 
@@ -172,4 +190,84 @@ export async function getStats(): Promise<{
   // action layer already holds cached — composing it there costs nothing, while
   // deriving it here would put a 1.4s aggregation behind /api/health.
   return { database: { total_articles, active_sources, today_articles } }
+}
+
+/**
+ * How far back the author index looks, and how many authors it returns.
+ *
+ * Bounded for the same reason `getTrendingAuthors` is: unbounded, the group is
+ * a COLLSCAN of a 1.47 GB collection and the FETCH of fat article documents is
+ * what blows the socket timeout. A 30-day window rides
+ * `status_1_datePublished_-1` as a range seek.
+ *
+ * The cap is on AUTHORS returned, not on articles scanned, so the ranking is
+ * over the whole window rather than over an arbitrary first slice — a scan cap
+ * would silently rank "whoever filed most recently" and present it as "most
+ * prolific".
+ */
+const AUTHOR_INDEX_WINDOW_DAYS = 30
+const AUTHOR_INDEX_LIMIT = 400
+
+export interface SourceAuthor {
+  name: string
+  articleCount: number
+  /** Feed-source ids this byline has filed to in the window. */
+  sourceIds: string[]
+}
+
+/**
+ * The bylines filing right now, and which feeds they file to.
+ *
+ * Powers the author filter on the source directory: pick a journalist, see the
+ * sources they actually publish through. That is a question the corpus can
+ * answer and a hardcoded list never could — measured live, 3,092 distinct
+ * bylines in 30 days, 88 of them filing to more than one source.
+ *
+ * `author.name` is a Schema.org sub-document, NOT a bare string. Grouping on
+ * `$author` groups by the whole object and renders every row as
+ * "[object Object]"; that bug is on record in `getTrendingAuthors` and this
+ * read must not repeat it, hence the `author.name` path and the `$type` guard
+ * that skips any legacy document storing a bare string.
+ *
+ * Fail-soft: an unreachable cluster yields an empty index and the filter
+ * renders as unavailable rather than as "this author writes for nothing".
+ */
+export async function getSourceAuthors(limit = AUTHOR_INDEX_LIMIT): Promise<SourceAuthor[]> {
+  limit = clampInt(limit, 1, 2000, AUTHOR_INDEX_LIMIT)
+  try {
+    const db = await getDb()
+    const since = new Date(Date.now() - AUTHOR_INDEX_WINDOW_DAYS * 86400_000)
+    const rows = await db
+      .collection('articles')
+      .aggregate<{ _id: string; articleCount: number; sourceIds: string[] }>([
+        {
+          $match: {
+            datePublished: { $gte: since },
+            status: { $ne: 'rejected' },
+            moderationStatus: { $ne: 'removed' },
+            'author.name': { $type: 'string', $ne: '' },
+            feedSourceId: { $type: 'string', $ne: '' },
+          },
+        },
+        {
+          $group: {
+            _id: '$author.name',
+            articleCount: { $sum: 1 },
+            sourceIds: { $addToSet: '$feedSourceId' },
+          },
+        },
+        { $sort: { articleCount: -1, _id: 1 } },
+        { $limit: limit },
+      ])
+      .toArray()
+
+    return rows.map((r) => ({
+      name: String(r._id).trim(),
+      articleCount: r.articleCount,
+      sourceIds: r.sourceIds,
+    }))
+  } catch (error) {
+    console.error('[sources.getSourceAuthors]', error)
+    return []
+  }
 }

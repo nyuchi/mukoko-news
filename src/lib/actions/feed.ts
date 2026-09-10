@@ -17,7 +17,7 @@ import { getDb } from '@/lib/mongodb/client'
 import { resolveEngagementSubject, claimSessionEngagement } from '@/lib/engagement'
 import { getArticles, getArticleById, getRelatedArticles, getNewsByteArticles, searchArticles, getSavedArticles, getTopicTimeline } from '@/lib/mongodb/articles'
 import { getCategories, getTrendingCategories } from '@/lib/mongodb/categories'
-import { getSources, getStats, getTrendingAuthors } from '@/lib/mongodb/sources'
+import { getSources, getSourceAuthors, getStats, getTrendingAuthors } from '@/lib/mongodb/sources'
 import { getTopCountriesByRecentVolume } from '@/lib/mongodb/coverage'
 import {
   clampInt,
@@ -29,6 +29,7 @@ import {
   boundedTextSchema,
 } from '@/lib/safety'
 import type { Article } from '@/lib/api'
+import type { SourceAuthor } from '@/lib/mongodb/sources'
 
 /**
  * Run a read, and on failure return `fallback` instead of throwing.
@@ -279,6 +280,23 @@ export async function getTrendingCategoriesAction(limit = 8) {
 
 export async function getSourcesAction() {
   return safeRead('sources', () => getSources(), [])
+}
+
+/**
+ * The bylines filing in the last 30 days, with the feeds they file to.
+ *
+ * Backs the author filter on the source directory. Cached for an hour: the
+ * index is a group over a month of articles, it moves on the timescale of a
+ * news cycle rather than a page view, and every visitor to /sources would
+ * otherwise pay for the same aggregation.
+ */
+const loadSourceAuthors = unstable_cache(() => getSourceAuthors(), ['source-authors'], {
+  revalidate: 3600,
+  tags: ['sources'],
+})
+
+export async function getSourceAuthorsAction() {
+  return safeRead('source-authors', () => loadSourceAuthors(), [] as SourceAuthor[])
 }
 
 export async function getStatsAction() {

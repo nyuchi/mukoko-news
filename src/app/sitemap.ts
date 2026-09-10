@@ -1,10 +1,10 @@
-import { MetadataRoute } from 'next';
+import { MetadataRoute } from 'next'
+import { getLiveCoverageAction } from '@/lib/actions/coverage';
 import {
   BASE_URL,
   COUNTRIES,
   CATEGORY_META,
   getArticleUrl,
-  isReleasedCountry,
 } from '@/lib/constants';
 import { getArticles } from '@/lib/mongodb/articles';
 
@@ -59,8 +59,14 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // is the soft-404 shape. The in-scope-but-unreleased countries still have a
   // page, and it now says "coming soon" (see `discover-client.tsx`); it is just
   // not something to ask a search engine to treat as a result.
+  // The live set, read from the corpus rather than from a hardcoded list. A
+  // country that starts producing gets submitted on the next revalidation
+  // instead of waiting for someone to edit a constant — and one that goes dark
+  // stops being submitted, which is the half that matters for soft-404s.
+  const { codes } = await getLiveCoverageAction();
+  const liveCodes = new Set(codes);
   const countryUrls: MetadataRoute.Sitemap = COUNTRIES.filter((country) =>
-    isReleasedCountry(country.code)
+    liveCodes.has(country.code)
   ).map((country) => ({
     url: `${BASE_URL}/discover?country=${country.code}`,
     lastModified: now,

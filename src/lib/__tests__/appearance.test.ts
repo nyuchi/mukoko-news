@@ -94,11 +94,16 @@ describe('components separate by fill, not by a drawn edge', () => {
   const BOX_OUTLINE = /\bborder\s+border-(border|elevated)\b|\bring-1\s+ring-border\b/;
 
   /**
-   * The one legitimate exception. A button's `outline` variant is a control
-   * affordance — the edge IS the button — and it is literally the variant's
-   * name. It is not chrome drawn around a surface.
+   * There are NO file-level exemptions, deliberately.
+   *
+   * A control's edge is a real affordance — an `<input>` or `<select>` with no
+   * visible border is not discoverable as a field, and a button's `outline`
+   * variant IS its edge. But that is a different job from chrome drawn around a
+   * surface, so it gets its own token (`--control`) rather than a hole in this
+   * check. Exempting a FILE would let a future card in that same file slip
+   * through silently, which is exactly how the borders got everywhere the first
+   * time.
    */
-  const ALLOWED = new Set([join('src', 'components', 'ui', 'button.tsx')]);
 
   function walk(dir: string, out: string[] = []): string[] {
     for (const entry of readdirSync(dir)) {
@@ -112,9 +117,18 @@ describe('components separate by fill, not by a drawn edge', () => {
     return out;
   }
 
+  it('a control edge is its own token, not the surface outline', () => {
+    // `--outline` is transparent by default; an input painted with it would be
+    // an invisible field. `--control` is always visible and follows `--border`,
+    // including into the `prefers-contrast: more` block where that becomes
+    // `CanvasText`.
+    const css = readFileSync(join(process.cwd(), 'src/app/globals.css'), 'utf8');
+    expect(css).toMatch(/--control:\s*var\(--border\)/);
+    expect(css).toContain('--color-control: var(--control)');
+  });
+
   it('no component outlines a surface with the separator colour', () => {
     const offenders = walk(join(process.cwd(), 'src'))
-      .filter((file) => !ALLOWED.has(file.replace(`${process.cwd()}/`, '')))
       .filter((file) => BOX_OUTLINE.test(readFileSync(file, 'utf8')))
       .map((file) => file.replace(`${process.cwd()}/`, ''));
 

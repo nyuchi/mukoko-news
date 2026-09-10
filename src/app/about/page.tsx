@@ -3,30 +3,36 @@
 import Link from "next/link";
 import { Globe, Zap, Users, ChevronRight } from "lucide-react";
 import { PreferredSourceCard } from "@/components/preferred-source-button";
-import { RELEASED_COUNTRY_COUNT, COUNTRY_SCOPE_TOTAL } from "@/lib/constants";
+import { useCoverage } from "@/contexts/coverage-context";
 
-const values = [
-  {
-    icon: Globe,
-    title: "Pan-African by design",
-    description:
-      `News from across the continent in one place — live in ${RELEASED_COUNTRY_COUNT} African countries today, with all ${COUNTRY_SCOPE_TOTAL} African Union member states in scope and local sources at the centre.`,
-  },
-  {
-    icon: Zap,
-    title: "Fast, clean reading",
-    description:
-      "AI-assisted summaries, categories, and a distraction-free reader let you catch up quickly and dive deeper only where you want to.",
-  },
-  {
-    icon: Users,
-    title: "Community-first",
-    description:
-      "“Mukoko” means beehive in Shona — where the community gathers and stores knowledge. The platform is built to serve African readers first.",
-  },
-];
+function buildValues(liveCount: number, scopeTotal: number) {
+  return [
+    {
+      icon: Globe,
+      title: "Pan-African by design",
+      description:
+        `News from across the continent in one place — live in ${liveCount} African countries today, with all ${scopeTotal} African Union member states in scope and local sources at the centre.`,
+    },
+    {
+      icon: Zap,
+      title: "Fast, clean reading",
+      description:
+        "AI-assisted summaries, categories, and a distraction-free reader let you catch up quickly and dive deeper only where you want to.",
+    },
+    {
+      icon: Users,
+      title: "Community-first",
+      description:
+        "“Mukoko” means beehive in Shona — where the community gathers and stores knowledge. The platform is built to serve African readers first.",
+    },
+  ];
+}
 
 export default function AboutPage() {
+  // Read from the context the root layout seeded, so this paragraph, the page
+  // title and the JSON-LD all state the same number on the same render.
+  const coverage = useCoverage();
+  const values = buildValues(coverage.count, coverage.scopeTotal);
   return (
     <div className="mx-auto w-full max-w-[var(--width-reading)] px-[var(--page-gutter)] sm:px-[var(--page-gutter-sm)] py-12">
       <h1 className="text-3xl font-bold text-foreground mb-2">About Mukoko News</h1>
@@ -42,8 +48,8 @@ export default function AboutPage() {
           Mukoko News aggregates trusted journalism from across Africa and makes it fast and easy to
           follow. &ldquo;Mukoko&rdquo; means <span className="italic">beehive</span> in Shona &mdash;
           a place where the community gathers and stores knowledge. We started in Zimbabwe and are
-          live in {RELEASED_COUNTRY_COUNT} African countries today. The remaining{" "}
-          {COUNTRY_SCOPE_TOTAL - RELEASED_COUNTRY_COUNT} African Union member states are in scope
+          live in {coverage.count} African countries today. The remaining{" "}
+          {coverage.scopeTotal - coverage.count} African Union member states are in scope
           and coming soon &mdash; we would rather say where we are not yet than claim a continent we
           have not reached. Local voices and local sources stay at the heart of the feed.
         </p>

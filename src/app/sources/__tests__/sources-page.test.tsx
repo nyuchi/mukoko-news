@@ -42,8 +42,10 @@ vi.mock("@/components/ui/skeleton", () => ({
 
 // Mock server action
 const mockGetSourcesAction = vi.fn();
+const mockGetSourceAuthorsAction = vi.fn();
 vi.mock("@/lib/actions/feed", () => ({
   getSourcesAction: (...args: unknown[]) => mockGetSourcesAction(...args),
+  getSourceAuthorsAction: (...args: unknown[]) => mockGetSourceAuthorsAction(...args),
 }));
 
 const defaultSources = [
@@ -96,6 +98,7 @@ describe("SourcesPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetSourcesAction.mockResolvedValue(defaultSources);
+    mockGetSourceAuthorsAction.mockResolvedValue([]);
   });
 
   it("should render page header and stats after loading", async () => {
@@ -235,5 +238,196 @@ describe("SourcesPage", () => {
       expect(screen.getByText("News Sources")).toBeInTheDocument();
     });
     expect(screen.getByLabelText("Search sources by name, URL, or category")).toBeInTheDocument();
+  });
+});
+
+
+describe("source directory filters: country, newsroom, author", () => {
+  /**
+   * The three levels these filters cut across:
+   *
+   *   publisher / entity   the publishing house
+   *     └── newsroom       the masthead
+   *           └── source   the feed endpoint
+   *
+   * Zimpapers runs The Herald and Chronicle Zimbabwe; The Herald is delivered
+   * by two feeds. So filtering by newsroom is not the same as filtering by
+   * source, and the fixture below is built to make a filter that confused them
+   * visibly wrong.
+   */
+  const NEWSROOM_SOURCES = [
+    {
+      id: "src-herald-main",
+      name: "The Herald",
+      url: "https://herald.co.zw/feed",
+      country_id: "ZW",
+      article_count: 900,
+      newsroom_id: "org-herald-zw",
+      newsroom_name: "The Herald",
+    },
+    {
+      id: "src-herald-alt",
+      name: "The Herald (secondary)",
+      url: "https://herald.co.zw/rss",
+      country_id: "ZW",
+      article_count: 120,
+      newsroom_id: "org-herald-zw",
+      newsroom_name: "The Herald",
+    },
+    {
+      id: "src-chronicle",
+      name: "Chronicle Zimbabwe",
+      url: "https://chronicle.co.zw/feed",
+      country_id: "ZW",
+      article_count: 400,
+      newsroom_id: "org-chronicle-zw",
+      newsroom_name: "Chronicle Zimbabwe",
+    },
+    {
+      id: "src-nation",
+      name: "Daily Nation",
+      url: "https://nation.africa/feed",
+      country_id: "KE",
+      article_count: 700,
+      newsroom_id: "org-nation-ke",
+      newsroom_name: "Daily Nation",
+    },
+  ];
+
+  const AUTHORS = [
+    { name: "Tendai Moyo", articleCount: 42, sourceIds: ["src-herald-main", "src-chronicle"] },
+    { name: "Wanjiku Kamau", articleCount: 31, sourceIds: ["src-nation"] },
+  ];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetSourcesAction.mockResolvedValue(NEWSROOM_SOURCES);
+    mockGetSourceAuthorsAction.mockResolvedValue(AUTHORS);
+  });
+
+  /**
+   * The names of the source ROWS currently listed.
+   *
+   * Scoped to links rather than bare text because a newsroom name now appears
+   * twice on the page — once as a row and once as an <option> in the newsroom
+   * select. `getByText` matches both, so an assertion written that way would
+   * pass on a filter that changed nothing but left the option in the dropdown.
+   */
+  function rowNames(): string[] {
+    return screen
+      .getAllByRole("link")
+      .map((el) => el.textContent?.trim() ?? "")
+      .filter((t) => NEWSROOM_SOURCES.some((s) => s.name === t));
+  }
+
+  async function renderPage() {
+    render(<SourcesPage />);
+    await waitFor(() => expect(rowNames()).toContain("The Herald"));
+  }
+
+  it("filters to one newsroom, keeping BOTH of its feeds", async () => {
+    // The distinction the filter exists for. The Herald has two endpoints;
+    // selecting the newsroom must keep both, not collapse to one row and not
+    // behave like a source filter.
+    await renderPage();
+    fireEvent.change(screen.getByLabelText("Filter sources by newsroom"), {
+      target: { value: "org-herald-zw" },
+    });
+
+    expect(rowNames()).toEqual(
+      expect.arrayContaining(["The Herald", "The Herald (secondary)"])
+    );
+    expect(rowNames()).not.toContain("Chronicle Zimbabwe");
+    expect(rowNames()).not.toContain("Daily Nation");
+  });
+
+  it("narrows the newsroom list to the chosen country", async () => {
+    // 537 mastheads in one select is a scroll, not a control.
+    await renderPage();
+    fireEvent.change(screen.getByLabelText("Filter sources by country"), {
+      target: { value: "ZW" },
+    });
+
+    const newsroomSelect = screen.getByLabelText("Filter sources by newsroom");
+    expect(newsroomSelect).toHaveTextContent("The Herald");
+    expect(newsroomSelect).not.toHaveTextContent("Daily Nation");
+  });
+
+  it("clears a newsroom selection the new country cannot contain", async () => {
+    // Otherwise the page filters to a newsroom the country select says is not
+    // there, and shows an empty directory with two filters that each look fine.
+    await renderPage();
+    fireEvent.change(screen.getByLabelText("Filter sources by newsroom"), {
+      target: { value: "org-nation-ke" },
+    });
+    expect(rowNames()).toContain("Daily Nation");
+
+    fireEvent.change(screen.getByLabelText("Filter sources by country"), {
+      target: { value: "ZW" },
+    });
+
+    await waitFor(() => expect(rowNames()).toContain("The Herald"));
+    expect(rowNames()).toContain("Chronicle Zimbabwe");
+  });
+
+  it("filters to the sources an author actually files to", async () => {
+    // Tendai Moyo files to The Herald's main feed and to the Chronicle — two
+    // newsrooms, and NOT the Herald's second feed.
+    await renderPage();
+    fireEvent.change(screen.getByLabelText("Filter sources by author byline"), {
+      target: { value: "Tendai Moyo" },
+    });
+
+    await waitFor(() => expect(rowNames()).not.toContain("Daily Nation"));
+    expect(rowNames()).toContain("The Herald");
+    expect(rowNames()).toContain("Chronicle Zimbabwe");
+    expect(rowNames()).not.toContain("The Herald (secondary)");
+  });
+
+  it("matches a partial byline as it is typed", async () => {
+    await renderPage();
+    fireEvent.change(screen.getByLabelText("Filter sources by author byline"), {
+      target: { value: "wanjiku" },
+    });
+
+    await waitFor(() => expect(rowNames()).toContain("Daily Nation"));
+    expect(rowNames()).not.toContain("The Herald");
+  });
+
+  it("an empty author box filters nothing", async () => {
+    // `null`, not an empty Set. An empty Set is indistinguishable from "this
+    // author files to nothing" and would blank the directory on every load.
+    await renderPage();
+    const input = screen.getByLabelText("Filter sources by author byline");
+    fireEvent.change(input, { target: { value: "Tendai" } });
+    await waitFor(() => expect(rowNames()).not.toContain("Daily Nation"));
+
+    fireEvent.change(input, { target: { value: "  " } });
+    await waitFor(() => expect(rowNames()).toContain("Daily Nation"));
+  });
+
+  it("hides the author control entirely when the index failed to load", async () => {
+    // A control that silently matches nothing is worse than no control.
+    mockGetSourceAuthorsAction.mockResolvedValue([]);
+    render(<SourcesPage />);
+    await waitFor(() => expect(rowNames()).toContain("The Herald"));
+    expect(screen.queryByLabelText("Filter sources by author byline")).toBeNull();
+  });
+
+  it("combines country, newsroom and author", async () => {
+    await renderPage();
+    fireEvent.change(screen.getByLabelText("Filter sources by country"), {
+      target: { value: "ZW" },
+    });
+    fireEvent.change(screen.getByLabelText("Filter sources by newsroom"), {
+      target: { value: "org-chronicle-zw" },
+    });
+    fireEvent.change(screen.getByLabelText("Filter sources by author byline"), {
+      target: { value: "Tendai" },
+    });
+
+    await waitFor(() => expect(rowNames()).toContain("Chronicle Zimbabwe"));
+    expect(rowNames()).not.toContain("The Herald");
+    expect(rowNames()).not.toContain("Daily Nation");
   });
 });
