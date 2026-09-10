@@ -140,11 +140,12 @@ Used for client-side fetches and the embed widget, and exports the shared `Artic
 
 ## Testing
 
-**~460 frontend tests across 21 files** — Vitest 4 with jsdom + React Testing Library.
+**~1,000 frontend tests across 64 files** — Vitest 4 with jsdom + React Testing Library.
 
 - Config: `vitest.config.ts` (globals on, `@` alias, `include: src/**/*.{test,spec}.*`)
 - Setup: `src/__tests__/setup.ts`
-- Coverage (v8): thresholds **60%** statements/functions/lines, **50%** branches
+- Coverage (v8): thresholds **75%** statements, **64%** branches, **72%** functions, **77%** lines — enforced by CI, which runs `npm run test:coverage`. Ratchet them up as coverage rises; never down to make a build pass.
+- **Mocking the MongoDB readers**: `src/lib/__tests__/helpers/mongo.ts` stubs the driver at the `getDb()` seam (`collectionStub` / `dbStub`), which is what lets a test assert on the query that was issued — the projection, the sort key, the filter. Use it rather than mocking the reader module, and follow the existing suites (`mongodb-articles`, `mongodb-catalogue`, `mongodb-analytics`, `insights`, `places`).
 - **Mock pattern for pages**: always mock `@/lib/actions/feed` (NOT `@/lib/api`) — pages read via Server Actions. Match the return shapes in the table above.
 
 **Pre-commit hook** (Husky, `.husky/pre-commit`): runs `vitest related` on staged files, then `typecheck`, then `build`. All three must pass (uses `npm run`).

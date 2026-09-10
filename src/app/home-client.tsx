@@ -456,8 +456,10 @@ export default function HomeClient({ initialFeed = null, initialCategories = nul
         </div>
       </nav>
 
-      {/* Main Content */}
-      <main>
+      {/* Main Content — a plain div, deliberately not a main element: the root
+          layout already provides the page's single main landmark, and nesting a
+          second one made screen readers report two "main" regions here. */}
+      <div>
         {loading ? (
           <FeedPageSkeleton />
         ) : error ? (
@@ -643,7 +645,7 @@ export default function HomeClient({ initialFeed = null, initialCategories = nul
             </Link>
           </div>
         )}
-      </main>
+      </div>
     </div>
     </>
   );
