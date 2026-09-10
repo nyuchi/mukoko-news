@@ -5,27 +5,28 @@ import Link from "next/link";
 import { Loader2, ChevronRight } from "lucide-react";
 import { type Category } from "@/lib/api";
 import { getCategoriesAction } from "@/lib/actions/feed";
+import { categoryTone } from "@/lib/category-tone";
 
-// Category colors and emojis
-const categoryMeta: Record<string, { emoji: string; color: string }> = {
-  politics: { emoji: "🏛️", color: "from-blue-500 to-blue-700" },
-  business: { emoji: "💼", color: "from-emerald-500 to-emerald-700" },
-  sports: { emoji: "⚽", color: "from-orange-500 to-orange-700" },
-  entertainment: { emoji: "🎬", color: "from-purple-500 to-purple-700" },
-  technology: { emoji: "💻", color: "from-cyan-500 to-cyan-700" },
-  health: { emoji: "🏥", color: "from-red-500 to-red-700" },
-  education: { emoji: "📚", color: "from-yellow-500 to-yellow-700" },
-  world: { emoji: "🌍", color: "from-indigo-500 to-indigo-700" },
-  local: { emoji: "📍", color: "from-pink-500 to-pink-700" },
-  opinion: { emoji: "💭", color: "from-slate-500 to-slate-700" },
-  lifestyle: { emoji: "✨", color: "from-rose-500 to-rose-700" },
-  science: { emoji: "🔬", color: "from-teal-500 to-teal-700" },
+/**
+ * Emoji only. The colour comes from `categoryTone`, which is shared with every
+ * other surface that draws a category — this file used to keep a private table
+ * of twelve `from-<hue>-500 to-<hue>-700` gradients that disagreed with
+ * `CATEGORY_META` in `constants.ts` about which categories even exist.
+ */
+const categoryEmoji: Record<string, string> = {
+  politics: "\u{1F3DB}\u{FE0F}",
+  business: "\u{1F4BC}",
+  sports: "\u26BD",
+  entertainment: "\u{1F3AC}",
+  technology: "\u{1F4BB}",
+  health: "\u{1F3E5}",
+  education: "\u{1F4DA}",
+  world: "\u{1F30D}",
+  local: "\u{1F4CD}",
+  opinion: "\u{1F4AD}",
+  lifestyle: "\u2728",
+  science: "\u{1F52C}",
 };
-
-const getDefaultMeta = (name: string) => ({
-  emoji: "📰",
-  color: "from-primary to-secondary",
-});
 
 export default function CategoriesPage() {
   const [categories, setCategories] = useState<Category[]>([]);
@@ -55,7 +56,7 @@ export default function CategoriesPage() {
   }
 
   return (
-    <div className="max-w-[1200px] mx-auto px-6 py-8">
+    <div className="mx-auto w-full max-w-[var(--width-wide)] px-[var(--page-gutter)] sm:px-[var(--page-gutter-sm)] py-8">
       <div className="mb-8">
         <h1 className="font-serif text-3xl font-bold mb-2">Categories</h1>
         <p className="text-text-secondary">
@@ -67,7 +68,7 @@ export default function CategoriesPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {categories.map((category) => {
           const categoryKey = category.id?.toLowerCase() || category.name.toLowerCase();
-          const meta = categoryMeta[categoryKey] || getDefaultMeta(category.name);
+          const emoji = categoryEmoji[categoryKey] ?? "\u{1F4F0}";
 
           return (
             <Link
@@ -75,20 +76,23 @@ export default function CategoriesPage() {
               href={`/discover?category=${encodeURIComponent(category.id)}`}
               className="group"
             >
+              {/* A flat mineral container, not a gradient. Mzizi takes no
+                  gradients, and the pair carries its own foreground so the card
+                  is legible in both themes without a hard-coded `text-white`. */}
               <div
-                className={`relative overflow-hidden rounded-2xl p-6 bg-gradient-to-br ${meta.color} text-white transition-transform hover:-translate-y-1 hover:shadow-xl`}
+                className={`relative overflow-hidden rounded-2xl p-6 transition-transform hover:-translate-y-1 hover:shadow-xl ${categoryTone(category.id)}`}
               >
                 {/* Emoji Background */}
                 <div className="absolute -right-4 -bottom-4 text-8xl opacity-20 select-none">
-                  {meta.emoji}
+                  {emoji}
                 </div>
 
                 {/* Content */}
                 <div className="relative z-10">
-                  <span className="text-4xl mb-3 block">{meta.emoji}</span>
+                  <span className="text-4xl mb-3 block">{emoji}</span>
                   <h3 className="font-bold text-xl mb-1">{category.name}</h3>
                   {category.article_count !== undefined && (
-                    <p className="text-white/70 text-sm">
+                    <p className="text-sm opacity-75">
                       {category.article_count.toLocaleString()} articles
                     </p>
                   )}

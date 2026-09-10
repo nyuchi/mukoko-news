@@ -614,7 +614,7 @@ export default function AnalyticsClient({
     <ErrorBoundary
       fallback={<div className="p-8 text-center text-text-secondary">Failed to render analytics</div>}
     >
-      <div className="mx-auto max-w-[1200px] px-4 py-8 sm:px-6">
+      <div className="mx-auto w-full max-w-[var(--width-wide)] px-[var(--page-gutter)] py-8 sm:px-[var(--page-gutter-sm)]">
         {/* Header */}
         <header className="mb-6">
           <div className="mb-2 flex items-center gap-3">
@@ -650,7 +650,7 @@ export default function AnalyticsClient({
                   value={q}
                   onChange={(e) => setQ(e.target.value)}
                   placeholder="accidents, corruption, elections…"
-                  className="min-h-[var(--touch-a11y)] w-full rounded-xl border border-input bg-background pl-9 pr-3 text-sm text-foreground outline-none focus:border-primary"
+                  className="min-h-[var(--touch-a11y)] w-full rounded-xl border border-border bg-background pl-9 pr-3 text-sm text-foreground outline-none focus:border-primary"
                 />
               </div>
             </label>
@@ -660,7 +660,7 @@ export default function AnalyticsClient({
               <select
                 value={country}
                 onChange={(e) => setCountry(e.target.value)}
-                className="min-h-[var(--touch-a11y)] w-full rounded-xl border border-input bg-background px-3 text-sm text-foreground outline-none focus:border-primary"
+                className="min-h-[var(--touch-a11y)] w-full rounded-xl border border-border bg-background px-3 text-sm text-foreground outline-none focus:border-primary"
               >
                 <option value="">All countries</option>
                 {facets.countries.map((c) => (
@@ -676,7 +676,7 @@ export default function AnalyticsClient({
               <select
                 value={category}
                 onChange={(e) => setCategory(e.target.value)}
-                className="min-h-[var(--touch-a11y)] w-full rounded-xl border border-input bg-background px-3 text-sm text-foreground outline-none focus:border-primary"
+                className="min-h-[var(--touch-a11y)] w-full rounded-xl border border-border bg-background px-3 text-sm text-foreground outline-none focus:border-primary"
               >
                 <option value="">All categories</option>
                 {facets.categories.map((c) => (
@@ -710,7 +710,7 @@ export default function AnalyticsClient({
                 type="date"
                 value={from}
                 onChange={(e) => setFrom(e.target.value)}
-                className="min-h-[var(--touch-compact)] rounded-lg border border-input bg-background px-3 font-mono text-xs text-foreground outline-none focus:border-primary"
+                className="min-h-[var(--touch-compact)] rounded-lg border border-border bg-background px-3 font-mono text-xs text-foreground outline-none focus:border-primary"
               />
             </label>
             <label className="block">
@@ -719,7 +719,7 @@ export default function AnalyticsClient({
                 type="date"
                 value={to}
                 onChange={(e) => setTo(e.target.value)}
-                className="min-h-[var(--touch-compact)] rounded-lg border border-input bg-background px-3 font-mono text-xs text-foreground outline-none focus:border-primary"
+                className="min-h-[var(--touch-compact)] rounded-lg border border-border bg-background px-3 font-mono text-xs text-foreground outline-none focus:border-primary"
               />
             </label>
           </div>

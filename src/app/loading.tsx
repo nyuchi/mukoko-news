@@ -4,7 +4,7 @@ import { FeedPageSkeleton } from "@/components/ui/skeleton";
 // without their own loading.tsx) — shown while the server page streams.
 export default function HomeLoading() {
   return (
-    <div className="max-w-[1200px] mx-auto px-4 sm:px-6 py-6">
+    <div className="mx-auto w-full max-w-[var(--width-wide)] px-[var(--page-gutter)] sm:px-[var(--page-gutter-sm)] py-6">
       <FeedPageSkeleton />
     </div>
   );

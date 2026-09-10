@@ -1,6 +1,6 @@
 # Mukoko News Robots.txt
 # https://news.mukoko.com
-# Pan-African news aggregator covering 16 African countries
+# Pan-African news aggregator: live in 16 African countries, 54 in scope
 
 User-agent: *
 Allow: /

@@ -63,7 +63,7 @@ export function EngagementBar({
           >
             <Heart
               size={iconSize}
-              className={isLiked ? "fill-red-500 text-red-500" : textClass}
+              className={isLiked ? "fill-destructive text-destructive" : textClass}
             />
           </div>
           {likesCount > 0 && (
@@ -156,7 +156,7 @@ export function InlineEngagement({
       >
         <Heart
           size={16}
-          className={isLiked ? "fill-red-500 text-red-500" : ""}
+          className={isLiked ? "fill-destructive text-destructive" : ""}
         />
         <span className="text-xs font-medium">{likesCount}</span>
       </button>

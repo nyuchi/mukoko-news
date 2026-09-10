@@ -3,18 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import {
-  Heart,
-  Bookmark,
-  Share2,
-  ChevronLeft,
-  AlertCircle,
-  Clock,
-  Tag,
-  RefreshCw,
-  Check,
-  ExternalLink,
-} from "lucide-react";
+import { ChevronLeft, AlertCircle, Tag, RefreshCw, ExternalLink } from "lucide-react";
 import { Markdown, decodeHtmlEntities } from "@/components/ui/markdown";
 import { type Article } from "@/lib/api";
 import { getArticleAction } from "@/lib/actions/feed";
@@ -25,6 +14,14 @@ import { ArticlePageSkeleton } from "@/components/ui/skeleton";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { ArticleJsonLd } from "@/components/ui/json-ld";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
+import { ArticleReadingMeta, ArticleMetricsPanel } from "@/components/article/article-metrics";
+import { ArticleByline } from "@/components/article/article-byline";
+import { ArticleSummary } from "@/components/article/article-summary";
+import { ArticleTrustPanel } from "@/components/article/article-trust";
+import { ArticleActionBar } from "@/components/article/article-action-bar";
+import { RelatedArticles } from "@/components/article/related-articles";
+import { ReadProgress } from "@/components/article/read-progress";
+import { PageContainer, PageBleed } from "@/components/layout/page-container";
 
 /**
  * True when the article body is just the description again — excerpt-only RSS
@@ -256,208 +253,188 @@ export default function ArticleDetailClient({
     );
   }
 
+
   const category = article.category_id || article.category;
+  const originalUrl =
+    article.original_url && isValidImageUrl(article.original_url)
+      ? article.original_url
+      : undefined;
+  const showHero = article.image_url && isValidImageUrl(article.image_url) && !heroImageFailed;
 
   return (
-    <ErrorBoundary fallback={<div className="p-8 text-center text-text-secondary">Failed to render article content</div>}>
+    <ErrorBoundary
+      fallback={
+        <div className="p-8 text-center text-text-secondary">
+          Failed to render article content
+        </div>
+      }
+    >
       <ArticleJsonLd article={article} url={articleUrl} />
-      <div className="pb-16">
-        {/* Reader controls.
-            These used to be `absolute top-6 left-6` / `right-6` on a full-bleed
-            banner, which pinned them to the VIEWPORT edge — on a wide screen
-            they sat hundreds of pixels away from the 800px column they act on,
-            reading as page chrome rather than as controls for this article.
-            They now sit in the content column, in normal flow, so they line up
-            with the headline beneath them at every width.
+      <ReadProgress />
 
-            Sized on `--touch-a11y` (43px), the token for secondary buttons.
-            The previous fixed `w-10 h-10` was 40px — below even `--touch-min`
-            (41px), the documented absolute floor. Both are icon-only, so both
-            carry an explicit accessible name. */}
-        <div className="max-w-[800px] mx-auto px-6 pt-4 flex items-center justify-between gap-4">
+      {/* Bottom padding clears the pinned action bar, so the last paragraph is
+          never sitting underneath it. */}
+      <PageContainer as="main" width="reading" className="pb-28">
+        {/* Back control, in the content column rather than pinned to the
+            viewport edge: on a wide screen an `absolute left-6` button sits
+            hundreds of pixels from the column it acts on and reads as page
+            chrome. Share lives in the action bar now, so this row holds one
+            control instead of two. */}
+        <div className="pt-4">
           <button
             onClick={() => router.back()}
             aria-label="Go back"
-            className="inline-flex min-h-[var(--touch-a11y)] min-w-[var(--touch-a11y)] items-center justify-center rounded-full bg-surface text-foreground transition-colors hover:bg-elevated focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            className="inline-flex min-h-[var(--touch-a11y)] min-w-[var(--touch-a11y)] items-center justify-center rounded-full bg-surface text-foreground transition-colors hover:bg-elevated focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
           >
-            <ChevronLeft className="w-5 h-5" aria-hidden="true" />
-          </button>
-
-          <button
-            onClick={handleShare}
-            aria-label="Share this article"
-            className="inline-flex min-h-[var(--touch-a11y)] min-w-[var(--touch-a11y)] items-center justify-center rounded-full bg-surface text-foreground transition-colors hover:bg-elevated focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-          >
-            <Share2 className="w-5 h-5" aria-hidden="true" />
+            <ChevronLeft className="h-5 w-5" aria-hidden="true" />
           </button>
         </div>
 
-        {/* Breadcrumb */}
-        <div className="max-w-[800px] mx-auto px-6 py-3">
+        <div className="py-3">
           <Breadcrumb
             items={[
-              ...(category ? [{ label: category, href: `/discover?category=${category}` }] : []),
+              ...(category
+                ? [{ label: category, href: `/discover?category=${category}` }]
+                : []),
               { label: (article.title || "Article").substring(0, 100) },
             ]}
           />
         </div>
 
-        {/* Article header.
-            Previously a full-bleed `bg-primary` slab — a solid tanzanite block
-            across the whole viewport, `py-12` with another `pt-12` inside it.
-            At the brand's primary weight and that size it dominated the page
-            and pushed the article itself below the fold. The headline is set in
-            Noto Serif and can carry the page on its own; tanzanite now appears
-            once, as the category accent, which is what an accent colour is for. */}
-        <header className="max-w-[800px] mx-auto px-6 pb-6">
-          {category && (
-            <span className="inline-flex min-h-[var(--touch-badge)] items-center gap-1.5 rounded-full bg-container-tanzanite px-3 text-xs font-bold uppercase tracking-wider text-on-container-tanzanite">
-              <Tag className="w-3.5 h-3.5" aria-hidden="true" />
-              {category}
-            </span>
-          )}
+        <article>
+          {/* Eyebrow: the section, then the two figures a reader uses to decide
+              whether to start — how long it takes and how much there is. Both
+              are read off the document (`reading_time`, `word_count`) and each
+              renders independently, so an article missing one still shows the
+              other rather than the whole row vanishing. */}
+          <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-2">
+            {category && (
+              <Link
+                href={`/discover?category=${category}`}
+                className="inline-flex min-h-[var(--touch-badge)] items-center gap-1.5 rounded-full bg-container-tanzanite px-3 text-xs font-bold uppercase tracking-wider text-on-container-tanzanite focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              >
+                <Tag className="h-3.5 w-3.5" aria-hidden="true" />
+                {category}
+              </Link>
+            )}
+            <ArticleReadingMeta article={article} />
+          </div>
 
-          <h1 className="font-serif text-3xl md:text-4xl font-bold leading-tight text-foreground mt-4 mb-4 text-balance">
+          <h1 className="mb-4 font-serif text-3xl font-bold leading-tight text-foreground md:text-[2.75rem] md:leading-[1.15]">
             {article.title}
           </h1>
 
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-text-secondary">
-            <span className="font-medium">{article.source}</span>
-            <span className="flex items-center gap-1">
-              <Clock className="w-4 h-4" aria-hidden="true" />
-              {formatDate(article.published_at)}
-            </span>
-          </div>
-
-          {/* Tags belong with the byline, not after the article.
-              They were previously below the entire body, so the only way to see
-              what a story was about — or to reach its /topic timeline — was to
-              scroll past every paragraph first. That is backwards for metadata
-              a reader uses to DECIDE whether to read. */}
-          {article.keywords && article.keywords.length > 0 && (
-            <div className="mt-5 flex flex-wrap gap-2">
-              {article.keywords.slice(0, 6).map((kw) => {
-                const slug = topicSlug(kw.slug || kw.name);
-                if (!slug) return null;
-                return (
-                  <Link
-                    key={kw.id}
-                    href={`/topic/${slug}`}
-                    className="inline-flex min-h-[var(--touch-chip)] items-center gap-1.5 rounded-full border border-elevated bg-surface px-3 py-1 text-sm text-foreground transition-colors hover:border-primary/30 hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-                  >
-                    <Tag className="w-3.5 h-3.5" aria-hidden="true" />
-                    {kw.name}
-                  </Link>
-                );
-              })}
-            </div>
+          {/* The dek — the publisher's own standfirst, in the publisher's
+              voice. Skipped when the body just repeats it, which excerpt-only
+              RSS sources do by storing the same ~30 words in both fields. */}
+          {article.description && !bodyRepeatsDescription(article) && (
+            <p className="mb-6 text-lg leading-relaxed text-text-secondary">
+              {article.description}
+            </p>
           )}
-        </header>
 
-      {/* Article Image — hidden entirely if the proxy can't fetch it (some
-          publisher WAFs block server-side fetches); no empty placeholder box. */}
-      {article.image_url && isValidImageUrl(article.image_url) && !heroImageFailed && (
-        <div className="max-w-[900px] mx-auto px-6">
-          <div className="rounded-2xl overflow-hidden shadow-xl">
-            <img
-              src={imageProxyUrl(article.image_url, { width: 900 })}
-              alt={article.title}
-              className="w-full aspect-video object-cover"
-              onError={() => setHeroImageFailed(true)}
-            />
-          </div>
-        </div>
-      )}
+          <ArticleByline article={article} formattedDate={formatDate(article.published_at)} />
 
-      {/* Article Content */}
-      <div className="max-w-[800px] mx-auto px-6 py-8">
-        {/* Description — skipped when the body just repeats it (excerpt-only
-            RSS sources store the same text in both fields). */}
-        {article.description && !bodyRepeatsDescription(article) && (
-          <p className="text-lg text-text-secondary leading-relaxed mb-8">
-            {article.description}
-          </p>
-        )}
+          {showHero && (
+            <PageBleed className="my-6">
+              <img
+                src={imageProxyUrl(article.image_url!, { width: 900 })}
+                alt=""
+                className="aspect-video w-full object-cover sm:rounded-2xl"
+                onError={() => setHeroImageFailed(true)}
+              />
+            </PageBleed>
+          )}
 
-        {/* Content — prefer the pipeline's Markdown rendition (headings, lists,
-            links, emphasis) for a richer reader; fall back to plain paragraphs
-            for legacy articles that don't have Markdown yet. */}
-        {article.content_markdown ? (
-          <div className="mb-8">
-            <Markdown>{article.content_markdown}</Markdown>
-          </div>
-        ) : (
-          article.content && (
-            <div className="prose prose-lg dark:prose-invert max-w-none mb-8">
-              {article.content
-                .split(/\n+/)
-                .map((p) => p.trim())
-                .filter(Boolean)
-                .map((paragraph, index) => (
-                  <p key={`${article.id}-p-${index}`} className="mb-4 leading-relaxed">
-                    {paragraph}
-                  </p>
-                ))}
+          <ArticleSummary summary={article.summary} />
+
+          {/* Body — the pipeline's Markdown rendition where it exists, plain
+              paragraphs for legacy articles the Markdown backfill has not
+              reached. */}
+          {article.content_markdown ? (
+            <div className="mb-8">
+              <Markdown>{article.content_markdown}</Markdown>
             </div>
-          )
-        )}
+          ) : (
+            article.content && (
+              <div className="prose prose-lg mb-8 max-w-none dark:prose-invert">
+                {article.content
+                  .split(/\n+/)
+                  .map((p) => p.trim())
+                  .filter(Boolean)
+                  .map((paragraph, index) => (
+                    <p key={`${article.id}-p-${index}`} className="mb-4 leading-relaxed">
+                      {paragraph}
+                    </p>
+                  ))}
+              </div>
+            )
+          )}
 
-        {/* Read original — sends the reader to the source article */}
-        {article.original_url && isValidImageUrl(article.original_url) && (
-          <a
-            href={article.original_url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-primary text-on-primary font-semibold hover:opacity-90 transition-opacity focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-          >
-            <ExternalLink className="w-5 h-5" aria-hidden="true" />
-            Read full article{article.source ? ` at ${article.source}` : ""}
-          </a>
-        )}
+          {/* Read at the publisher. Mukoko shows what the feed gave it and
+              sends the reader on; the traffic belongs to the newsroom that did
+              the reporting. */}
+          {originalUrl && (
+            <a
+              href={originalUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex min-h-[var(--touch-hero)] items-center gap-2 rounded-full bg-primary px-6 font-semibold text-on-primary transition-opacity hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            >
+              <ExternalLink className="h-5 w-5" aria-hidden="true" />
+              Continue reading{article.source ? ` at ${article.source}` : ""}
+            </a>
+          )}
 
-        {/* Divider */}
-        <div className="border-t border-elevated my-8" />
+          <ArticleTrustPanel article={article} />
 
-        {/* Action Buttons */}
-        <div className="flex items-center gap-4 flex-wrap">
-          <button
-            onClick={handleLike}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl transition-colors ${
-              isLiked
-                ? "bg-red-500/10 text-red-500"
-                : "bg-surface text-foreground hover:bg-elevated"
-            }`}
-          >
-            <Heart className={`w-5 h-5 ${isLiked ? "fill-current" : ""}`} />
-            <span className="font-medium">{likesCount}</span>
-          </button>
+          {/* Topics, as the reader's way onward into the developing story.
+              They sit after the body rather than in the header: the header
+              answers "should I read this", and by here the reader has. */}
+          {article.keywords && article.keywords.length > 0 && (
+            <section aria-labelledby="article-topics-heading" className="mt-8">
+              <h2
+                id="article-topics-heading"
+                className="mb-3 font-mono text-xs font-medium uppercase tracking-wider text-text-tertiary"
+              >
+                Follow the story
+              </h2>
+              <div className="flex flex-wrap gap-2">
+                {article.keywords.slice(0, 6).map((kw) => {
+                  const slug = topicSlug(kw.slug || kw.name);
+                  if (!slug) return null;
+                  return (
+                    <Link
+                      key={kw.id}
+                      href={`/topic/${slug}`}
+                      className="inline-flex min-h-[var(--touch-chip)] items-center gap-1.5 rounded-full border border-border bg-surface px-3 text-sm text-foreground transition-colors hover:border-primary hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                    >
+                      <Tag className="h-3.5 w-3.5" aria-hidden="true" />
+                      {kw.name}
+                    </Link>
+                  );
+                })}
+              </div>
+            </section>
+          )}
 
-          <button
-            onClick={handleSave}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl transition-colors ${
-              isSaved
-                ? "bg-primary/10 text-primary"
-                : "bg-surface text-foreground hover:bg-elevated"
-            }`}
-          >
-            <Bookmark className={`w-5 h-5 ${isSaved ? "fill-current" : ""}`} />
-            <span className="font-medium">{isSaved ? "Saved" : "Save"}</span>
-          </button>
+          <ArticleMetricsPanel article={article} />
 
-          <button
-            onClick={handleShare}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl transition-all ml-auto ${
-              copySuccess
-                ? "bg-success text-on-success"
-                : "bg-primary text-on-primary hover:opacity-90"
-            }`}
-          >
-            {copySuccess ? <Check className="w-5 h-5" /> : <Share2 className="w-5 h-5" />}
-            <span className="font-medium">{copySuccess ? "Copied!" : "Share"}</span>
-          </button>
-        </div>
-      </div>
-      </div>
+          <RelatedArticles articleId={articleId} category={category} />
+        </article>
+      </PageContainer>
+
+      <ArticleActionBar
+        isLiked={isLiked}
+        likesCount={likesCount}
+        isSaved={isSaved}
+        copySuccess={copySuccess}
+        originalUrl={originalUrl}
+        sourceName={article.source}
+        onLike={handleLike}
+        onSave={handleSave}
+        onShare={handleShare}
+      />
     </ErrorBoundary>
   );
 }

@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Mukoko News is a Pan-African digital news aggregation platform. "Mukoko" means "Beehive" in Shona — where community gathers and stores knowledge. Primary market is Zimbabwe with expansion across 16 African countries.
+Mukoko News is a Pan-African digital news aggregation platform. "Mukoko" means "Beehive" in Shona — where community gathers and stores knowledge. Primary market is Zimbabwe. **Scope is all 54 African Union member states; 16 are released and the rest are "coming soon"** — `RELEASED_COUNTRY_CODES` / `COVERAGE_CLAIM` in `src/lib/constants.ts` are the single source of that claim, and every public surface interpolates them rather than writing a number.
 
 ## Three-Repo Architecture
 
@@ -252,16 +252,31 @@ The MCP OAuth server (`news.mukoko.com/.well-known/oauth-authorization-server`, 
 | sodalite | `#283593` | `#3D5AFE` | AI / Shamwari surfaces |
 | copper | `#BF5A36` | `#FF8A65` | commons |
 
-`--primary`=tanzanite, `--secondary`=cobalt, `--accent`=gold, `--success`=malachite, `--warning`=terracotta. Use light hex on light surfaces, dark hex on dark.
+`--primary`=tanzanite, `--secondary`=cobalt, `--success`=malachite. Use light hex on light surfaces, dark hex on dark.
+
+**Two semantic tokens are deliberately NOT minerals** (corrected 2026-09-10, measured against `mzizi_get_tokens`):
+
+- **`--accent` is the pale cobalt container** (`#E3F2FD` / `#001F3F`), a hover/selected fill — not a brand colour. The saturated, swappable brand mineral is a separate token, **`--brand-accent`** (tanzanite). This app had collapsed the two into one and assigned gold, which is neither, and that is why hover states and CTAs competed. Its live consumers are the button `outline`/`ghost` hover states.
+- **`--warning` is Mzizi's semantic warning** (`#7A5C00` / `#FFD866`), not terracotta. Terracotta is a mineral that already means *community and warmth*, so warnings and community surfaces were indistinguishable. Measured as text on the card: terracotta 4.83:1 light / 10.4:1 dark; Mzizi 5.38 / 13.6 — better in both. ⚠️ The light value still does **not** clear Mzizi's own APCA floor; reported upstream rather than patched with a Mukoko-only variant.
+- **`--ring` is cobalt**, deliberately not the brand hue, so a focus ring is never read as a brand fill on a primary button.
 
 **Surfaces (2026-09-05)** — the Mzizi background scale (`mzizi_get_tokens: backgrounds`). The page is the **matte base**; the card sits **below** it, nearer black, so a card reads as a well rather than a raised grey slab; hover rows, menus and popovers rise above both. This inverted the previous order, where every card was *lighter* than the page it sat on.
 
 | token | light | dark | Mzizi name |
 | --- | --- | --- | --- |
+| `--void` | `#F8F8F7` | `#080807` | `void` — app shell behind base |
 | `--background` | `#F3F3F1` | `#0E0D0C` | `base` — matte page |
-| `--surface` / `--card` | `#EEEEEC` | `#050504` | `surface` / `muted` — the card |
-| `--elevated` / `--popover` | `#E5E4E1` | `#1E1D1A` | `container` — hover rows, menus |
+| `--surface` / `--card` | `#EEEEEC` | `#131211` | `surface` — the card |
+| `--muted` | `#FAF9F5` | `#050504` | `muted` — deepest fill, inset/metadata rows |
+| `--elevated` | `#E5E4E1` | `#1E1D1A` | `container` — hover rows |
+| `--popover` | `#E0DFDC` | `#23221F` | `overlay` — menus, dialogs |
+| `--raised` | `#D6D5D1` | `#2E2C29` | `raised` — above overlay: menus, toasts |
+| `--pitch` | `#FAFAFA` | `#050505` | `pitch` — media wells, splash |
+| `--scrim` | `rgba(0,0,0,.40)` | `rgba(0,0,0,.60)` | backdrop behind overlays |
+| `--wash` | surface + 7% brand | surface + 12% brand | cover-colour page tint |
 | `--border` | `#E7E5E0` | `#2A2927` | `border` — warm stone, not cool grey |
+
+> **Corrected 2026-09-10.** `--surface`/`--card` carried `#050504` in dark — that is Mzizi's **`muted`**, the *deepest* fill, not `surface`. Because `--muted` is also `#050504`, a card and the inset row inside it were the same colour and the metadata well had no edge. Five further steps (`void`, `pitch`, `raised`, `scrim`, `wash`) were never defined, which is why menus reused the hover-row colour and the share modal hand-rolled its own backdrop. `src/app/__tests__/design-tokens.test.ts` now parses `globals.css` and asserts every value against a checked-in Mzizi snapshot — including the bare `:root` block, which carries the DARK DEFAULTS and was the block an earlier revision of that test failed to read.
 
 **Text is set by APCA, not WCAG 2** — Mzizi's floor is **APCA 3.0 AAA**. WCAG 2 ratios systematically overstate light-text-on-dark, which is how `--text-tertiary` came to be documented as "7.0:1" while measuring **APCA Lc 38.7** on the card — barely half what a 12px string needs, and it was used for every hint line, card heading and chip. Current values, measured on the *worst* surface each lands on, all clearing both the APCA target and the AAA 7:1 floor:
 
@@ -278,6 +293,8 @@ The MCP OAuth server (`news.mukoko.com/.well-known/oauth-authorization-server`, 
 **Spacing**: 12px border-radius buttons, 16px cards. WCAG AAA compliant (7:1 contrast).
 
 **Density (Mzizi 4.x)**: `globals.css` defines the prime-scale touch targets (`--touch-*`: 47px primary CTAs, 43px inputs, 37px dense toolbars, 31px chips, 56px hero-only) and icon sizes (`--icon-*`). `comfortable` is the default density; data-dense surfaces (`/admin`, `/dashboard`) opt into `compact` with `data-density="compact"` on a wrapper — the scope overrides `--density-touch` and the card/input radii, which cascade with no per-component changes. Button sizes ride these tokens (`min-h-[var(--density-touch)]`). New interactive elements should use the touch-target minimums, not fixed heights.
+
+**Chart marks** (`--chart-*`) reference minerals, never literals: primary→tanzanite, positive→malachite, neutral→`--neutral`, negative→**copper** (not `error` — a negative *sentiment* is not an error *state*), mixed→gold, grid→`--border`. All twelve values were previously raw Tailwind palette (`violet-500`, `teal-600`, `gray-400`, `rose-600`…) sitting in `:root` where they looked official; `--chart-negative` was orange-700 in light and rose-600 in dark, so a negative series changed hue with the theme. A test asserts none is a literal.
 
 CSS variables in `src/app/globals.css`. Use Tailwind classes: `bg-primary`, `text-foreground`, `bg-surface`, and the mineral utilities `bg-tanzanite`, `text-cobalt`, `bg-container-sodalite`, etc. (`components.json` configures the shadcn-style component generator; the theme lives entirely in `globals.css` via `@theme inline` — there is no `tailwind.config.ts`.)
 

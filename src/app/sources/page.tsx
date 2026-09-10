@@ -15,7 +15,7 @@ import { SourceIcon } from "@/components/ui/source-icon";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getSourcesAction } from "@/lib/actions/feed";
-import { COUNTRIES, getFullUrl } from "@/lib/constants";
+import { COUNTRIES, getFullUrl, COVERAGE_FRAGMENT } from "@/lib/constants";
 import { WebPageJsonLd } from "@/components/ui/json-ld";
 import { formatTimeAgo } from "@/lib/utils";
 
@@ -138,10 +138,10 @@ export default function SourcesPage() {
     >
       <WebPageJsonLd
         name="News Sources — Mukoko News"
-        description="Browse all news sources on Mukoko News. View source health, article counts, and coverage across 16 African countries."
+        description={`Browse all news sources on Mukoko News. View source health, article counts and coverage — ${COVERAGE_FRAGMENT}.`}
         url={getFullUrl("/sources")}
       />
-      <div className="max-w-[1200px] mx-auto px-6 py-8">
+      <div className="mx-auto w-full max-w-[var(--width-wide)] px-[var(--page-gutter)] sm:px-[var(--page-gutter-sm)] py-8">
         {/* Header */}
         <div className="mb-8">
           <Link
@@ -173,7 +173,7 @@ export default function SourcesPage() {
 
         {/* Error banner */}
         {error && (
-          <div className="p-4 mb-8 bg-orange-500/10 border border-orange-500/30 rounded-xl text-sm text-orange-400">
+          <div className="p-4 mb-8 bg-container-terracotta border border-warning/30 rounded-xl text-sm text-on-container-terracotta">
             {error}
           </div>
         )}
@@ -247,7 +247,7 @@ function StatCard({
     <div className="p-4 bg-surface rounded-xl border border-elevated">
       <p className="text-xs text-text-tertiary mb-1">{label}</p>
       <p
-        className={`text-2xl font-bold ${warn ? "text-orange-400" : "text-foreground"}`}
+        className={`text-2xl font-bold ${warn ? "text-warning" : "text-foreground"}`}
       >
         {value.toLocaleString()}
       </p>
@@ -265,7 +265,7 @@ function SourceRow({ source }: { source: Source }) {
     <div
       className={`flex items-center gap-4 p-4 bg-surface rounded-xl border transition-colors ${
         hasIssues
-          ? "border-orange-500/30"
+          ? "border-warning/40"
           : isInactive
             ? "border-elevated opacity-60"
             : "border-elevated hover:border-primary/30"
@@ -342,9 +342,9 @@ function SourceRow({ source }: { source: Source }) {
         {/* Status indicator */}
         <div className="w-6 flex justify-center" title={statusTitle(source)}>
           {hasIssues ? (
-            <AlertTriangle className="w-4 h-4 text-orange-400" />
+            <AlertTriangle className="w-4 h-4 text-warning" />
           ) : articleCount > 0 ? (
-            <CheckCircle className="w-4 h-4 text-green-500" />
+            <CheckCircle className="w-4 h-4 text-success" />
           ) : (
             <div className="w-2 h-2 rounded-full bg-text-tertiary" />
           )}
@@ -369,7 +369,7 @@ function statusTitle(source: Source): string {
 function SourcesPageSkeleton() {
   return (
     <div
-      className="max-w-[1200px] mx-auto px-6 py-8"
+      className="mx-auto w-full max-w-[var(--width-wide)] px-[var(--page-gutter)] sm:px-[var(--page-gutter-sm)] py-8"
       aria-label="Loading sources"
       role="status"
       aria-live="polite"

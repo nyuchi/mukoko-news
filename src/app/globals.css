@@ -24,9 +24,17 @@
      reads as a well rather than a raised grey slab, and hover rows and menus
      rise above both. This inverts the old order (bg #0A0A0A < surface #141414 <
      elevated #1E1E1E), where every card was lighter than the page it sat on. */
+  /* The full Mzizi background scale. Five steps were missing, which is why
+     menus reused the hover-row colour, the share modal hand-rolled its own
+     backdrop, and article heroes had no media-well token. */
+  --void: #080807;      /* app shell behind base */
+  --pitch: #050505;     /* deepest — media wells, splash */
+  --raised: #2E2C29;    /* above overlay — menus, toasts */
+  --scrim: rgba(0, 0, 0, 0.60);
+  --wash: color-mix(in oklab, var(--surface) 88%, var(--brand-accent));
   --background: #0E0D0C;   /* Mzizi `base`      — matte page */
   --foreground: #FFFFFF;
-  --surface: #050504;      /* Mzizi `muted`     — "deepest fill … maximum text contrast" */
+  --surface: #131211;   /* Mzizi backgrounds.surface — was `muted`, the deepest fill */
   --elevated: #1E1D1A;     /* Mzizi `container` — hover rows, menus, raised chrome */
 
   /* Text hierarchy */
@@ -53,13 +61,17 @@
   --on-primary: #1A0033;   /* deep tanzanite ink on light-lavender primary — 7.2:1 */
   --on-secondary: #002966; /* deep cobalt ink on light-cyan secondary — 5.7:1 */
   --success: #64FFDA;   /* Malachite (dark) */
-  --warning: #E1B07E;   /* Terracotta (dark) */
-  --accent: var(--gold);
-  --on-accent: #332200;    /* deep gold ink on light-gold accent — 11.0:1 */
+  --warning: #FFD866;   /* Mzizi semantic.warning (dark) — was terracotta, which already means community */
+  --accent: var(--container-cobalt);      /* Mzizi semantic.accent — a PALE hover/selected fill, not a brand colour */
+  --on-accent: var(--on-container-cobalt);
+  --brand-accent: var(--tanzanite);       /* Mzizi semantic.brand-accent — the saturated, swappable brand mineral */
   --on-success: #00251A;   /* deep malachite ink on light-teal success — 13.2:1 */
-  --on-warning: #3E2817;   /* deep terracotta ink on sand warning — 7.0:1 */
-  --destructive: #FF5252;    /* error red (dark) — 6.2:1 on #0A0A0A */
-  --on-destructive: #1F0000; /* deep red-black ink on light-red destructive — 6.2:1 */
+  --on-warning: #332200;   /* deep gold ink on Mzizi warning — 13.9:1 */
+  --neutral: #A09C93;      /* Mzizi semantic.neutral — inactive status, secondary series */
+  --syncing: #36ABBA;      /* Mzizi semantic.syncing — in-progress / pending */
+  --offline: #BA9570;      /* Mzizi semantic.offline — matters on intermittent mobile data */
+  --destructive: #F2B8B5;    /* Mzizi semantic.error (dark) — was #FF5252, which vibrates on a near-black ground */
+  --on-destructive: #3E1818; /* Mzizi destructive-container (dark) as ink on the light-red destructive */
 
   /* Full African Minerals palette (dark_hex) + containers */
   --color-cobalt: #00B0FF;
@@ -91,31 +103,39 @@
      lightness, chroma, colour-vision separation and contrast against the mode's
      own surface. Sentiment slots additionally carry direct labels + a legend, so
      identity never rests on hue alone. Re-validate before changing a value. */
-  --chart-primary: #8B5CF6;    /* tanzanite — single-series volume + magnitude bars */
-  --chart-positive: #0D9488;   /* malachite */
-  --chart-neutral: #9CA3AF;    /* deliberate neutral midpoint, not an identity hue */
-  --chart-negative: #E11D48;
-  --chart-mixed: #A88C00;
-  --chart-grid: #2E2E2E;
+  --chart-primary: var(--tanzanite);   /* single-series volume + magnitude bars */
+  --chart-positive: var(--malachite);
+  --chart-neutral: var(--neutral);     /* deliberate neutral midpoint, not an identity hue */
+  --chart-negative: var(--copper);
+  --chart-mixed: var(--gold);
+  --chart-grid: var(--border);
 
   /* UI Elements */
   --muted: #050504;
   --muted-foreground: #E8E8E4;   /* was #B8B8B3 — Lc 63 on the card, under the floor */
-  --card: #050504;               /* the card IS the deep well, not a lighter slab */
+  --card: #131211;               /* the card IS the deep well, not a lighter slab */
   --card-foreground: #FFFFFF;
-  --popover: #1E1D1A;            /* popovers rise ABOVE the card, so they lighten */
+  --popover: #23221F;   /* Mzizi backgrounds.overlay (was container) */            /* popovers rise ABOVE the card, so they lighten */
   --popover-foreground: #FFFFFF;
   --border: #2A2927;             /* Mzizi `border` — warm stone, not cool grey */
-  --input: #2A2927;
-  --ring: var(--primary);
+  --input: #100F0E;   /* Mzizi semantic.input — a SURFACE, not the border colour it used to copy */
+  --ring: var(--cobalt);   /* Mzizi semantic.ring — deliberately NOT the brand hue, so a focus ring is never read as a brand fill */
   --radius: 0.75rem;
 }
 
 /* Dark Theme — APCA 3.0 AAA (the Mzizi accessibility floor) */
 .dark {
+  /* The full Mzizi background scale. Five steps were missing, which is why
+     menus reused the hover-row colour, the share modal hand-rolled its own
+     backdrop, and article heroes had no media-well token. */
+  --void: #080807;      /* app shell behind base */
+  --pitch: #050505;     /* deepest — media wells, splash */
+  --raised: #2E2C29;    /* above overlay — menus, toasts */
+  --scrim: rgba(0, 0, 0, 0.60);
+  --wash: color-mix(in oklab, var(--surface) 88%, var(--brand-accent));
   --background: #0E0D0C;   /* Mzizi `base`      — matte page */
   --foreground: #FFFFFF;
-  --surface: #050504;      /* Mzizi `muted`     — deepest fill, maximum text contrast */
+  --surface: #131211;   /* Mzizi backgrounds.surface — was `muted`, the deepest fill */
   --elevated: #1E1D1A;     /* Mzizi `container` — hover rows, menus, raised chrome */
 
   /* Text hierarchy - AAA compliant (7:1+ contrast on #0A0A0A) */
@@ -141,13 +161,17 @@
   --on-primary: #1A0033;   /* deep tanzanite ink on light-lavender primary — 7.2:1 */
   --on-secondary: #002966; /* deep cobalt ink on light-cyan secondary — 5.7:1 */
   --success: #64FFDA;   /* Malachite (dark) */
-  --warning: #E1B07E;   /* Terracotta (dark) */
-  --accent: var(--gold);
-  --on-accent: #332200;    /* deep gold ink on light-gold accent — 11.0:1 */
+  --warning: #FFD866;   /* Mzizi semantic.warning (dark) — was terracotta, which already means community */
+  --accent: var(--container-cobalt);      /* Mzizi semantic.accent — a PALE hover/selected fill, not a brand colour */
+  --on-accent: var(--on-container-cobalt);
+  --brand-accent: var(--tanzanite);       /* Mzizi semantic.brand-accent — the saturated, swappable brand mineral */
   --on-success: #00251A;   /* deep malachite ink on light-teal success — 13.2:1 */
-  --on-warning: #3E2817;   /* deep terracotta ink on sand warning — 7.0:1 */
-  --destructive: #FF5252;    /* error red (dark) — 6.2:1 on #0A0A0A */
-  --on-destructive: #1F0000; /* deep red-black ink on light-red destructive — 6.2:1 */
+  --on-warning: #332200;   /* deep gold ink on Mzizi warning — 13.9:1 */
+  --neutral: #A09C93;      /* Mzizi semantic.neutral — inactive status, secondary series */
+  --syncing: #36ABBA;      /* Mzizi semantic.syncing — in-progress / pending */
+  --offline: #BA9570;      /* Mzizi semantic.offline — matters on intermittent mobile data */
+  --destructive: #F2B8B5;    /* Mzizi semantic.error (dark) — was #FF5252, which vibrates on a near-black ground */
+  --on-destructive: #3E1818; /* Mzizi destructive-container (dark) as ink on the light-red destructive */
 
   /* Full African Minerals palette (dark_hex) + containers */
   --color-cobalt: #00B0FF;
@@ -179,27 +203,32 @@
      lightness, chroma, colour-vision separation and contrast against the mode's
      own surface. Sentiment slots additionally carry direct labels + a legend, so
      identity never rests on hue alone. Re-validate before changing a value. */
-  --chart-primary: #8B5CF6;    /* tanzanite — single-series volume + magnitude bars */
-  --chart-positive: #0D9488;   /* malachite */
-  --chart-neutral: #9CA3AF;    /* deliberate neutral midpoint, not an identity hue */
-  --chart-negative: #E11D48;
-  --chart-mixed: #A88C00;
-  --chart-grid: #2E2E2E;
+  --chart-primary: var(--tanzanite);   /* single-series volume + magnitude bars */
+  --chart-positive: var(--malachite);
+  --chart-neutral: var(--neutral);     /* deliberate neutral midpoint, not an identity hue */
+  --chart-negative: var(--copper);
+  --chart-mixed: var(--gold);
+  --chart-grid: var(--border);
 
   /* UI Elements */
   --muted: #050504;
   --muted-foreground: #E8E8E4;   /* was #B8B8B3 — Lc 63 on the card, under the floor */
-  --card: #050504;               /* the card IS the deep well, not a lighter slab */
+  --card: #131211;               /* the card IS the deep well, not a lighter slab */
   --card-foreground: #FFFFFF;
-  --popover: #1E1D1A;            /* popovers rise ABOVE the card, so they lighten */
+  --popover: #23221F;   /* Mzizi backgrounds.overlay (was container) */            /* popovers rise ABOVE the card, so they lighten */
   --popover-foreground: #FFFFFF;
   --border: #2A2927;             /* Mzizi `border` — warm stone, not cool grey */
-  --input: #2A2927;
-  --ring: var(--primary);
+  --input: #100F0E;   /* Mzizi semantic.input — a SURFACE, not the border colour it used to copy */
+  --ring: var(--cobalt);   /* Mzizi semantic.ring — deliberately NOT the brand hue, so a focus ring is never read as a brand fill */
 }
 
 /* Light Theme - WCAG AAA Compliant */
 .light {
+  --void: #F8F8F7;
+  --pitch: #FAFAFA;
+  --raised: #D6D5D1;
+  --scrim: rgba(0, 0, 0, 0.40);
+  --wash: color-mix(in oklab, var(--surface) 93%, var(--brand-accent));
   --background: #F3F3F1;   /* Mzizi `base` — matte page */
   --foreground: #000000;
   --surface: #EEEEEC;      /* Mzizi `surface`   — card / panel */
@@ -225,11 +254,15 @@
   --on-primary: #FFFFFF;   /* white on deep tanzanite — 12.9:1 */
   --on-secondary: #FFFFFF; /* white on deep cobalt — 7.6:1 */
   --success: #004D40;   /* Malachite (light) */
-  --warning: #A0522D;   /* Terracotta (light) */
-  --accent: var(--gold);
-  --on-accent: #FFFFFF;    /* white on deep gold accent — 9.3:1 */
+  --warning: #7A5C00;   /* Mzizi semantic.warning (light) — was terracotta, which already means community */
+  --accent: var(--container-cobalt);      /* Mzizi semantic.accent — a PALE hover/selected fill, not a brand colour */
+  --on-accent: var(--on-container-cobalt);
+  --brand-accent: var(--tanzanite);       /* Mzizi semantic.brand-accent — the saturated, swappable brand mineral */
   --on-success: #FFFFFF;   /* white on deep malachite success — 9.8:1 */
-  --on-warning: #FFFFFF;   /* white on terracotta warning — 5.6:1 */
+  --on-warning: #FFFFFF;   /* white on Mzizi warning — 6.25:1; see PR body, Mzizi's own floor is not met by the published value */
+  --neutral: #55514B;
+  --syncing: #1C5962;
+  --offline: #674C32;
   --destructive: #B3261E;    /* error red (light) — 6.3:1 on #FAFAF8 */
   --on-destructive: #FFFFFF; /* white on deep red destructive — 6.5:1 */
 
@@ -257,23 +290,23 @@
   --on-container-copper: #5A2310;
 
   /* Data-visualisation marks — see the note in the dark block above. */
-  --chart-primary: #6D28D9;    /* tanzanite */
-  --chart-positive: #00897B;   /* malachite */
-  --chart-neutral: #6B7280;    /* deliberate neutral midpoint, not an identity hue */
-  --chart-negative: #C2410C;   /* copper */
-  --chart-mixed: #CA8A04;      /* gold */
-  --chart-grid: #E0E0E0;
+  --chart-primary: var(--tanzanite);
+  --chart-positive: var(--malachite);
+  --chart-neutral: var(--neutral);     /* deliberate neutral midpoint, not an identity hue */
+  --chart-negative: var(--copper);
+  --chart-mixed: var(--gold);
+  --chart-grid: var(--border);
 
   /* UI Elements */
   --muted: #FAF9F5;
   --muted-foreground: #2E2B27;
   --card: #EEEEEC;
   --card-foreground: #000000;
-  --popover: #FAFAFA;            /* popovers rise above the card, so they lighten */
+  --popover: #E0DFDC;   /* Mzizi backgrounds.overlay (was `pitch`, a media-well token) */
   --popover-foreground: #000000;
   --border: #E7E5E0;             /* Mzizi `border` — warm stone, not cool grey */
-  --input: #E7E5E0;
-  --ring: var(--primary);
+  --input: #FFFFFF;   /* Mzizi semantic.input — a SURFACE, not the border colour it used to copy */
+  --ring: var(--cobalt);   /* Mzizi semantic.ring — deliberately NOT the brand hue, so a focus ring is never read as a brand fill */
 }
 
 /* Tailwind v4 theme integration */
@@ -282,6 +315,14 @@
   --color-foreground: var(--foreground);
   --color-surface: var(--surface);
   --color-elevated: var(--elevated);
+  --color-void: var(--void);
+  --color-pitch: var(--pitch);
+  --color-raised: var(--raised);
+  --color-wash: var(--wash);
+  --color-brand-accent: var(--brand-accent);
+  --color-neutral: var(--neutral);
+  --color-syncing: var(--syncing);
+  --color-offline: var(--offline);
   --color-primary: var(--primary);
   --color-secondary: var(--secondary);
   --color-on-primary: var(--on-primary);
@@ -392,6 +433,23 @@
   --density-touch: var(--touch-default);
   --density-touch-input: var(--touch-a11y);
   --density-icon: var(--icon-default);
+
+  /* ── Page widths ────────────────────────────────────────────────────────
+     Every centred column on the site comes from one of these three, and the
+     side gutter from `--page-gutter`. They exist because the widths had been
+     hand-written at 36 call sites in NINE different combinations — `max-w-
+     [1200px] mx-auto px-6`, `max-w-[1200px] mx-auto px-4 sm:px-6`, `max-w-
+     [800px] mx-auto px-6`, `max-w-[840px] …`, `max-w-[900px] …`, `max-w-
+     [1000px] …`, `max-w-[600px] …`, `max-w-3xl …` — so the header and the
+     content it sat above disagreed on both the width AND the gutter, and the
+     page visibly stepped in at the shoulder. A token cannot drift from itself.
+
+     Consume them through `<PageContainer>`, not by hand. */
+  --width-wide: 1200px; /* chrome: header, footer, index pages */
+  --width-reading: 800px; /* one column of running text — the article body */
+  --width-form: 600px; /* a single form or auth card */
+  --page-gutter: 1rem; /* 16px — the a11y floor at every width */
+  --page-gutter-sm: 1.5rem; /* 24px from the `sm` breakpoint up */
 }
 
 /* Data-dense surfaces: admin tables, dashboards, power-user tools. */

@@ -4,7 +4,7 @@ import { Skeleton, ArticleCardSkeleton } from "./skeleton";
 
 export function DiscoverPageSkeleton() {
   return (
-    <div className="max-w-[1200px] mx-auto px-6 py-8" aria-label="Loading content" role="status" aria-live="polite">
+    <div className="mx-auto w-full max-w-[var(--width-wide)] px-[var(--page-gutter)] sm:px-[var(--page-gutter-sm)] py-8" aria-label="Loading content" role="status" aria-live="polite">
       {/* Header skeleton */}
       <div className="mb-10">
         <Skeleton className="h-9 w-40 mb-2" />
@@ -84,9 +84,10 @@ export function NewsBytesSkeleton() {
   );
 }
 
+/** Matches /search, which is `--width-wide`. It was 1000px against the page's 1200px. */
 export function SearchPageSkeleton() {
   return (
-    <div className="max-w-[1000px] mx-auto px-6 py-8" aria-label="Loading search results" role="status" aria-live="polite">
+    <div className="mx-auto w-full max-w-[var(--width-wide)] px-[var(--page-gutter)] sm:px-[var(--page-gutter-sm)] py-8" aria-label="Loading search results" role="status" aria-live="polite">
       {/* Search header skeleton */}
       <Skeleton className="h-14 w-full rounded-2xl mb-8" />
 

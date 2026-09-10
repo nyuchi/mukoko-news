@@ -65,7 +65,7 @@ export default async function AdminAnalyticsPage() {
   const maxCategory = categories[0]?.count ?? 1
 
   return (
-    <div className="max-w-[1200px] mx-auto px-6 py-8">
+    <div className="mx-auto w-full max-w-[var(--width-wide)] px-[var(--page-gutter)] sm:px-[var(--page-gutter-sm)] py-8">
       {/* Header */}
       <div className="flex items-center gap-4 mb-8">
         <Link
@@ -111,7 +111,7 @@ export default async function AdminAnalyticsPage() {
             icon={Layers}
             value={stats.categories}
             label="Curated Categories"
-            tint="text-accent"
+            tint="text-gold"
           />
         </div>
       )}

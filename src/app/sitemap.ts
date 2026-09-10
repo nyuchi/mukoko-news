@@ -1,5 +1,11 @@
 import { MetadataRoute } from 'next';
-import { BASE_URL, COUNTRIES, CATEGORY_META, getArticleUrl } from '@/lib/constants';
+import {
+  BASE_URL,
+  COUNTRIES,
+  CATEGORY_META,
+  getArticleUrl,
+  isReleasedCountry,
+} from '@/lib/constants';
 import { getArticles } from '@/lib/mongodb/articles';
 
 // Revalidate sitemap every hour to pick up new articles
@@ -45,8 +51,17 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.9,
   }));
 
-  // Country pages via discover
-  const countryUrls: MetadataRoute.Sitemap = COUNTRIES.map((country) => ({
+  // Country pages via discover — RELEASED countries only.
+  //
+  // `COUNTRIES` is the platform's scope (all 54 African Union member states),
+  // not its coverage. Submitting all 54 asked Google to index 38 pages that
+  // render "0 articles found" — thin pages with no content behind them, which
+  // is the soft-404 shape. The in-scope-but-unreleased countries still have a
+  // page, and it now says "coming soon" (see `discover-client.tsx`); it is just
+  // not something to ask a search engine to treat as a result.
+  const countryUrls: MetadataRoute.Sitemap = COUNTRIES.filter((country) =>
+    isReleasedCountry(country.code)
+  ).map((country) => ({
     url: `${BASE_URL}/discover?country=${country.code}`,
     lastModified: now,
     changeFrequency: 'hourly',

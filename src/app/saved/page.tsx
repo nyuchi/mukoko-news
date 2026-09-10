@@ -44,7 +44,7 @@ function SavedContent() {
   }
 
   return (
-    <div className="max-w-[1200px] mx-auto px-6 py-8">
+    <div className="mx-auto w-full max-w-[var(--width-wide)] px-[var(--page-gutter)] sm:px-[var(--page-gutter-sm)] py-8">
       <div className="mb-8">
         <h1 className="font-serif text-3xl font-bold mb-2">Saved Articles</h1>
         <p className="text-text-secondary">
@@ -101,7 +101,7 @@ export default function SavedPage() {
   return (
     <ErrorBoundary
       fallback={
-        <div className="max-w-[1200px] mx-auto px-6 py-8 text-center">
+        <div className="mx-auto w-full max-w-[var(--width-wide)] px-[var(--page-gutter)] sm:px-[var(--page-gutter-sm)] py-8 text-center">
           <div className="w-20 h-20 bg-surface rounded-full flex items-center justify-center mx-auto mb-6">
             <Bookmark className="w-10 h-10 text-text-tertiary" />
           </div>

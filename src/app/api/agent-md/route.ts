@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { getArticleAction, getArticlesAction } from '@/lib/actions/feed'
-import { BASE_URL, getArticleUrl } from '@/lib/constants'
+import { BASE_URL, getArticleUrl, COVERAGE_CLAIM } from '@/lib/constants'
+import { articleExcerpt } from '@/lib/excerpt'
 
 // Markdown-for-Agents responder. The middleware rewrites GET requests that carry
 // `Accept: text/markdown` for `/` and `/article/[id]` here, so agents get a clean
@@ -45,12 +46,27 @@ async function articleMarkdown(id: string): Promise<Response> {
   if (article.published_at) meta.push(`**Published:** ${article.published_at}`)
   if (meta.length) parts.push(meta.join(' · '))
 
-  const body = article.content_markdown || article.content || article.description || ''
-  if (body) parts.push(body.trim())
+  // An EXCERPT, not the article. This endpoint used to serve the publisher's
+  // complete body — the same text as the JSON-LD `articleBody`, and for the same
+  // reason it should not: it let an agent answer a reader in full from Mukoko's
+  // origin without the newsroom that wrote it ever being fetched. One shared
+  // bound (`@/lib/excerpt`) governs both surfaces so they cannot drift apart
+  // again, which is how they each ended up shipping the whole body separately.
+  const body = articleExcerpt(article)
+  if (body) parts.push(body)
 
-  const links: string[] = [`[Read on Mukoko News](${getArticleUrl(article.id)})`]
-  if (article.original_url) links.push(`[Original source](${article.original_url})`)
-  parts.push('---', links.join(' · '))
+  // Ordering is deliberate: the ORIGINAL comes first. Leading with "Read on
+  // Mukoko News" told an agent that the aggregator's copy was the destination
+  // and the newsroom was a footnote — the same claim, in link order, that
+  // `publisher: "Mukoko News"` was making in the structured data. The full text
+  // is at the publisher, so that is the link that says "full article".
+  const links: string[] = []
+  if (article.original_url) {
+    const where = article.source ? ` at ${article.source}` : ''
+    links.push(`[Read the full article${where}](${article.original_url})`)
+  }
+  links.push(`[This article on Mukoko News](${getArticleUrl(article.id)})`)
+  parts.push('---', `Excerpt only. ${links.join(' · ')}`)
 
   return markdownResponse(parts.join('\n\n') + '\n')
 }
@@ -60,7 +76,7 @@ async function homepageMarkdown(): Promise<Response> {
   const { articles } = await getArticlesAction({ sort: 'latest', limit: 30 })
   const lines: string[] = [
     '# Mukoko News',
-    'Pan-African news aggregation for Zimbabwe and 15 other African countries.',
+    `Pan-African news aggregation. ${COVERAGE_CLAIM}`,
     '',
     '## Latest headlines',
     '',

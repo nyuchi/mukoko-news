@@ -95,6 +95,6 @@ export default async function DashboardPage() {
 
 function Centered({ children }: { children: React.ReactNode }) {
   return (
-    <div className="max-w-[600px] mx-auto px-6 py-16 text-center">{children}</div>
+    <div className="mx-auto w-full max-w-[var(--width-form)] px-[var(--page-gutter)] sm:px-[var(--page-gutter-sm)] py-16 text-center">{children}</div>
   )
 }

@@ -12,6 +12,11 @@ import { getPublisherOrganization, type PublisherOrganization } from './organiza
 import type { Article } from '@/lib/api'
 
 interface MongoArticle {
+  /**
+   * The enrichment worker's one-paragraph summary. Provenance, on the
+   * enrichment write surface — read-only from this app's side.
+   */
+  aiSummary?: string
   _id: string
   _schemaVersion: string
   feedSourceId: string
@@ -75,6 +80,35 @@ interface MongoFeedSource {
    */
   feedUrl?: string
   sourceUrl?: string
+  /**
+   * The publisher's trust score, 0-100, owned by the gateway's publisher-
+   * verification flow (`PublisherVerificationService` stacks the Tier-1 entity
+   * and Tier-2 publisher boosts onto it and audits every change in
+   * `news.sourceScoreHistory`). Read-only here.
+   *
+   * Absent on sources the flow has never scored — and absent is NOT zero. A
+   * source nobody has assessed is unassessed; rendering that as 0/100 would
+   * publish an accusation the platform never made.
+   */
+  trustScore?: number
+}
+
+/**
+ * A publisher trust score in 0-100, or `undefined` when the source has none.
+ *
+ * The guard is deliberately strict about `0`. `qualityScore` on articles has
+ * exactly this failure already documented in `article-metrics.ts`: ingestion
+ * writes a literal `0` before enrichment runs, so `0` there means "not yet
+ * assessed" and is treated as a sentinel. Trust is scored by a different
+ * subsystem and a genuine 0 is possible, so this keeps 0 — but it rejects the
+ * non-finite and out-of-range values a bad write could leave behind, rather
+ * than rendering a 4,000% bar.
+ */
+function resolveSourceTrust(source?: MongoFeedSource): number | undefined {
+  const raw = source?.trustScore
+  if (typeof raw !== 'number' || !Number.isFinite(raw)) return undefined
+  if (raw < 0 || raw > 100) return undefined
+  return Math.round(raw)
 }
 
 /**
@@ -199,6 +233,10 @@ function toArticle(
       ? stripHtml(doc.articleBodyProcessed || doc.articleBody) || undefined
       : undefined,
     content_markdown: opts.fullContent ? doc.articleBodyMarkdown?.trim() || undefined : undefined,
+    // The AI summary, on the single-article read only. Not in LIST_PROJECTION:
+    // a card shows the publisher's own description, and shipping a second
+    // summary per card on a metered African mobile connection buys nothing.
+    summary: opts.fullContent ? doc.aiSummary?.trim() || undefined : undefined,
     // The journalist's byline. The pipeline backfilled these onto `author.name`
     // in 2026-09; without this line none of that reached the page, the article
     // metadata, the NewsArticle JSON-LD or the markdown served to agents — all
@@ -225,6 +263,11 @@ function toArticle(
     // The publisher's own site, resolved from the feed-source record on the same
     // read. Also derived, never stored — it feeds the source icon.
     source_url: resolveSourceSiteUrl(source),
+    // Resolved from the feed-source record on the same read as `source_url`,
+    // never stored on the article — same rule as `publisher`. The score moves
+    // when staff approve or revoke a publisher claim, and a copy on 63k
+    // articles could not follow it.
+    source_trust: resolveSourceTrust(source),
     slug: doc.slug,
     category: resolveCategory(doc),
     keywords: resolveKeywords(doc),

@@ -13,7 +13,7 @@ export const dynamic = 'force-static';
 
 export default function OfflinePage() {
   return (
-    <div className="max-w-[800px] mx-auto px-6 py-16 text-center">
+    <div className="mx-auto w-full max-w-[var(--width-reading)] px-[var(--page-gutter)] sm:px-[var(--page-gutter-sm)] py-16 text-center">
       <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-primary/10">
         <WifiOff className="h-10 w-10 text-primary" aria-hidden="true" />
       </div>

@@ -157,9 +157,17 @@ export function Header() {
             : ""
       }`}
     >
-      <div className={`mx-auto px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between ${
-        isNewsBytes ? "" : "max-w-[1200px]"
-      }`}>
+      {/* The header's column comes from the same `--width-wide` /
+          `--page-gutter` tokens as the content beneath it. It previously used
+          `px-4 sm:px-6` while most page bodies used a flat `px-6`, so below the
+          `sm` breakpoint the header sat 8px wider than the article under it and
+          the page visibly stepped in at the shoulder. NewsBytes is full-bleed
+          by design and opts out of the max-width only. */}
+      <div
+        className={`mx-auto flex w-full items-center justify-between px-[var(--page-gutter)] py-3 sm:px-[var(--page-gutter-sm)] sm:py-4 ${
+          isNewsBytes ? "" : "max-w-[var(--width-wide)]"
+        }`}
+      >
         {/* Logo / Page Title with Dropdown - fixed height container */}
         <div className="min-w-0 flex-shrink relative h-8" ref={dropdownRef}>
           {/* Logo - visible when not scrolled */}
@@ -305,7 +313,7 @@ export function Header() {
           reserved by the strip itself (min-h + an invisible clock
           placeholder), so it cannot shift the page once the data lands. */}
       {showDateTimeWeather && (
-        <div className="mx-auto max-w-[1200px] px-4 pb-2 sm:px-6 sm:pb-3">
+        <div className="mx-auto w-full max-w-[var(--width-wide)] px-[var(--page-gutter)] pb-2 sm:px-[var(--page-gutter-sm)] sm:pb-3">
           <DateTimeWeather />
         </div>
       )}
