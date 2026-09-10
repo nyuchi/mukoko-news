@@ -124,6 +124,15 @@ export function getCategoryEmoji(slug: string): string {
 // Uses environment variable in production, falls back to default for development
 export const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://news.mukoko.com";
 
+// Public help centre (Intercom). The in-app /help page carries the short answers;
+// this is where the full, maintained guides live, and the address support staff
+// send readers to. Overridable so a staging build can point at a test workspace.
+export const SUPPORT_URL =
+  process.env.NEXT_PUBLIC_SUPPORT_URL || "https://support.nyuchi.com";
+
+// Where a reader can reach a human. Kept next to SUPPORT_URL so the two never drift.
+export const SUPPORT_EMAIL = "support@mukoko.com";
+
 // Helper to generate full article URLs
 export function getArticleUrl(articleId: string): string {
   return `${BASE_URL}/article/${articleId}`;
