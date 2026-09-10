@@ -1,7 +1,6 @@
 import { getDomainDb } from './client';
 import {
   COUNTRY_PRESENTATION,
-  FALLBACK_COLOR,
   FALLBACK_FLAG,
   STATIC_COUNTRIES,
   type CountryOption,
@@ -71,14 +70,12 @@ export async function getCountries(): Promise<CountryOption[]> {
       const code = row.isoCode.trim().toUpperCase();
       if (!code) continue;
 
-      const art = COUNTRY_PRESENTATION.get(code);
       countries.push({
         code,
         // `places` owns the name. The local constant's name is not consulted:
         // if the two disagree, the owning domain is right by definition.
         name: row.name,
-        flag: art?.flag ?? FALLBACK_FLAG,
-        color: art?.color ?? FALLBACK_COLOR,
+        flag: COUNTRY_PRESENTATION.get(code) ?? FALLBACK_FLAG,
       });
     }
 

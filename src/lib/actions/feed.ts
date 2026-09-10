@@ -15,7 +15,7 @@ import { unstable_cache } from 'next/cache'
 import { getCountries } from '@/lib/mongodb/places'
 import { getDb } from '@/lib/mongodb/client'
 import { resolveEngagementSubject, claimSessionEngagement } from '@/lib/engagement'
-import { getArticles, getArticleById, getNewsByteArticles, searchArticles, getSavedArticles, getTopicTimeline } from '@/lib/mongodb/articles'
+import { getArticles, getArticleById, getRelatedArticles, getNewsByteArticles, searchArticles, getSavedArticles, getTopicTimeline } from '@/lib/mongodb/articles'
 import { getCategories, getTrendingCategories } from '@/lib/mongodb/categories'
 import { getSources, getStats, getTrendingAuthors } from '@/lib/mongodb/sources'
 import { getTopCountriesByRecentVolume } from '@/lib/mongodb/coverage'
@@ -184,6 +184,30 @@ export async function getArticleAction(id: string) {
   const safeId = parseOrDefault(idSchema, id, null)
   if (!safeId) return null
   return safeRead('article', () => getArticleById(safeId), null)
+}
+
+/**
+ * Articles related to this one — Atlas Vector Search over the article's own
+ * BGE-M3 embedding, falling back to same-category recency when the article has
+ * no embedding yet.
+ *
+ * `getRelatedArticles` has existed in the Mongo layer since the reads were
+ * written and nothing ever called it: there was no Server Action, so the
+ * article page ended at the body and a reader's only next step was the browser
+ * back button. That is a dead end on the one page where the reader has already
+ * shown what they are interested in.
+ *
+ * Fail-soft like every read on this path — an empty list renders no section at
+ * all, never an empty "More in …" heading.
+ */
+export async function getRelatedArticlesAction(articleId: string, limit = 3) {
+  const safeId = parseOrDefault(idSchema, articleId, null)
+  if (!safeId) return [] as Article[]
+  return safeRead(
+    'related',
+    () => getRelatedArticles(safeId, clampInt(limit, 1, 12, 3)),
+    [] as Article[]
+  )
 }
 
 export async function getNewsBytesAction(limit = 20) {

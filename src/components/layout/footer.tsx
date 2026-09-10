@@ -35,7 +35,7 @@ export function Footer() {
 
   return (
     <footer className="border-t border-elevated py-12 mt-20">
-      <div className="max-w-[1200px] mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-6">
+      <div className="mx-auto w-full max-w-[var(--width-wide)] px-[var(--page-gutter)] sm:px-[var(--page-gutter-sm)] flex flex-col md:flex-row justify-between items-center gap-6">
         {/* Brand */}
         <div className="flex items-center gap-3">
           <AppIcon size={28} className="shadow-sm" />
