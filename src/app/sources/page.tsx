@@ -22,7 +22,10 @@ import { formatTimeAgo } from "@/lib/utils";
 interface Source {
   id: string;
   name: string;
+  /** The feed endpoint. */
   url?: string;
+  /** The publishing organisation's own homepage, from its own record. */
+  site_url?: string;
   category?: string;
   country_id?: string;
   priority?: number;
@@ -269,7 +272,12 @@ function SourceRow({ source }: { source: Source }) {
       }`}
     >
       {/* Source icon */}
-      <SourceIcon source={source.name} size={36} />
+      <SourceIcon
+        source={source.name}
+        organizationUrl={source.site_url}
+        sourceUrl={source.url}
+        size={36}
+      />
 
       {/* Source info */}
       <div className="flex-1 min-w-0">

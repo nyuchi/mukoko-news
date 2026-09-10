@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Search, Zap, ChevronDown, Compass, Bookmark, BarChart3, LineChart, HelpCircle, Settings } from "lucide-react";
 import { UserAvatar } from "./user-avatar";
+import { DateTimeWeather } from "./datetime-weather";
 import { AppIcon } from "@/components/ui/app-icon";
 
 const navLinks = [
@@ -84,6 +85,13 @@ export function Header() {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const isNewsBytes = pathname === "/newsbytes";
+  // The date/time + weather strip is masthead furniture for the reading
+  // surfaces. It is suppressed on the two chrome-less routes: NewsBytes is a
+  // full-bleed immersive reader whose header is a gradient scrim, and the
+  // embed iframe is a widget rendered inside somebody else's page — neither
+  // should carry our masthead, and the embed must not make a cross-origin
+  // weather call on a host that never asked for one.
+  const showDateTimeWeather = !isNewsBytes && !pathname.startsWith("/embed");
 
   // Handle title button click - toggle dropdown or refresh if already open
   const handleTitleClick = () => {
@@ -289,6 +297,18 @@ export function Header() {
           <UserAvatar onDark={isNewsBytes} />
         </div>
       </div>
+
+      {/* Masthead strip: the reader's local date/time and current conditions.
+          A second row of the SAME sticky header, so it travels with the
+          chrome and is measured by the existing [data-app-header] observer in
+          home-client.tsx rather than needing its own offset. Its height is
+          reserved by the strip itself (min-h + an invisible clock
+          placeholder), so it cannot shift the page once the data lands. */}
+      {showDateTimeWeather && (
+        <div className="mx-auto max-w-[1200px] px-4 pb-2 sm:px-6 sm:pb-3">
+          <DateTimeWeather />
+        </div>
+      )}
     </header>
   );
 }

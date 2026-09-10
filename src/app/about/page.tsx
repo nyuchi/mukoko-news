@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { Globe, Zap, Users, ChevronRight } from "lucide-react";
+import { PreferredSourceCard } from "@/components/preferred-source-button";
 
 const values = [
   {
@@ -59,6 +60,14 @@ export default function AboutPage() {
             </div>
           </div>
         ))}
+      </div>
+
+      {/* Google Preferred Sources. This page is the one surface where it earns
+          its place: a reader here is deciding what they think of the
+          publication. The control itself loads no third-party script until it
+          is hovered, focused or tapped. */}
+      <div className="mb-12">
+        <PreferredSourceCard />
       </div>
 
       {/* Links */}

@@ -1,0 +1,664 @@
+<title>Mukoko Feed Architecture</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif:opsz,wght@6..72,400;6..72,600;6..72,700&family=Noto+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap">
+
+<style>
+  /* Mukoko "Swarm" tokens — the repo's own system (globals.css / Mzizi). */
+  :root {
+    --background: #F3F3F1;
+    --surface: #EEEEEC;
+    --elevated: #E5E4E1;
+    --border: #E7E5E0;
+    --rule: #D9D6CF;
+    --foreground: #000000;
+    --text-secondary: #2E2B27;
+    --text-tertiary: #474139;
+
+    --tanzanite: #4B0082;
+    --cobalt: #0047AB;
+    --malachite: #004D40;
+    --terracotta: #A0522D;
+    --copper: #BF5A36;
+
+    --copper-wash: rgba(191, 90, 54, 0.14);
+    --malachite-wash: rgba(0, 77, 64, 0.12);
+    --tanzanite-wash: rgba(75, 0, 130, 0.10);
+
+    --container-malachite: #D9F2EC;
+    --on-container-malachite: #00332B;
+    --container-tanzanite: #EDE7F6;
+    --on-container-tanzanite: #2A004D;
+
+    --font-serif: 'Noto Serif', ui-serif, Georgia, serif;
+    --font-sans: 'Noto Sans', ui-sans-serif, system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --background: #0E0D0C;
+      --surface: #050504;
+      --elevated: #1E1D1A;
+      --border: #2A2927;
+      --rule: #38352F;
+      --foreground: #FFFFFF;
+      --text-secondary: #E8E8E4;
+      --text-tertiary: #D4D4CF;
+
+      --tanzanite: #B388FF;
+      --cobalt: #00B0FF;
+      --malachite: #64FFDA;
+      --terracotta: #E1B07E;
+      --copper: #FF8A65;
+
+      --copper-wash: rgba(255, 138, 101, 0.16);
+      --malachite-wash: rgba(100, 255, 218, 0.13);
+      --tanzanite-wash: rgba(179, 136, 255, 0.13);
+
+      --container-malachite: #063A31;
+      --on-container-malachite: #8CFFE6;
+      --container-tanzanite: #2A1B4D;
+      --on-container-tanzanite: #D7C6FF;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --background: #0E0D0C;
+    --surface: #050504;
+    --elevated: #1E1D1A;
+    --border: #2A2927;
+    --rule: #38352F;
+    --foreground: #FFFFFF;
+    --text-secondary: #E8E8E4;
+    --text-tertiary: #D4D4CF;
+
+    --tanzanite: #B388FF;
+    --cobalt: #00B0FF;
+    --malachite: #64FFDA;
+    --terracotta: #E1B07E;
+    --copper: #FF8A65;
+
+    --copper-wash: rgba(255, 138, 101, 0.16);
+    --malachite-wash: rgba(100, 255, 218, 0.13);
+    --tanzanite-wash: rgba(179, 136, 255, 0.13);
+
+    --container-malachite: #063A31;
+    --on-container-malachite: #8CFFE6;
+    --container-tanzanite: #2A1B4D;
+    --on-container-tanzanite: #D7C6FF;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    font-size: 16px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page {
+    max-width: 920px;
+    margin: 0 auto;
+    padding-inline: 20px;
+    padding-block: 56px 96px;
+    display: flex;
+    flex-direction: column;
+    gap: 60px;
+  }
+
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--tanzanite);
+  }
+
+  h1 {
+    font-family: var(--font-serif);
+    font-weight: 700;
+    font-size: clamp(30px, 5.2vw, 46px);
+    line-height: 1.12;
+    letter-spacing: -0.02em;
+    margin: 0;
+    text-wrap: balance;
+  }
+
+  .standfirst {
+    font-size: 18px;
+    line-height: 1.6;
+    color: var(--text-secondary);
+    margin: 0;
+    max-width: 62ch;
+    text-wrap: pretty;
+  }
+
+  header.masthead { display: flex; flex-direction: column; gap: 18px; }
+
+  section { display: flex; flex-direction: column; gap: 22px; }
+
+  h2 {
+    font-family: var(--font-serif);
+    font-weight: 600;
+    font-size: 25px;
+    line-height: 1.25;
+    letter-spacing: -0.01em;
+    margin: 0;
+    text-wrap: balance;
+  }
+
+  h3 { font-family: var(--font-sans); font-weight: 600; font-size: 15px; margin: 0; }
+
+  p { margin: 0; max-width: 68ch; text-wrap: pretty; }
+
+  code {
+    font-family: var(--font-mono);
+    font-size: 0.86em;
+    background: var(--elevated);
+    padding: 1px 5px;
+    border-radius: 4px;
+    white-space: nowrap;
+  }
+
+  strong { font-weight: 600; }
+
+  /* ── figures ────────────────────────────────────────────── */
+  figure {
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .figframe {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 22px 20px;
+    overflow-x: auto;
+  }
+
+  svg.diagram {
+    display: block;
+    width: 100%;
+    min-width: 660px;
+    max-width: 100%;
+    height: auto;
+    color: var(--foreground);
+  }
+
+  .box { fill: var(--elevated); stroke: currentColor; stroke-width: 1.1; }
+  .box-quiet { fill: none; stroke: currentColor; stroke-width: 1; stroke-opacity: 0.45; }
+  .flow { stroke: currentColor; stroke-width: 1.4; fill: none; }
+  .flow-ai { stroke: var(--tanzanite); stroke-width: 1.6; fill: none; }
+  .t { font-family: 'JetBrains Mono', ui-monospace, monospace; fill: currentColor; }
+  .t-title { font-family: 'Noto Sans', system-ui, sans-serif; font-weight: 600; fill: currentColor; }
+  .t-dim { fill: currentColor; opacity: 0.62; }
+  .t-ai { fill: var(--tanzanite); }
+  .t-copper { fill: var(--copper); }
+  .t-good { fill: var(--malachite); }
+
+  figcaption {
+    font-size: 13.5px;
+    color: var(--text-tertiary);
+    max-width: 70ch;
+    line-height: 1.55;
+  }
+  figcaption b { color: var(--text-secondary); font-weight: 600; }
+
+  /* ── measured strip ─────────────────────────────────────── */
+  .measures {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(155px, 1fr));
+    gap: 1px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+    border-radius: 14px;
+    overflow: hidden;
+  }
+  .measure {
+    background: var(--surface);
+    padding: 15px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .measure .k {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+  }
+  .measure .before {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--copper);
+    text-decoration: line-through;
+    text-decoration-thickness: 1px;
+  }
+  .measure .after {
+    font-family: var(--font-mono);
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--malachite);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ── principle list ─────────────────────────────────────── */
+  .principles { display: flex; flex-direction: column; gap: 0; }
+  .principle {
+    display: grid;
+    grid-template-columns: minmax(190px, 0.85fr) 1.6fr;
+    gap: 20px;
+    padding: 18px 0;
+    border-top: 1px solid var(--rule);
+    align-items: start;
+  }
+  .principle:last-child { border-bottom: 1px solid var(--rule); }
+  .principle .tt {
+    font-family: var(--font-serif);
+    font-weight: 600;
+    font-size: 16.5px;
+    line-height: 1.3;
+    color: var(--foreground);
+  }
+  .principle p { font-size: 14.5px; color: var(--text-secondary); }
+
+  .note {
+    background: var(--container-malachite);
+    color: var(--on-container-malachite);
+    border-radius: 12px;
+    padding: 15px 18px;
+    font-size: 14px;
+    max-width: 70ch;
+  }
+  .note code { background: rgba(125,125,125,0.22); color: inherit; }
+
+  footer {
+    border-top: 1px solid var(--rule);
+    padding-top: 20px;
+    font-size: 13px;
+    color: var(--text-tertiary);
+    max-width: 70ch;
+  }
+
+  @media (max-width: 640px) {
+    .principle { grid-template-columns: 1fr; gap: 6px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+</style>
+
+<div class="page">
+
+  <header class="masthead">
+    <div class="eyebrow">Mukoko News · architecture</div>
+    <h1>From a publisher's RSS feed to a card on a 3G phone</h1>
+    <p class="standfirst">
+      Three flows: how an article is ingested and enriched, how the app reads it, and how
+      the feed was rebuilt around the pattern TikTok uses — no counting, no offsets, and
+      nothing sent that the screen does not draw.
+    </p>
+  </header>
+
+  <!-- ══ 1. INGESTION ══════════════════════════════════════ -->
+  <section>
+    <h2>1 · Ingestion and enrichment</h2>
+    <p>
+      Two workers on two platforms. <code>fly-worker</code> in Johannesburg does all the
+      fetching and never touches AI; <code>fundi-news-enrichment</code> does all the AI and
+      never fetches a feed. They meet only in <code>news.articles</code> and in one
+      notification.
+    </p>
+
+    <figure>
+      <div class="figframe">
+        <svg class="diagram" viewBox="0 0 880 400" role="img"
+             aria-label="Publishers feed the Fly.io worker, which inserts articles into MongoDB Atlas and notifies the Cloudflare enrichment agent; the agent writes only enrichment fields back to the same collection and self-schedules its own drain every five minutes.">
+          <defs>
+            <marker id="a1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <polygon points="0,0 10,5 0,10" fill="currentColor"/>
+            </marker>
+            <marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <polygon points="0,0 10,5 0,10" fill="var(--tanzanite)"/>
+            </marker>
+          </defs>
+
+          <!-- Publishers -->
+          <rect class="box" x="14" y="52" width="150" height="92" rx="10"/>
+          <text class="t-title" x="89" y="80" font-size="13" text-anchor="middle">Publishers</text>
+          <text class="t t-dim" x="89" y="102" font-size="11" text-anchor="middle">412 RSS sources</text>
+          <text class="t t-dim" x="89" y="119" font-size="11" text-anchor="middle">newsdata.io</text>
+          <text class="t t-dim" x="89" y="136" font-size="11" text-anchor="middle">54 countries</text>
+
+          <!-- fly-worker -->
+          <rect class="box" x="238" y="30" width="228" height="180" rx="10"/>
+          <text class="t-title" x="352" y="54" font-size="13" text-anchor="middle">fly-worker</text>
+          <text class="t t-dim" x="352" y="71" font-size="10.5" text-anchor="middle">Fly.io · Johannesburg</text>
+          <line class="box-quiet" x1="256" y1="82" x2="448" y2="82"/>
+          <text class="t t-dim" x="256" y="100" font-size="10.5">dedupe on externalUrl</text>
+          <text class="t t-dim" x="256" y="117" font-size="10.5">sanitize → markdown</text>
+          <text class="t t-dim" x="256" y="134" font-size="10.5">full-text fetch · 10 min</text>
+          <text class="t t-dim" x="256" y="151" font-size="10.5">byline backfill · 10 min</text>
+          <text class="t t-dim" x="256" y="168" font-size="10.5">country backfill · 5 min</text>
+          <text class="t t-dim" x="256" y="185" font-size="10.5">source health · trending</text>
+          <text class="t t-dim" x="256" y="202" font-size="10.5">no AI, ever</text>
+
+          <!-- MongoDB -->
+          <rect class="box" x="546" y="52" width="188" height="92" rx="10"/>
+          <text class="t-title" x="640" y="80" font-size="13" text-anchor="middle">news.articles</text>
+          <text class="t t-dim" x="640" y="102" font-size="11" text-anchor="middle">MongoDB Atlas</text>
+          <text class="t t-dim" x="640" y="119" font-size="11" text-anchor="middle">63,830 docs</text>
+          <text class="t t-dim" x="640" y="136" font-size="11" text-anchor="middle">1.47 GB</text>
+
+          <!-- fundi -->
+          <rect class="box" x="330" y="272" width="330" height="108" rx="10" stroke="var(--tanzanite)"/>
+          <text class="t-title t-ai" x="495" y="296" font-size="13" text-anchor="middle">fundi-news-enrichment</text>
+          <text class="t t-dim" x="495" y="313" font-size="10.5" text-anchor="middle">Cloudflare Worker · Durable Object agent</text>
+          <line class="box-quiet" x1="350" y1="326" x2="640" y2="326"/>
+          <text class="t t-dim" x="350" y="344" font-size="10.5">Qwen → keywords, quality, categories</text>
+          <text class="t t-dim" x="350" y="361" font-size="10.5">BGE-M3 → 1024-dim embedding</text>
+
+          <!-- arrows -->
+          <line class="flow" x1="164" y1="98" x2="232" y2="98" marker-end="url(#a1)"/>
+          <text class="t t-dim" x="198" y="86" font-size="10" text-anchor="middle">15 min</text>
+          <text class="t t-dim" x="198" y="118" font-size="10" text-anchor="middle">6 h</text>
+
+          <line class="flow" x1="466" y1="98" x2="540" y2="98" marker-end="url(#a1)"/>
+          <text class="t t-dim" x="503" y="86" font-size="10" text-anchor="middle">insert</text>
+
+          <path class="flow" d="M 352 210 L 352 246 Q 352 272 378 272" marker-end="url(#a1)"/>
+          <text class="t t-dim" x="364" y="238" font-size="10">POST /api/enrich · new ids</text>
+
+          <path class="flow-ai" d="M 660 326 L 792 326 Q 812 326 812 306 L 812 118 Q 812 98 792 98 L 740 98" marker-end="url(#a2)"/>
+          <text class="t t-ai" x="700" y="316" font-size="10">writes ai* + engagement.* only</text>
+
+          <path class="flow-ai" d="M 330 300 Q 296 300 296 326 Q 296 352 330 352" marker-end="url(#a2)"/>
+          <text class="t t-ai" x="288" y="330" font-size="10" text-anchor="end">self-drains</text>
+          <text class="t t-ai" x="288" y="345" font-size="10" text-anchor="end">5 min · 5×100</text>
+        </svg>
+      </div>
+      <figcaption>
+        The enrichment agent <b>schedules itself</b> — a Durable Object alarm every five
+        minutes, chaining up to five batches of 100. The Worker cron is only a floor that
+        wakes it if it goes stale. Enrichment writes a fixed set of fields and nothing else;
+        <code>countryCode</code> is deliberately excluded, because a join against the
+        article's own feed source is exact where a model guessing a country from prose is not.
+      </figcaption>
+    </figure>
+  </section>
+
+  <!-- ══ 2. APP FLOW ══════════════════════════════════════ -->
+  <section>
+    <h2>2 · How the app reads</h2>
+    <p>
+      There is no API tier in the read path. Server Actions talk to MongoDB directly, and
+      the gateway Worker — a separate product API for third parties and MCP — is touched by
+      exactly one file in the frontend, for admin mutations.
+    </p>
+
+    <figure>
+      <div class="figframe">
+        <svg class="diagram" viewBox="0 0 880 330" role="img"
+             aria-label="The browser calls Next.js Server Actions and Route Handlers on Vercel, which read MongoDB Atlas directly. The gateway Worker sits off the read path and is used only for admin mutations.">
+          <defs>
+            <marker id="a3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <polygon points="0,0 10,5 0,10" fill="currentColor"/>
+            </marker>
+          </defs>
+
+          <!-- Browser -->
+          <rect class="box" x="14" y="86" width="140" height="104" rx="10"/>
+          <text class="t-title" x="84" y="114" font-size="13" text-anchor="middle">Reader</text>
+          <text class="t t-dim" x="84" y="136" font-size="11" text-anchor="middle">metered mobile</text>
+          <text class="t t-dim" x="84" y="153" font-size="11" text-anchor="middle">3G / patchy 4G</text>
+          <text class="t t-dim" x="84" y="170" font-size="11" text-anchor="middle">Africa-first</text>
+
+          <!-- Vercel -->
+          <rect class="box" x="226" y="26" width="290" height="230" rx="10"/>
+          <text class="t-title" x="371" y="50" font-size="13" text-anchor="middle">Next.js 15 · Vercel</text>
+          <line class="box-quiet" x1="246" y1="64" x2="496" y2="64"/>
+
+          <rect class="box-quiet" x="246" y="78" width="250" height="46" rx="7"/>
+          <text class="t" x="258" y="97" font-size="10.5">page.tsx — Server Component</text>
+          <text class="t t-dim" x="258" y="114" font-size="10">ISR 180 s · allSettled prefetch</text>
+
+          <rect class="box-quiet" x="246" y="134" width="250" height="46" rx="7"/>
+          <text class="t" x="258" y="153" font-size="10.5">Server Actions — feed.ts</text>
+          <text class="t t-dim" x="258" y="170" font-size="10">safeRead · never throws to client</text>
+
+          <rect class="box-quiet" x="246" y="190" width="250" height="46" rx="7"/>
+          <text class="t" x="258" y="209" font-size="10.5">Route Handlers — /api/*</text>
+          <text class="t t-dim" x="258" y="226" font-size="10">like · view · save · health</text>
+
+          <!-- Mongo -->
+          <rect class="box" x="596" y="86" width="180" height="104" rx="10"/>
+          <text class="t-title" x="686" y="114" font-size="13" text-anchor="middle">MongoDB Atlas</text>
+          <text class="t t-dim" x="686" y="136" font-size="11" text-anchor="middle">news · engagement</text>
+          <text class="t t-dim" x="686" y="153" font-size="11" text-anchor="middle">places · identity</text>
+          <text class="t t-dim" x="686" y="170" font-size="11" text-anchor="middle">maxTimeMS 15 s</text>
+
+          <!-- Gateway -->
+          <rect class="box-quiet" x="596" y="248" width="180" height="60" rx="10"/>
+          <text class="t-title t-dim" x="686" y="272" font-size="12" text-anchor="middle">gateway Worker</text>
+          <text class="t t-dim" x="686" y="291" font-size="10" text-anchor="middle">product API · MCP · resale</text>
+
+          <!-- arrows -->
+          <line class="flow" x1="154" y1="138" x2="220" y2="138" marker-end="url(#a3)"/>
+          <line class="flow" x1="516" y1="138" x2="590" y2="138" marker-end="url(#a3)"/>
+          <text class="t t-dim" x="553" y="128" font-size="10" text-anchor="middle">direct</text>
+
+          <path class="flow" d="M 516 212 L 556 212 Q 576 212 576 232 L 576 278 L 590 278"
+                stroke-dasharray="4 4" marker-end="url(#a3)"/>
+          <text class="t t-dim" x="536" y="256" font-size="10">admin mutations only</text>
+
+          <text class="t t-dim" x="686" y="212" font-size="10" text-anchor="middle">— not in the read path —</text>
+        </svg>
+      </div>
+      <figcaption>
+        The dashed edge is the whole of the frontend's dependency on the gateway. Every
+        reader-facing byte comes from the solid path. <code>maxTimeMS</code> sits below the
+        driver's socket timeout so MongoDB abandons a slow read at the source, rather than
+        the driver tearing down a pooled connection while the server keeps working.
+      </figcaption>
+    </figure>
+  </section>
+
+  <!-- ══ 3. THE FEED ══════════════════════════════════════ -->
+  <section>
+    <h2>3 · The feed, rebuilt on the TikTok pattern</h2>
+    <p>
+      The old feed paged by offset and computed a total. Both are habits from paginated
+      search results, and both get more expensive the further a reader scrolls — on a feed
+      where scrolling <em>is</em> the interaction. TikTok never counts and never offsets: it
+      hands back a cursor and prefetches the next batch before you reach the end.
+    </p>
+
+    <figure>
+      <div class="figframe">
+        <svg class="diagram" viewBox="0 0 880 330" role="img"
+             aria-label="Offset paging walks and discards forty rows to return twenty, and adds a full collection scan to count. Keyset paging seeks straight to the cursor, reads twenty-one rows, and does no counting at all.">
+          <defs>
+            <marker id="a4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <polygon points="0,0 10,5 0,10" fill="var(--copper)"/>
+            </marker>
+            <marker id="a5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <polygon points="0,0 10,5 0,10" fill="var(--malachite)"/>
+            </marker>
+          </defs>
+
+          <!-- ── BEFORE ── -->
+          <text class="t-title" x="0" y="22" font-size="13">Offset — page 3</text>
+          <text class="t t-copper" x="150" y="22" font-size="11">skip(40).limit(20)</text>
+
+          <!-- discarded -->
+          <rect x="0" y="38" width="474" height="34" rx="5"
+                fill="var(--copper-wash)" stroke="var(--copper)" stroke-width="1.1"/>
+          <text class="t t-copper" x="237" y="60" font-size="11" text-anchor="middle">40 rows walked, then discarded</text>
+
+          <!-- returned -->
+          <rect x="474" y="38" width="238" height="34" rx="5" class="box"/>
+          <text class="t" x="593" y="60" font-size="11" text-anchor="middle">20 returned</text>
+
+          <text class="t t-dim" x="722" y="60" font-size="10.5">page 10 walks 180</text>
+          <text class="t t-dim" x="722" y="74" font-size="10.5">page 50 walks 980</text>
+
+          <!-- count bar -->
+          <rect x="0" y="86" width="712" height="30" rx="5"
+                fill="var(--copper-wash)" stroke="var(--copper)" stroke-width="1.1" stroke-dasharray="5 3"/>
+          <text class="t t-copper" x="356" y="106" font-size="11" text-anchor="middle">
+            + countDocuments — COLLSCAN of all 63,830 docs
+          </text>
+          <text class="t t-copper" x="722" y="106" font-size="11">9.4 s</text>
+
+          <text class="t t-dim" x="0" y="140" font-size="10.5">every request · even capped at 5,000 matches</text>
+
+          <!-- divider -->
+          <line x1="0" y1="166" x2="880" y2="166" stroke="currentColor" stroke-opacity="0.18"/>
+
+          <!-- ── AFTER ── -->
+          <text class="t-title" x="0" y="200" font-size="13">Keyset — page 3</text>
+          <text class="t t-good" x="150" y="200" font-size="11">datePublished &lt; cursor</text>
+
+          <!-- untouched region -->
+          <rect x="0" y="216" width="474" height="34" rx="5" class="box-quiet" stroke-dasharray="4 4"/>
+          <text class="t t-dim" x="237" y="238" font-size="11" text-anchor="middle">never read</text>
+
+          <!-- returned -->
+          <rect x="474" y="216" width="238" height="34" rx="5"
+                fill="var(--malachite-wash)" stroke="var(--malachite)" stroke-width="1.1"/>
+          <text class="t" x="593" y="238" font-size="11" text-anchor="middle">21 read — 20 + 1</text>
+
+          <text class="t t-good" x="722" y="232" font-size="10.5">22 docs examined</text>
+          <text class="t t-dim" x="722" y="246" font-size="10.5">at any depth</text>
+
+          <!-- seek arrow -->
+          <path class="flow" d="M 474 276 L 474 258" stroke="var(--malachite)" marker-end="url(#a5)"/>
+          <text class="t t-good" x="474" y="292" font-size="10.5" text-anchor="middle">index seek to cursor</text>
+
+          <text class="t t-dim" x="0" y="292" font-size="10.5">no count — the 21st row IS the answer to “is there more”</text>
+        </svg>
+      </div>
+      <figcaption>
+        <b>The count bar is the whole point.</b> It existed only to produce a
+        <code>total</code> for offset paging, and nothing in the UI rendered it. Fetching one
+        row more than asked for answers the only question the feed actually has — "is there
+        another page" — exactly, and for free.
+      </figcaption>
+    </figure>
+
+    <div class="measures">
+      <div class="measure">
+        <div class="k">Feed page</div>
+        <div class="before">9.4 s count</div>
+        <div class="after">22 docs</div>
+      </div>
+      <div class="measure">
+        <div class="k">Top stories</div>
+        <div class="before">&gt; 60 s</div>
+        <div class="after">880 ms</div>
+      </div>
+      <div class="measure">
+        <div class="k">Category nav</div>
+        <div class="before">&gt; 60 s</div>
+        <div class="after">1.4 s / 1 h</div>
+      </div>
+      <div class="measure">
+        <div class="k">Health probe</div>
+        <div class="before">503 · 40.9 s</div>
+        <div class="after">1.1 s</div>
+      </div>
+    </div>
+
+    <h3>What changed, and why each one matters here</h3>
+    <div class="principles">
+
+      <div class="principle">
+        <div class="tt">A cursor, not a page number</div>
+        <p>
+          <code>skip(n)</code> re-walks and discards n rows server-side, so page 50 pays for
+          pages 1–49 again. A keyset cursor names a position in the sort, so every page costs
+          the same. It is also stable under insertion — on a news feed, articles land
+          <em>while</em> you scroll, and offsets silently duplicate or skip them.
+        </p>
+      </div>
+
+      <div class="principle">
+        <div class="tt">The tie-break lives in the filter, never the sort</div>
+        <p>
+          Timestamps collide: 3,000 recent articles carry only 2,831 distinct
+          <code>datePublished</code> values, so ~6% share one with another article. The cursor
+          breaks ties on <code>_id</code> in the query filter. Putting <code>_id</code> in the
+          <em>sort key</em> looks more correct and defeats the index — that variant did not
+          finish inside 60 seconds, while the single-key sort streams as a merge.
+        </p>
+      </div>
+
+      <div class="principle">
+        <div class="tt">Rank in the app, not in the database</div>
+        <p>
+          "Top stories" sorted by <code>qualityScore</code>, which has no index — a blocking
+          in-memory sort over the whole collection. Bounding it to 14 days did not help,
+          because a window is still ~32,000 fat documents the sort must materialise. Reading
+          the 200 most recent on the index and ranking those in JavaScript is 880 ms — and is
+          what the rail means anyway, since "top stories" is the best of what is <em>recent</em>.
+        </p>
+      </div>
+
+      <div class="principle">
+        <div class="tt">Send only what the card draws</div>
+        <p>
+          Every feed item shipped the full article body and a 1024-float embedding, though
+          <code>article.content</code> is read on the detail page alone. On a metered
+          connection that is a bill someone pays. The list projection drops both — which also
+          cuts the server-side fetch, since pulling fat documents off disk, not the index
+          scan, was the actual cost.
+        </p>
+      </div>
+
+      <div class="principle">
+        <div class="tt">Prefetch before the reader arrives</div>
+        <p>
+          An <code>IntersectionObserver</code> with a 400&nbsp;px root margin starts the next
+          page while the current one is still on screen. On a fast connection it is
+          invisible; on a slow one it is the difference between a feed that scrolls and a
+          feed that stalls.
+        </p>
+      </div>
+
+      <div class="principle">
+        <div class="tt">A failed rail degrades, it does not 500</div>
+        <p>
+          Each section reads independently and falls back to empty with a banner above the
+          content that did load. Previously one shared <code>Promise.all</code> with no catch
+          meant a single slow query blanked the entire site — which is exactly what happened.
+        </p>
+      </div>
+
+    </div>
+
+    <div class="note">
+      <b>Where the pattern stops.</b> The <code>popular</code> rail deliberately emits no
+      cursor. There is no keyset over a ranking computed in application code, and handing back
+      a cursor the read path would ignore sends the client to page one forever — it dedupes to
+      nothing, still sees "more", and loops. Offset paging within a fixed pool is the honest
+      answer for that one rail.
+    </div>
+  </section>
+
+  <footer>
+    Timings are <code>explain</code> with <code>executionStats</code> against the live Atlas
+    cluster on 10 September 2026, and the health-probe figures are real requests to
+    production before and after the change. Collection size 1.47 GB / 63,830 articles across
+    412 active sources.
+  </footer>
+
+</div>

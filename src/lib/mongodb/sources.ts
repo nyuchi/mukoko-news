@@ -22,13 +22,22 @@ interface MongoFeedSource {
 
 interface MongoFeedSourceWithOrg extends MongoFeedSource {
   mediaOrganizationId?: string
-  org?: { isVerified?: boolean; publisherTier?: string } | null
+  org?: { isVerified?: boolean; publisherTier?: string; url?: string } | null
 }
 
 export async function getSources(): Promise<Array<{
   id: string
   name: string
   url: string
+  /**
+   * The publishing organisation's own homepage, from its own record.
+   *
+   * Derived per request, never stored: the organisation record is the single
+   * instance of publisher identity. All 537 organisations carry an http(s) `url`
+   * (measured 2026-09-10), which is what makes a favicon resolvable for every
+   * source rather than the 38 a hardcoded table covered.
+   */
+  site_url?: string
   country_id: string
   article_count: number
   last_fetched_at?: string
@@ -53,7 +62,7 @@ export async function getSources(): Promise<Array<{
           localField: 'mediaOrganizationId',
           foreignField: '_id',
           as: 'org',
-          pipeline: [{ $project: { isVerified: 1, publisherTier: 1 } }],
+          pipeline: [{ $project: { isVerified: 1, publisherTier: 1, url: 1 } }],
         },
       },
       { $set: { org: { $first: '$org' } } },
@@ -64,6 +73,7 @@ export async function getSources(): Promise<Array<{
     id: d._id,
     name: d.name,
     url: d.feedUrl,
+    site_url: d.org?.url || undefined,
     country_id: d.countryCode,
     article_count: d.articleCount,
     last_fetched_at: d.lastFetchedAt?.toISOString(),
