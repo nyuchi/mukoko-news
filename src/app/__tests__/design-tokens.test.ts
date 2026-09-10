@@ -115,6 +115,13 @@ describe('globals.css matches the Mzizi snapshot', () => {
   })
 })
 
+/** The whole `prefers-contrast: more` at-rule, braces included. */
+function highContrastBlock(): string {
+  const start = CSS.indexOf('@media (prefers-contrast: more)')
+  const end = CSS.indexOf('@media (forced-colors: active)')
+  return CSS.slice(start, end === -1 ? undefined : end)
+}
+
 describe('the two defects this file exists to prevent', () => {
   const { root, light, dark } = blocks()
 
@@ -186,10 +193,54 @@ describe('the two defects this file exists to prevent', () => {
       expect(declared(block, '--outline')).toBe('transparent')
     }
     expect(CSS).toContain("[data-outlines='on']")
-    // …and it is NOT optional under forced/high contrast, where every surface
-    // collapses to Canvas and fill can no longer separate anything.
-    const contrast = CSS.slice(CSS.indexOf('@media (prefers-contrast: more)'))
-    expect(contrast.slice(0, contrast.indexOf('}'))).toContain('--outline: CanvasText')
+    // …and it is NOT optional under high contrast, where a reader has asked
+    // the OS to make differences easier to see.
+    const contrast = highContrastBlock()
+    expect(contrast).toContain('--outline: var(--border)')
+  })
+
+  it('high contrast RAISES contrast inside the Mzizi scale, it does not replace it', () => {
+    // The regression: this block used to set every surface to `Canvas` and
+    // every border and text colour to `CanvasText`. With the OS "Increase
+    // Contrast" switch on, all eight background steps collapsed into one flat
+    // system colour and every card was outlined in stark white on black — the
+    // card stopped reading as a card, because the fill that separated it from
+    // the page was gone and the border was the only structure left.
+    //
+    // `prefers-contrast: more` means "make differences easier to see", not
+    // "throw away the palette". Replacing the palette is `forced-colors`,
+    // which is a different query and has its own block.
+    const contrast = highContrastBlock()
+
+    for (const token of [
+      '--background',
+      '--surface',
+      '--card',
+      '--muted',
+      '--elevated',
+      '--popover',
+    ]) {
+      expect(
+        contrast,
+        `${token} must keep its Mzizi step under prefers-contrast: more`
+      ).not.toMatch(new RegExp(`\\${token}\\s*:\\s*Canvas`))
+    }
+
+    // What it SHOULD do instead: outlines on, the dim text roles lifted to
+    // full foreground, and a border that is visible but still from the
+    // palette rather than a system colour.
+    expect(contrast).toContain('--outline: var(--border)')
+    expect(contrast).toMatch(/--text-tertiary:\s*#(ffffff|000000)/i)
+    expect(contrast).not.toMatch(/--border:\s*CanvasText/)
+  })
+
+  it('forced-colors is where the palette IS handed over', () => {
+    // The counterpart: when the OS replaces colours outright there is no
+    // point defending the scale, and the focus ring must be redrawn in the
+    // one colour that survives.
+    const forced = CSS.slice(CSS.indexOf('@media (forced-colors: active)'))
+    expect(forced).toContain('--border: CanvasText')
+    expect(forced).toContain('Highlight')
   })
 
   it('no chart token is a literal colour', () => {
