@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Mukoko News is a Pan-African digital news aggregation platform. "Mukoko" means "Beehive" in Shona — where community gathers and stores knowledge. Primary market is Zimbabwe with expansion across 16 African countries.
+Mukoko News is a Pan-African digital news aggregation platform. "Mukoko" means "Beehive" in Shona — where community gathers and stores knowledge. Primary market is Zimbabwe. **Scope is all 54 African Union member states; 16 are released and the rest are "coming soon"** — `RELEASED_COUNTRY_CODES` / `COVERAGE_CLAIM` in `src/lib/constants.ts` are the single source of that claim, and every public surface interpolates them rather than writing a number.
 
 ## Three-Repo Architecture
 

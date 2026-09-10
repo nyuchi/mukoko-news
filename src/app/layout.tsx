@@ -10,6 +10,7 @@ import { OnboardingModal } from '@/components/onboarding-modal';
 import { ServiceWorkerRegister } from '@/components/pwa/sw-register';
 import { WebMcpProvider } from '@/components/agent/webmcp-provider';
 import { OrganizationJsonLd, WebSiteJsonLd } from '@/components/ui/json-ld';
+import { COVERAGE_FRAGMENT } from '@/lib/constants';
 import { AuthKitProvider } from '@workos-inc/authkit-nextjs/components';
 
 // Fonts are self-hosted via next/font (downloaded at build time, served from
@@ -43,7 +44,7 @@ export const metadata: Metadata = {
     default: 'Mukoko News - Pan-African News Hub',
     template: '%s | Mukoko News',
   },
-  description: 'Pan-African digital news aggregation platform. Your trusted source for breaking news, top stories, and in-depth coverage from Zimbabwe and 16 African countries.',
+  description: `Pan-African digital news aggregation platform. Your trusted source for breaking news, top stories and in-depth coverage — ${COVERAGE_FRAGMENT}.`,
   keywords: [
     'African news',
     'Pan-African news',
@@ -67,7 +68,7 @@ export const metadata: Metadata = {
   },
   openGraph: {
     title: 'Mukoko News - Pan-African News Hub',
-    description: 'Your trusted source for breaking news and top stories from across Africa. Coverage from Zimbabwe, South Africa, Kenya, Nigeria, and 12 more countries.',
+    description: `Your trusted source for breaking news and top stories from across Africa — ${COVERAGE_FRAGMENT}.`,
     url: BASE_URL,
     siteName: 'Mukoko News',
     images: [

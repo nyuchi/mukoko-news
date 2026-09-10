@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { Globe, Zap, Users, ChevronRight } from "lucide-react";
+import { RELEASED_COUNTRY_COUNT, COUNTRY_SCOPE_TOTAL } from "@/lib/constants";
 
 const values = [
   {
     icon: Globe,
     title: "Pan-African by design",
     description:
-      "News from across the continent in one place — starting in Zimbabwe and expanding across 16 African countries, with local sources at the centre.",
+      `News from across the continent in one place — live in ${RELEASED_COUNTRY_COUNT} African countries today, with all ${COUNTRY_SCOPE_TOTAL} African Union member states in scope and local sources at the centre.`,
   },
   {
     icon: Zap,
@@ -40,8 +41,10 @@ export default function AboutPage() {
           Mukoko News aggregates trusted journalism from across Africa and makes it fast and easy to
           follow. &ldquo;Mukoko&rdquo; means <span className="italic">beehive</span> in Shona &mdash;
           a place where the community gathers and stores knowledge. We started in Zimbabwe and are
-          expanding across 16 African countries, always keeping local voices and local sources at
-          the heart of the feed.
+          live in {RELEASED_COUNTRY_COUNT} African countries today. The remaining{" "}
+          {COUNTRY_SCOPE_TOTAL - RELEASED_COUNTRY_COUNT} African Union member states are in scope
+          and coming soon &mdash; we would rather say where we are not yet than claim a continent we
+          have not reached. Local voices and local sources stay at the heart of the feed.
         </p>
       </div>
 

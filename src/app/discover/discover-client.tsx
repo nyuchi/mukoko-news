@@ -9,7 +9,15 @@ import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { DiscoverPageSkeleton } from "@/components/ui/discover-skeleton";
 import { type Article, type Category } from "@/lib/api";
 import { getArticlesAction, getCategoriesAction, getSourcesAction } from "@/lib/actions/feed";
-import { COUNTRIES, CATEGORY_META, getFullUrl } from "@/lib/constants";
+import {
+  COUNTRIES,
+  CATEGORY_META,
+  getFullUrl,
+  COVERAGE_FRAGMENT,
+  COUNTRY_SCOPE_TOTAL,
+  RELEASED_COUNTRY_COUNT,
+  isReleasedCountry,
+} from "@/lib/constants";
 import { WebPageJsonLd } from "@/components/ui/json-ld";
 
 interface Source {
@@ -147,6 +155,11 @@ export default function DiscoverClient({
 
   const isFiltered = activeCategory || activeCountry || activeSource;
 
+  // A country that is in scope but not released yet. Its page is honest about
+  // that rather than rendering an empty result set, which reads to a reader as
+  // "we lost the articles" and to a crawler as a soft-404.
+  const countryComingSoon = !!activeCountry && !isReleasedCountry(activeCountry);
+
   if (loading) {
     return <DiscoverPageSkeleton />;
   }
@@ -175,7 +188,7 @@ export default function DiscoverClient({
     <ErrorBoundary fallback={<div className="p-8 text-center text-text-secondary">Failed to load discover page</div>}>
       <WebPageJsonLd
         name="Discover — Mukoko News"
-        description="Explore African news by category, country, and trending topics. Browse sources and discover stories from 16 African countries."
+        description={`Explore African news by category, country and trending topics. Browse sources and discover stories — ${COVERAGE_FRAGMENT}.`}
         url={getFullUrl("/discover")}
       />
       <div className="max-w-[1200px] mx-auto px-6 py-8">
@@ -212,7 +225,9 @@ export default function DiscoverClient({
                 ].filter(Boolean).join(" · ")}
               </h2>
               <p className="text-text-secondary text-sm mt-1">
-                {filteredArticles.length} articles found
+                {countryComingSoon
+                  ? "Coming soon — no sources here yet"
+                  : `${filteredArticles.length} articles found`}
               </p>
             </div>
             <Link
@@ -229,7 +244,29 @@ export default function DiscoverClient({
           </div>
           {filteredArticles.length === 0 && (
             <div className="text-center py-12">
-              <p className="text-text-secondary">No articles found for this filter.</p>
+              {/* An in-scope country we have not launched yet says so. It used to
+                  render "No articles found", which reads as a temporary blank —
+                  and, submitted in the sitemap, as a soft-404. */}
+              {countryComingSoon ? (
+                <>
+                  <p className="text-foreground font-medium">
+                    {COUNTRIES.find((c) => c.code === activeCountry)?.name} is coming soon
+                  </p>
+                  <p className="text-text-secondary text-sm mt-2 max-w-md mx-auto">
+                    Mukoko News is live in {RELEASED_COUNTRY_COUNT} African countries today, with
+                    all {COUNTRY_SCOPE_TOTAL} African Union member states in scope. We have not
+                    onboarded a newsroom here yet.
+                  </p>
+                  <Link
+                    href="/discover"
+                    className="inline-block mt-6 text-sm text-primary font-medium hover:underline"
+                  >
+                    Browse the countries we cover
+                  </Link>
+                </>
+              ) : (
+                <p className="text-text-secondary">No articles found for this filter.</p>
+              )}
             </div>
           )}
         </div>
@@ -296,6 +333,7 @@ export default function DiscoverClient({
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
               {COUNTRIES.map((country) => {
                 const articleCount = articles.filter(a => (a.country_id || a.country) === country.code).length;
+                const released = isReleasedCountry(country.code);
                 return (
                   <Link
                     key={country.code}
@@ -310,7 +348,11 @@ export default function DiscoverClient({
                         {country.name}
                       </p>
                       <p className="text-xs text-text-tertiary">
-                        {articleCount > 0 ? `${articleCount} Articles` : "Browse news"}
+                        {articleCount > 0
+                          ? `${articleCount} Articles`
+                          : released
+                            ? "Browse news"
+                            : "Coming soon"}
                       </p>
                     </div>
                   </Link>

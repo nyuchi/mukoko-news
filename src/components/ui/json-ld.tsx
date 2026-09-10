@@ -1,11 +1,33 @@
 import type { Article } from "@/lib/api";
-import { BASE_URL, getFullUrl, getArticleUrl } from "@/lib/constants";
+import {
+  BASE_URL,
+  getFullUrl,
+  getArticleUrl,
+  COVERAGE_FRAGMENT,
+  RELEASED_COUNTRY_COUNT,
+  COUNTRY_SCOPE_TOTAL,
+} from "@/lib/constants";
+import { toExcerpt } from "@/lib/excerpt";
 
 interface NewsArticleSchema {
   "@context": "https://schema.org";
   "@type": "NewsArticle";
   headline: string;
   description?: string;
+  /**
+   * An EXCERPT of the article — never the publisher's full text.
+   *
+   * This carried `article.content`, which is the complete body of someone
+   * else's reporting, emitted machine-readable on Mukoko's own origin. It
+   * earned nothing (no `NewsArticle` rich result reads `articleBody`; the
+   * appearance comes from `headline`/`description`/`datePublished` and the
+   * rendered page), it duplicated the largest payload on the page for readers
+   * on metered mobile data, and it let an answer engine satisfy a reader
+   * end-to-end without the newsroom that wrote it ever being fetched.
+   *
+   * Bounded by `ARTICLE_EXCERPT_MAX_CHARS`; omitted entirely when the only text
+   * available is the description, which `description` already carries.
+   */
   articleBody?: string;
   image?: string | { "@type": "ImageObject"; url: string; width?: number; height?: number };
   datePublished: string;
@@ -117,7 +139,11 @@ export function ArticleJsonLd({ article, url }: { article: Article; url: string 
     "@type": "NewsArticle",
     headline: article.title,
     description: article.description,
-    articleBody: article.content || article.description,
+    // An excerpt, not the body. See `NewsArticleSchema.articleBody` above and
+    // `@/lib/excerpt` for the bound and why it is that number. No fallback to
+    // `description`: it is emitted a line above, and repeating it here would be
+    // the same bytes twice for no additional meaning.
+    articleBody: toExcerpt(article.content || article.content_markdown),
     image: article.image_url,
     datePublished: article.published_at,
     dateModified: article.updated_at || article.published_at,
@@ -185,7 +211,7 @@ export function OrganizationJsonLd() {
     name: "Mukoko News",
     legalName: "Mukoko News by Nyuchi Technology",
     description:
-      "Pan-African digital news aggregation platform covering Zimbabwe, South Africa, Kenya, Nigeria, and 12 more African countries.",
+      `Pan-African digital news aggregation platform, ${COVERAGE_FRAGMENT}.`,
     url: BASE_URL,
     logo: {
       "@type": "ImageObject",
@@ -357,7 +383,7 @@ export function WebSiteJsonLd() {
     alternateName: "Mukoko",
     url: BASE_URL,
     description:
-      "Pan-African digital news aggregation platform. Breaking news, top stories, and in-depth coverage from 16 African countries.",
+      `Pan-African digital news aggregation platform. Breaking news, top stories and in-depth coverage — ${COVERAGE_FRAGMENT}.`,
     publisher: {
       "@type": "NewsMediaOrganization",
       name: "Mukoko News",
@@ -456,7 +482,7 @@ export function SoftwareApplicationJsonLd() {
       url: BASE_URL,
     },
     featureList:
-      "5 layouts (cards, compact, hero, ticker, list), 4 feed types, 16 African countries, dark/light theme, responsive design",
+      `5 layouts (cards, compact, hero, ticker, list), 4 feed types, ${RELEASED_COUNTRY_COUNT} African countries live (${COUNTRY_SCOPE_TOTAL} in scope), dark/light theme, responsive design`,
     softwareVersion: "1.0",
     isAccessibleForFree: true,
   };

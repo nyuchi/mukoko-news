@@ -3,7 +3,7 @@
     "name": "mukoko-news",
     "version": "2.0.0",
     "title": "Mukoko News",
-    "description": "Pan-African news aggregation for Zimbabwe and 15 other African countries — briefings, search, source views and open-data analytics."
+    "description": "Pan-African news aggregation — live in 16 African countries, with all 54 in scope. Briefings, search, source views and open-data analytics."
   },
   "transport": {
     "type": "streamable-http",
