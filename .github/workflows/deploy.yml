@@ -15,6 +15,15 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# Node version defined ONCE and referenced by every job below. Five jobs each
+# carried their own hardcoded Node 20 pin, which is how a repo ends up
+# with jobs on different majors without anyone deciding to. 24 is Active LTS —
+# deliberately not the minimum a toolchain will accept, because sitting on the
+# bottom threshold is what produces "requires at least Node vX" failures the
+# moment any tool moves its floor.
+env:
+  NODE_VERSION: '24'
+
 permissions:
   contents: read
   pull-requests: read
@@ -87,7 +96,7 @@ jobs:
       if: matrix.check == 'prettier'
       uses: actions/setup-node@v4
       with:
-        node-version: '20'
+        node-version: ${{ env.NODE_VERSION }}
     - name: Run prettier
       if: matrix.check == 'prettier'
       run: |
@@ -129,7 +138,7 @@ jobs:
     - uses: actions/checkout@v4
     - uses: actions/setup-node@v4
       with:
-        node-version: '20'
+        node-version: ${{ env.NODE_VERSION }}
         cache: 'npm'
     - run: npm ci
     - name: Run ESLint
@@ -147,7 +156,7 @@ jobs:
     - uses: actions/checkout@v4
     - uses: actions/setup-node@v4
       with:
-        node-version: '20'
+        node-version: ${{ env.NODE_VERSION }}
         cache: 'npm'
     - run: npm ci
     - name: Run tsc --noEmit
@@ -165,7 +174,7 @@ jobs:
     - uses: actions/checkout@v4
     - uses: actions/setup-node@v4
       with:
-        node-version: '20'
+        node-version: ${{ env.NODE_VERSION }}
         cache: 'npm'
     - run: npm ci
     # `npm run test:coverage`, not `npm run test`. The coverage thresholds in
@@ -187,7 +196,7 @@ jobs:
     - uses: actions/checkout@v4
     - uses: actions/setup-node@v4
       with:
-        node-version: '20'
+        node-version: ${{ env.NODE_VERSION }}
         cache: 'npm'
     - run: npm ci
     - name: Build Next.js
