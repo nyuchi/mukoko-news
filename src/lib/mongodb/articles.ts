@@ -8,6 +8,7 @@ import type { Collection, Filter } from 'mongodb'
 import { getDb, QUERY_MAX_TIME_MS } from './client'
 import { stripHtml } from '@/lib/utils'
 import { clampInt, MAX_LIMIT, MAX_PAGE } from '@/lib/safety'
+import { getPublisherOrganization, type PublisherOrganization } from './organizations'
 import type { Article } from '@/lib/api'
 
 interface MongoArticle {
@@ -31,6 +32,11 @@ interface MongoArticle {
   articleBodyMarkdown?: string
   articleSection?: string
   datePublished?: Date
+  // Schema.org sub-document, NOT a string — both ingestion paths write
+  // `{ '@type': 'Person', name }` (see sources.ts / analytics.ts, which already
+  // read it this way). It was never declared here, so `toArticle` never mapped
+  // it and `Article.author` was undefined for every article in the corpus.
+  author?: { '@type'?: string; name?: string }
   // Image has been stored in several shapes across pipeline versions:
   //   schema.org array:  image: [{ url }]       (fly-worker rss/newsdata collectors)
   //   schema.org object: image: { url }         (parser intermediate)
@@ -61,6 +67,31 @@ interface MongoFeedSource {
   name: string
   countryCode: string
   mediaOrganizationId: string
+  /**
+   * The publisher's own site and feed endpoint. Measured 2026-09-10: `feedUrl`
+   * is an http(s) URL on 587 of 587 sources, `sourceUrl` on 479. Both are
+   * already in every document these reads fetch (the feed-source lookups are
+   * unprojected), so carrying them costs no extra IO.
+   */
+  feedUrl?: string
+  sourceUrl?: string
+}
+
+/**
+ * The publisher's own website for a feed source, or undefined.
+ *
+ * `sourceUrl` is the site; `feedUrl` is the RSS endpoint on that same site, so
+ * its host is the publisher's either way. Only the host is consumed downstream
+ * (`@/lib/publisher-icon`), which is why the feed URL is an acceptable second
+ * choice rather than a guess.
+ */
+function resolveSourceSiteUrl(source?: MongoFeedSource): string | undefined {
+  const candidates = [source?.sourceUrl, source?.feedUrl]
+  for (const candidate of candidates) {
+    const trimmed = candidate?.trim()
+    if (trimmed && /^https?:\/\//i.test(trimmed)) return trimmed
+  }
+  return undefined
 }
 
 /**
@@ -150,7 +181,7 @@ const LIST_PROJECTION = {
 function toArticle(
   doc: MongoArticle,
   source?: MongoFeedSource,
-  opts: { fullContent?: boolean } = {}
+  opts: { fullContent?: boolean; organization?: PublisherOrganization } = {}
 ): Article {
   const imageUrl = resolveImageUrl(doc)
   return {
@@ -168,8 +199,32 @@ function toArticle(
       ? stripHtml(doc.articleBodyProcessed || doc.articleBody) || undefined
       : undefined,
     content_markdown: opts.fullContent ? doc.articleBodyMarkdown?.trim() || undefined : undefined,
+    // The journalist's byline. The pipeline backfilled these onto `author.name`
+    // in 2026-09; without this line none of that reached the page, the article
+    // metadata, the NewsArticle JSON-LD or the markdown served to agents — all
+    // of which silently fell back to attributing the piece to the outlet.
+    author: typeof doc.author?.name === 'string' && doc.author.name.trim()
+      ? doc.author.name.trim()
+      : undefined,
+    // The corpus is not monolingual (it carries francophone sources), and the
+    // document records its own language. Falling back to undefined lets the
+    // caller decide rather than asserting English.
+    language: typeof doc.inLanguage === 'string' && doc.inLanguage.trim()
+      ? doc.inLanguage.trim()
+      : undefined,
     source: source?.name || doc.feedSourceId,
     source_id: doc.feedSourceId,
+    // The publishing newsroom, RESOLVED — never stored. Only the reads that
+    // actually emit a publisher pass it in (the single-article path); list reads
+    // leave it undefined rather than pay a catalogue read per feed request, and
+    // an undefined publisher degrades to the feed-source name downstream. It is
+    // deliberately NOT derived from `source`: one masthead can hold several feed
+    // sources under names that disagree, and collapsing the two is the bug this
+    // field exists to fix.
+    publisher: opts.organization,
+    // The publisher's own site, resolved from the feed-source record on the same
+    // read. Also derived, never stored — it feeds the source icon.
+    source_url: resolveSourceSiteUrl(source),
     slug: doc.slug,
     category: resolveCategory(doc),
     keywords: resolveKeywords(doc),
@@ -425,13 +480,32 @@ export async function getArticles(params: {
   }
 }
 
+/**
+ * The single-article reads are the ONLY place a publisher is resolved.
+ *
+ * They are also the only place a full `NewsArticle` is emitted, which is the
+ * one document that carries a `publisher`. Resolving it here costs a single
+ * cached catalogue read (`getPublisherOrganization`, in-process, 60s) shared
+ * across every article view, rather than a join per feed card on the hottest
+ * path in the app. The feed-source lookup beside it is unchanged — the two
+ * answer different questions and both are wanted: `source` is where the article
+ * was fetched from, `publisher` is who published it.
+ */
+async function resolveArticleDetail(doc: MongoArticle): Promise<Article> {
+  const db = await getDb()
+  const [source, organization] = await Promise.all([
+    db.collection<MongoFeedSource>('feedSources').findOne({ _id: doc.feedSourceId }),
+    getPublisherOrganization(doc.mediaOrganizationId),
+  ])
+  return toArticle(doc, source || undefined, { fullContent: true, organization })
+}
+
 export async function getArticleBySlug(slug: string): Promise<Article | null> {
   const db = await getDb()
   const doc = await db.collection<MongoArticle>('articles').findOne({ slug })
   if (!doc) return null
 
-  const source = await db.collection<MongoFeedSource>('feedSources').findOne({ _id: doc.feedSourceId })
-  return toArticle(doc, source || undefined, { fullContent: true })
+  return resolveArticleDetail(doc)
 }
 
 export async function getArticleById(id: string): Promise<Article | null> {
@@ -439,8 +513,7 @@ export async function getArticleById(id: string): Promise<Article | null> {
   const doc = await db.collection<MongoArticle>('articles').findOne({ _id: id })
   if (!doc) return null
 
-  const source = await db.collection<MongoFeedSource>('feedSources').findOne({ _id: doc.feedSourceId })
-  return toArticle(doc, source || undefined, { fullContent: true })
+  return resolveArticleDetail(doc)
 }
 
 export async function getRelatedArticles(articleId: string, limit = 5): Promise<Article[]> {

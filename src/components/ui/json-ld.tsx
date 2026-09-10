@@ -37,10 +37,28 @@ interface NewsArticleSchema {
     name: string;
     url?: string;
   };
-  publisher: {
+  /**
+   * The ORIGINATING NEWSROOM — CNN, The Herald — not Mukoko.
+   *
+   * Optional, and `logo` with it. Both were required, which is what forced the
+   * component to hardcode `name: "Mukoko News"` and Mukoko's own icon onto every
+   * article: an aggregator declaring itself the publisher of someone else's
+   * reporting, with someone else's byline underneath it.
+   *
+   * `logo` is now optional because schema.org does not require it and because
+   * the honest alternative was worse — Mukoko's icon attached to CNN's publisher
+   * record is a stronger false claim than no logo at all. Only a logo the
+   * newsroom's OWN record carries is emitted; today no organisation record on
+   * the cluster has one, so in practice this is omitted.
+   *
+   * The whole property is optional because a publisher that cannot be resolved
+   * must be omitted, not guessed. See `resolvePublisher` below.
+   */
+  publisher?: {
     "@type": "Organization";
     name: string;
-    logo: {
+    url?: string;
+    logo?: {
       "@type": "ImageObject";
       url: string;
     };
@@ -87,9 +105,11 @@ interface ItemListSchema {
         "@type": "Organization";
         name: string;
       };
-      publisher: {
+      /** The originating newsroom, or omitted. Never Mukoko — see below. */
+      publisher?: {
         "@type": "Organization";
         name: string;
+        url?: string;
       };
     };
   }>;
@@ -129,10 +149,63 @@ function safeJsonLdStringify(obj: unknown): string {
     .replace(/&/g, "\\u0026"); // Escape & for HTML entity safety
 }
 
+/**
+ * The publisher of an article is the newsroom that published it.
+ *
+ * Owner decision: "publisher is ie.. cnn news, source should be the same thing",
+ * and "a publisher is also an entity". So this resolves through the platform's
+ * entity model — `articles.mediaOrganizationId` → `news.newsMediaOrganizations`,
+ * which links on to `entity.entities` via `entityId` — rather than through a
+ * display string.
+ *
+ * Three tiers, in order, and the last one is the point:
+ *
+ *  1. `article.publisher` — the resolved organisation. Stable across the several
+ *     feed-source records one masthead can hold (measured on the live cluster:
+ *     35 organisations own feed sources whose names disagree, covering 24% of
+ *     the corpus), so "Daily Monitor Uganda" is emitted once rather than as
+ *     "Monitor", "Daily Monitor" and "Daily Monitor v2" on neighbouring pieces.
+ *  2. `article.source` — the feed-source name. Less stable, but it is still the
+ *     newsroom, and naming the right organisation imprecisely beats naming the
+ *     wrong one exactly.
+ *  3. `undefined` — omit the property. schema.org permits that; asserting a
+ *     publisher we cannot establish does not become true for being well-formed.
+ *     This is the same rule the pipeline's country backfill follows, in its own
+ *     words: it "never invents a country", because a null is a known gap and a
+ *     wrong value is a silent error every consumer then reports as fact.
+ *
+ * What is NOT here: "Mukoko News". Mukoko aggregates this reporting; it did not
+ * publish it, and the `NewsMediaOrganization` schema on every page already says
+ * who Mukoko is.
+ */
+function resolvePublisher(article: Article):
+  | { "@type": "Organization"; name: string; url?: string; logo?: { "@type": "ImageObject"; url: string } }
+  | undefined {
+  const org = article.publisher;
+  if (org?.name) {
+    return {
+      "@type": "Organization",
+      name: org.name,
+      url: org.url,
+      // The newsroom's own logo or none. Mukoko's icon on someone else's
+      // publisher record would be a worse claim than an absent one.
+      logo: org.logo ? { "@type": "ImageObject", url: org.logo } : undefined,
+    };
+  }
+  const fallback = article.source?.trim();
+  return fallback ? { "@type": "Organization", name: fallback } : undefined;
+}
+
 export function ArticleJsonLd({ article, url }: { article: Article; url: string }) {
-  // Determine author type: if author field differs from source, treat as Person
-  const authorName = article.author || article.source;
-  const isPersonAuthor = article.author && article.author !== article.source;
+  const publisher = resolvePublisher(article);
+  // Determine author type: a real byline is a Person; with no byline the
+  // newsroom itself is the author. Fall back to the RESOLVED publisher name
+  // rather than the feed-source name, so an un-bylined piece does not emit
+  // author "Daily Monitor v2" alongside publisher "Daily Monitor Uganda" — two
+  // names for one newsroom in one document.
+  const orgName = publisher?.name || article.source;
+  const authorName = article.author || orgName;
+  const isPersonAuthor = Boolean(article.author && article.author !== orgName);
 
   const schema: NewsArticleSchema = {
     "@context": "https://schema.org",
@@ -151,20 +224,17 @@ export function ArticleJsonLd({ article, url }: { article: Article; url: string 
       "@type": isPersonAuthor ? "Person" : "Organization",
       name: authorName,
     },
-    publisher: {
-      "@type": "Organization",
-      name: "Mukoko News",
-      logo: {
-        "@type": "ImageObject",
-        url: `${BASE_URL}/mukoko-icon-dark.png`,
-      },
-    },
+    publisher,
     mainEntityOfPage: {
       "@type": "WebPage",
       "@id": url,
     },
     isAccessibleForFree: true,
-    inLanguage: "en",
+    // The corpus is not monolingual — it carries francophone newsrooms
+    // (rfi.fr, france24) among others, and the source document records its own
+    // language. Hard-coding "en" told answer engines a French article was
+    // English, which is worse than saying nothing.
+    inLanguage: article.language || "en",
     keywords: article.keywords?.map((k) => k.name).join(", ") || undefined,
     articleSection: article.category_id || article.category || undefined,
     wordCount: article.word_count || undefined,
@@ -299,10 +369,16 @@ export function ItemListJsonLd({
               name: article.source,
             }
           : undefined,
-        publisher: {
-          "@type": "Organization",
-          name: "Mukoko News",
-        },
+        // Same correction as the article page, deliberately WITHOUT a catalogue
+        // read. A list item is a pointer — its `@id` is the article URL, where
+        // the authoritative NewsArticle lives — so it resolves through whatever
+        // the list read already carries and falls back to the feed-source name.
+        // Paying a publisher lookup per home-feed render to make a pointer's
+        // publisher marginally more consistent is not a trade this app's readers
+        // (metered African mobile data, and a feed that is the hottest path in
+        // the product) should pay for. What matters is that it no longer claims
+        // Mukoko published someone else's reporting.
+        publisher: resolvePublisher(article),
       },
     })),
   };
@@ -435,6 +511,8 @@ export function WebPageJsonLd({
       name: "Mukoko News",
       url: BASE_URL,
     },
+    // Mukoko's OWN pages (help, terms, …) — Mukoko really is the publisher
+    // here, unlike a NewsArticle, which belongs to the newsroom that wrote it.
     publisher: {
       "@type": "Organization",
       name: "Mukoko News",

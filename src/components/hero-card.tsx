@@ -7,7 +7,7 @@ import { Clock } from "lucide-react";
 import type { Article } from "@/lib/api";
 import { formatTimeAgo, isValidImageUrl } from "@/lib/utils";
 import { mukokoImageLoader } from "@/lib/image";
-import { SourceIcon } from "@/components/ui/source-icon";
+import { SourceIcon, sourceIconProps } from "@/components/ui/source-icon";
 
 interface HeroCardProps {
   article: Article;
@@ -74,7 +74,7 @@ export function HeroCard({ article }: HeroCardProps) {
 
             <div className="flex items-center gap-4 text-white/60">
               <div className="flex items-center gap-1.5">
-                <SourceIcon source={article.source} size={20} showBorder={false} />
+                <SourceIcon {...sourceIconProps(article)} size={20} showBorder={false} />
                 <span className="text-sm text-white/80">{article.source}</span>
               </div>
               <time className="flex items-center gap-1.5 text-sm" dateTime={article.published_at}>

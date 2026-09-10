@@ -5,7 +5,7 @@ import { Clock, Layers, ChevronRight } from "lucide-react";
 import type { StoryCluster as StoryClusterType } from "@/lib/api";
 import { isValidImageUrl, safeCssUrl, formatTimeAgo } from "@/lib/utils";
 import { imageProxyUrl } from "@/lib/image";
-import { SourceIcon } from "@/components/ui/source-icon";
+import { SourceIcon, sourceIconProps } from "@/components/ui/source-icon";
 
 interface StoryClusterProps {
   cluster: StoryClusterType;
@@ -42,7 +42,7 @@ export function StoryCluster({ cluster }: StoryClusterProps) {
         <div className="p-4">
           {/* Source and Time */}
           <div className="flex items-center gap-2 mb-2">
-            <SourceIcon source={primaryArticle.source} size={16} showBorder={false} />
+            <SourceIcon {...sourceIconProps(primaryArticle)} size={16} showBorder={false} />
             <span className="text-xs font-medium text-text-secondary">{primaryArticle.source}</span>
             <span className="text-text-tertiary">·</span>
             <time className="flex items-center gap-1 text-xs text-text-tertiary" dateTime={primaryArticle.published_at}>
@@ -87,7 +87,7 @@ export function StoryCluster({ cluster }: StoryClusterProps) {
               <div className="flex-1 min-w-0">
                 {/* Source */}
                 <div className="flex items-center gap-2 mb-1">
-                  <SourceIcon source={article.source} size={12} showBorder={false} />
+                  <SourceIcon {...sourceIconProps(article)} size={12} showBorder={false} />
                   <span className="text-[11px] font-medium text-text-tertiary">{article.source}</span>
                 </div>
 
@@ -153,7 +153,7 @@ export function StoryClusterCompact({ cluster }: StoryClusterProps) {
       <div className="p-3">
         {/* Source */}
         <div className="flex items-center gap-2 mb-1.5">
-          <SourceIcon source={primaryArticle.source} size={14} showBorder={false} />
+          <SourceIcon {...sourceIconProps(primaryArticle)} size={14} showBorder={false} />
           <span className="text-[11px] font-medium text-text-tertiary">{primaryArticle.source}</span>
           <span className="text-text-tertiary">·</span>
           <span className="text-[11px] text-text-tertiary">{timeAgo}</span>

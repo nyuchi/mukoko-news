@@ -31,7 +31,17 @@ async function articleMarkdown(id: string): Promise<Response> {
 
   const parts: string[] = [`# ${article.title}`]
   const meta: string[] = []
-  if (article.source) meta.push(`**Source:** ${article.source}`)
+  // `article.author` is the journalist; `article.publisher` is the newsroom that
+  // published the piece. Mukoko aggregates it — it is neither.
+  //
+  // Prefer the resolved organisation over `article.source`: the latter is the
+  // FEED SOURCE name, and one masthead can hold several feed sources under names
+  // that disagree, so an agent reading two pieces from the same newsroom would
+  // otherwise be told they came from two different publishers. Falls back to the
+  // feed source, then omits the line entirely rather than naming a publisher we
+  // cannot establish.
+  const publishedBy = article.publisher?.name || article.source
+  if (publishedBy) meta.push(`**Published by:** ${publishedBy}`)
   if (article.author) meta.push(`**By:** ${article.author}`)
   if (article.published_at) meta.push(`**Published:** ${article.published_at}`)
   if (meta.length) parts.push(meta.join(' · '))

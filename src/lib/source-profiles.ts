@@ -1,6 +1,22 @@
 /**
- * News Source Profiles and Favicon Service
- * Uses Google's Favicon API for reliable icon fetching
+ * News source brand profiles — colours, initials and a small table of publisher
+ * domains for the mastheads Mukoko has hand-styled.
+ *
+ * ## This table is NOT how favicons are resolved any more
+ *
+ * It used to be: `getFaviconUrl(name)` looked a publisher up here and returned an
+ * icon only on a hit. Measured on the live cluster (2026-09-10) it hit **38 of
+ * 587** feed sources, and because the lookup falls back to a SUBSTRING test,
+ * **11 of those 38 hits were the wrong publisher** — "National Geographic" and
+ * "Amnesty International" both contain "Nation", so both were served the Daily
+ * Nation's icon.
+ *
+ * Icons now come from the publisher's own record — see `@/lib/publisher-icon`,
+ * which resolves a domain for 587 of 587 sources and consults this table only on
+ * an EXACT name match, as a last resort before initials. The colours and initials
+ * below still drive the fallback avatar, where the substring match is cosmetic.
+ *
+ * The hex values are third-party publisher brand colours and are intentional.
  */
 
 interface SourceProfile {
@@ -240,18 +256,55 @@ export function getSourceProfile(sourceName: string): SourceProfile {
   };
 }
 
-export function getFaviconUrl(sourceName: string, size = 32): string | null {
-  const profile = getSourceProfile(sourceName);
-  if (profile.domain) {
-    return `https://www.google.com/s2/favicons?domain=${profile.domain}&sz=${size}`;
+/**
+ * The brand-table entry for an EXACT (case-insensitive) name match, or null.
+ *
+ * Deliberately not `getSourceProfile()`: that one falls through to a substring
+ * test, and a substring test cannot tell one masthead from another. Measured
+ * against the live catalogue, it matched 38 of 587 sources and got 11 of those
+ * wrong — "National Geographic" and "Amnesty International" both contain
+ * "Nation" and so both resolved to Kenya's Daily Nation; "The Standard
+ * Newspaper | Gambia" resolved to Zimbabwe's thestandard.co.zw; Sierra Leone's
+ * "The Patriotic Vanguard" resolved to Nigeria's Vanguard.
+ *
+ * Everything a profile carries is publisher IDENTITY — the logo, the brand
+ * colour, the initials printed on the avatar — so a wrong match is a
+ * misattribution in all three, not just the logo. A Gambian paper rendered in
+ * a Zimbabwean paper's navy under the letters "TS" is stating something false
+ * about who published the article, in exactly the way the `publisher` field
+ * was. Better a neutral generated identity than a confident wrong one.
+ */
+function exactProfile(sourceName: string | null | undefined): SourceProfile | null {
+  const trimmed = sourceName?.trim();
+  if (!trimmed) return null;
+
+  if (SOURCE_PROFILES[trimmed]) return SOURCE_PROFILES[trimmed];
+
+  const normalized = trimmed.toLowerCase();
+  for (const [key, profile] of Object.entries(SOURCE_PROFILES)) {
+    if (key.toLowerCase() === normalized) return profile;
   }
   return null;
 }
 
-export function getSourceColors(sourceName: string) {
-  return getSourceProfile(sourceName).colors;
+/** The brand-table domain for an exact name match, or null. See `exactProfile`. */
+export function getExactProfileDomain(sourceName: string | null | undefined): string | null {
+  return exactProfile(sourceName)?.domain ?? null;
 }
 
+/**
+ * The publisher's brand colours, or a deterministic colour derived from its own
+ * name. Never another publisher's colours — see `exactProfile`.
+ */
+export function getSourceColors(sourceName: string) {
+  return exactProfile(sourceName)?.colors ?? getColorForSource(sourceName);
+}
+
+/**
+ * The publisher's brand initials, or initials generated from its own name.
+ * Never another publisher's initials — see `exactProfile`.
+ */
 export function getSourceInitials(sourceName: string) {
-  return getSourceProfile(sourceName).initials;
+  if (!sourceName) return '?';
+  return exactProfile(sourceName)?.initials ?? generateInitials(sourceName);
 }

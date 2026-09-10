@@ -8,8 +8,42 @@ interface Article {
   description?: string;
   content?: string;
   content_markdown?: string;
+  /**
+   * The FEED SOURCE name (`feedSources.name`) — a delivery endpoint, not a
+   * masthead. One newsroom can hold several, under names that disagree. Use
+   * `publisher` when you mean "who published this"; see `publisher` below.
+   */
   source: string;
   source_id?: string;
+  /**
+   * The publishing newsroom, resolved at read time from the article's
+   * `mediaOrganizationId` against `news.newsMediaOrganizations`.
+   *
+   * DERIVED, NEVER STORED. Nothing writes this back onto the article: the
+   * publisher's identity and its `isVerified` flag have exactly one instance,
+   * on the organisation record, so a revoked verification disappears from every
+   * article at once. A copy on 63k articles could not do that.
+   *
+   * Absent when the organisation cannot be resolved (or on list reads, which do
+   * not resolve it) — absent means "unknown", never "no publisher".
+   */
+  publisher?: {
+    id: string;
+    name: string;
+    url?: string;
+    logo?: string;
+    isVerified: boolean;
+  };
+  /**
+   * The publisher's own website, resolved on read from its feed-source record.
+   *
+   * DERIVED, never stored on the article. Publisher identity has exactly one
+   * instance — the feed source / organisation record — and this is a per-request
+   * projection of it, so a corrected domain (or a revoked verification) takes
+   * effect everywhere on the next read instead of needing 63,832 rewrites.
+   * Consumed by the source icon; see `@/lib/publisher-icon`.
+   */
+  source_url?: string;
   slug: string;
   category?: string;
   category_id?: string;  // API returns category_id
@@ -20,6 +54,8 @@ interface Article {
   published_at: string;
   updated_at?: string;
   author?: string;
+  /** BCP-47 / ISO language of the article body, from the source document. */
+  language?: string;
   keywords?: Array<{ id: string; name: string; slug: string }>;
   word_count?: number;
   reading_time?: number;
