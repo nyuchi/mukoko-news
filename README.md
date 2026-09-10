@@ -26,7 +26,10 @@ The frontend reads news data directly from MongoDB Atlas via Next.js Server Acti
 
 ## Features
 
-- **Pan-African coverage** — 54 countries, 100+ sources, updated continuously
+- **Pan-African coverage** — all 54 African Union member states are in scope; the number
+  currently *live* is a measured figure, not a claim in this file. `coverageFragment()` /
+  `coverageClaim()` in `src/lib/constants.ts` are the only sanctioned way to state it, and
+  `getLiveCoverageAction()` resolves the count from the corpus at read time.
 - **Discover** — browse by country, category, or source
 - **NewsBytes** — TikTok-style vertical swipe feed for quick headlines
 - **Search** — full-text search across all articles
@@ -151,9 +154,10 @@ No authentication required. The MCP server lives in [`nyuchi/mukoko-news-gateway
 src/
 ├── app/              # Pages (Next.js App Router)
 ├── components/
-│   ├── ui/           # Shared components (ArticleCard, Skeleton, ErrorBoundary, …)
-│   └── layout/       # Header, footer, mobile nav
-├── contexts/         # PreferencesContext, ThemeContext
+│   ├── ui/           # Primitives (Button, Card, Skeleton, ErrorBoundary, …)
+│   ├── layout/       # Header, footer, mobile nav
+│   └── *.tsx         # Feature components (ArticleCard, HeroCard, ShareModal, …)
+├── contexts/         # PreferencesContext, CoverageContext (theme via next-themes)
 └── lib/
     ├── actions/      # Server Actions — all database reads go through here
     ├── mongodb/      # MongoDB query helpers

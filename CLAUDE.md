@@ -71,26 +71,39 @@ pnpm add <package>    # or: npm install <package>
 ```
 src/
   app/                     # App Router pages (kebab-case dirs)
-    page.tsx               # Home feed
+    page.tsx               # Home feed (home-client.tsx = its client half)
     article/[id]/          # Article detail (server page + client component)
+    author/[...slug]/      # Byline page — /author/<person> or /author/<newsroom>/<desk>
     topic/[slug]/          # Developing-story timeline (Mzizi nyuchi-timeline, ISR 300s)
     discover/ search/ saved/ categories/ sources/ newsbytes/ insights/ analytics/
+    profile/ dashboard/ publishers/claim/
+    about/ help/ privacy/ terms/ offline/
     admin/                 # RBAC-gated admin app (layout.tsx enforces tier)
+                           # analytics/ articles/ publishers/ sources/ system/ users/
     embed/ embed/iframe/   # Embeddable widget renderer
+    sign-in/               # The single sign-in entry point
+    auth/login/route.ts    # AuthKit initiate-login (the only getSignInUrl call site)
     auth/callback/route.ts # WorkOS OAuth callback
-    api/                   # Route Handlers (engagement + health) — see below
-    sitemap.ts globals.css layout.tsx
+    .well-known/           # MCP + OAuth discovery documents
+    api/                   # Route Handlers — see Data Flow below
+    llms.txt/ robots.txt/ auth.md/ api/agent-md/   # agent-readable docs, served as routes
+    sitemap.ts manifest.ts globals.css layout.tsx error.tsx global-error.tsx
   components/              # UI + feature components
     ui/                    # Primitives (button, card, skeleton, error-boundary, json-ld, …)
-    admin/ auth/ layout/   # Feature-scoped components (auth/ = inline-sign-in)
+    admin/ agent/ article/ brand/ layout/ profile/ publisher/ pwa/
     article-card.tsx hero-card.tsx compact-card.tsx story-cluster.tsx share-modal.tsx …
-  contexts/               # React Context providers
+  contexts/               # React Context providers (preferences, coverage)
   lib/
-    actions/              # 'use server' Server Actions (feed.ts, refresh.ts)
-    mongodb/              # Mongo client + collection queries (articles, categories, sources, admin)
+    actions/              # 'use server' Server Actions — feed, authors, analytics,
+                          # insights, coverage, profile, article-metrics, refresh, …
+    mongodb/              # Mongo client + collection queries (articles, authors,
+                          # analytics, insights, coverage, identity, entity, places, …)
     admin/gateway.ts      # The ONLY frontend→gateway calls (admin mutations)
-    auth/                 # roles.ts (RBAC tiers), actions.ts
-    api.ts constants.ts utils.ts rate-limit.ts source-profiles.ts publisher-icon.ts
+    auth/                 # roles.ts (RBAC tiers), entity-access.ts, actions.ts
+    publisher/ pwa/
+    api.ts constants.ts countries.ts utils.ts safety.ts rate-limit.ts
+    author-identity.ts publisher-icon.ts source-profiles.ts image.ts
+    appearance.ts engagement.ts weather.ts security-headers.ts agent-discovery.ts …
   middleware.ts           # AuthKit session-refresh middleware
   __tests__/setup.ts      # Vitest global setup
 ```
@@ -119,6 +132,8 @@ All news data reads go through Server Actions → MongoDB Atlas (`news` database
 
 **Analytics query console (`/analytics`)** — the deep dive `/insights` links into. `src/lib/mongodb/analytics.ts` holds the corpus query engine: `runCorpusQuery` returns every panel from a single `$facet` (daily series, source/country/category/keyword/named-entity/byline breakdowns, sentiment, quality, sample articles) plus the **normalized** query it actually ran, so the UI captions results with the filters that were applied rather than the ones requested. A text term leads with Atlas Search (`articles_text_search`) and falls back to a bounded substring `$match`, flagged on the result as `usedSearchIndex` so the page can say so. `getCoverageConcentration` answers the editorial question the old page faked — sources per country, top-source share, HHI, and the countries with no coverage at all. `getQueryFacets` populates the controls. All three are wrapped fail-soft like the Insights reads. `src/lib/actions/analytics.ts` exposes them, validating **every** input through the `@/lib/safety` schemas first (Server Actions are a public RPC surface); the two query-independent reads are wrapped in `unstable_cache` (600s, tag `analytics-facets`) so the `force-dynamic` page costs one aggregation per view, not three. `src/app/api/analytics/export/route.ts` exports one query as JSON or a labelled multi-table CSV — cells are RFC-4180 quoted **and** formula-neutralised (a leading `=`/`+`/`-`/`@` is prefixed with `'`, because the file carries publisher-controlled text: source names, bylines, `aiKeywords`, `aiNamedEntities`). It is per-caller by design so it is NOT edge-cached; 10 req/min/IP instead.
 
+**Byline pages (`/author/[...slug]`)** — `src/lib/mongodb/authors.ts` answers two reads. `getBylineDirectory()` is one aggregation over the attributed corpus, cached for an hour and shared by every author page: it folds spelling variants onto a single key (diacritics included, so "José Silva" and "Jose Silva" are one journalist), names each by its most-published spelling, and is what makes slug → byline resolution *exact* rather than a reconstruction. `getAuthorProfile()` answers all seven panels from a single `$facet`. `src/lib/author-identity.ts` is the pure module that decides whether a byline is a **person** or a **desk** — a closed lexicon, word-boundary matched without `\b` (which is defined on `\w` and so excludes the accented letters this corpus carries). A person gets one page over the whole corpus; a desk gets one page *per newsroom* (`/author/<newsroom>/<desk>`), because "Staff Reporter" is measurably the desk byline of ten mastheads in four countries and one page for it would assert a single writer filed all 198 articles. A desk with no resolvable newsroom renders as plain text and gets no page — there is nothing to scope it to, and plain text is a smaller loss than a false attribution. Both reads are windowed to 365 days so they ride `status_1_datePublished_-1` as a range seek, and byline matching is `$in` **equality, never regex**, so an index on `{'author.name': 1, datePublished: -1}` would serve them if one is ever added (a live-cluster change, not made here). A failed directory read returns empty and 404s rather than rendering a real person's name above "0 articles". `src/lib/actions/authors.ts` is the Server-Action door.
+
 ### Data Flow (writes / mutations)
 
 - **Engagement** (like / view / save) — Next.js **Route Handlers** under `src/app/api/articles/[id]/{like,view,save}/route.ts` (`POST`, `runtime = 'nodejs'`), rate-limited via `src/lib/rate-limit.ts` (`checkRateLimit` — **async** — and `getRequestIp`). When `UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN` are set the limit is enforced globally via the Upstash REST API (fixed window, fails open); otherwise it's the in-memory per-instance window. Likes/saves are keyed to an **engagement subject** (`src/lib/engagement.ts`): the signed-in WorkOS user (`user:<id>` — follows the account across devices; anonymous cookie history is claimed on first signed-in interaction) or the `mukoko_session` cookie. The stored field remains `sessionId` — an opaque subject key to the gateway/pipeline. `src/app/api/health/route.ts` is the health probe.
@@ -141,7 +156,7 @@ Used for client-side fetches and the embed widget, and exports the shared `Artic
 
 ## Testing
 
-**~1,000 frontend tests across 64 files** — Vitest 4 with jsdom + React Testing Library.
+**1,690 frontend tests across 99 files** — Vitest 4 with jsdom + React Testing Library.
 
 - Config: `vitest.config.ts` (globals on, `@` alias, `include: src/**/*.{test,spec}.*`)
 - Setup: `src/__tests__/setup.ts`
