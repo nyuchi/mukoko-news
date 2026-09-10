@@ -189,6 +189,7 @@ export default function SourcesPage() {
             />
           </div>
           <select
+            aria-label="Filter sources by country"
             value={countryFilter}
             onChange={(e) => setCountryFilter(e.target.value)}
             className="px-4 py-2.5 bg-surface rounded-xl border border-elevated text-foreground text-sm outline-none focus:ring-2 focus:ring-primary/50"
@@ -201,6 +202,7 @@ export default function SourcesPage() {
             ))}
           </select>
           <select
+            aria-label="Sort sources"
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value as SortKey)}
             className="px-4 py-2.5 bg-surface rounded-xl border border-elevated text-foreground text-sm outline-none focus:ring-2 focus:ring-primary/50"
