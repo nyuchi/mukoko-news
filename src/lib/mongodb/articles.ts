@@ -184,18 +184,25 @@ function toArticle(
 }
 
 /**
- * How far back a `popular` sort looks.
+ * How many recent articles a `popular` read ranks over.
  *
- * `{qualityScore: -1, datePublished: -1}` has no index behind it, so unbounded it
- * plans as COLLSCAN → blocking in-memory SORT over the entire 1.47 GB collection
- * (verified by explain). A `datePublished` lower bound puts the IXSCAN back in
- * front of the sort, so the blocking sort only ever sees a bounded window.
+ * `popular` does NOT sort in MongoDB. `{qualityScore: -1, datePublished: -1}` has
+ * no index behind it, so it plans as COLLSCAN → blocking in-memory SORT, and
+ * bounding it by date is not enough to save it: a 14-day window is ~32,000
+ * documents and that query still did not finish inside 60s, because the sort has
+ * to materialise every one of those fat documents first. (`LIST_PROJECTION` does
+ * not help — FETCH reads the whole document and the projection is applied after.)
  *
- * Fourteen days is also the editorially correct answer: "popular" on a news feed
- * means popular *now*. A high-quality article from March outranking today's lead
- * was a bug in the ranking as much as in the query plan.
+ * Instead, take the most recent N by `datePublished` — a pure IXSCAN with a
+ * LIMIT, measured at 880ms for 300 documents and no SORT stage at all — and rank
+ * that pool by `qualityScore` in application code, where sorting 200 objects is
+ * free.
+ *
+ * This is also what the rail actually means. "Top stories" is the best of what is
+ * recent; the old query would happily surface a high-scoring article from weeks
+ * ago over today's lead, which was a bug in the ranking as much as in the plan.
  */
-const POPULAR_WINDOW_DAYS = 14
+const POPULAR_CANDIDATE_POOL = 200
 
 /**
  * Ceiling on the pagination total, for the callers that explicitly ask for one.
@@ -304,10 +311,6 @@ export async function getArticles(params: {
   }
 
   const isPopular = sort !== 'latest'
-  if (isPopular) {
-    // Bound the blocking sort — see POPULAR_WINDOW_DAYS.
-    filter.datePublished = { $gte: new Date(Date.now() - POPULAR_WINDOW_DAYS * 86400_000) }
-  }
 
   // Keyset: continue strictly after the caller's last position.
   //
@@ -325,6 +328,48 @@ export async function getArticles(params: {
   }
 
   const col = db.collection<MongoArticle>('articles')
+
+  // `popular`: read a recent pool on the index, rank it here. See
+  // POPULAR_CANDIDATE_POOL for why this is not a MongoDB sort.
+  if (isPopular) {
+    const pool = await col
+      .find(filter, { projection: LIST_PROJECTION })
+      .sort({ datePublished: -1 })
+      .limit(POPULAR_CANDIDATE_POOL)
+      .maxTimeMS(QUERY_MAX_TIME_MS)
+      .toArray()
+
+    pool.sort((a, b) => {
+      const qa = typeof a.qualityScore === 'number' ? a.qualityScore : -1
+      const qb = typeof b.qualityScore === 'number' ? b.qualityScore : -1
+      if (qb !== qa) return qb - qa
+      // Recency breaks a quality tie, matching the old sort's second key. An
+      // un-enriched article (no qualityScore) ranks below every scored one
+      // rather than being dropped — it is unranked, not bad.
+      return (b.datePublished?.getTime() ?? 0) - (a.datePublished?.getTime() ?? 0)
+    })
+
+    const start = (page - 1) * limit
+    const pageDocs = pool.slice(start, start + limit)
+    const sourceIds = [...new Set(pageDocs.map(d => d.feedSourceId))]
+    const sources = await db.collection<MongoFeedSource>('feedSources')
+      .find({ _id: { $in: sourceIds } })
+      .maxTimeMS(QUERY_MAX_TIME_MS)
+      .toArray()
+    const sourceMap = new Map(sources.map(s => [s._id, s]))
+
+    return {
+      articles: pageDocs.map(d => toArticle(d, sourceMap.get(d.feedSourceId))),
+      // The pool IS the result set for this rail, so its size is an exact total,
+      // not a capped estimate — and it costs nothing, having already been read.
+      total: pool.length,
+      hasMore: start + limit < pool.length,
+      // No keyset over an application-side ranking; `popular` pages by offset
+      // within the pool. Emitting a cursor here would loop the client.
+      nextCursor: null,
+    }
+  }
+
   // Sort on `datePublished` ALONE, never `{datePublished, _id}`.
   //
   // The tie-break belongs in the filter, not the sort. Adding `_id` to the sort
@@ -334,9 +379,7 @@ export async function getArticles(params: {
   // collection. Measured: that variant did not finish inside 60s, while the
   // single-key sort plans as SORT_MERGE (two streaming index scans) at 22 keys
   // and 22 documents examined for the same page.
-  const sortField = sort === 'latest'
-    ? { datePublished: -1 }
-    : { qualityScore: -1, datePublished: -1 }
+  const sortField = { datePublished: -1 }
   // A cursor read never skips: that is the whole point of it.
   const skip = cursor ? 0 : (page - 1) * limit
 
@@ -373,15 +416,12 @@ export async function getArticles(params: {
     articles,
     total,
     hasMore,
-    // Only the `latest` sort has a keyset implementation, so only it may hand
-    // back a cursor. Emitting one for `popular` would be a trap: the read path
-    // ignores a cursor on that sort (a keyset over `qualityScore` is a different
-    // query), so the caller would re-receive page one, dedupe it to nothing, see
-    // `hasMore` still true, and loop forever fetching the same rows.
+    // Only `latest` reaches here (every other sort returned from the popular
+    // branch above), and only `latest` has a keyset implementation — a cursor
+    // emitted for an application-side ranking would send the caller back to page
+    // one forever.
     nextCursor:
-      sort === 'latest' && hasMore && articles.length > 0
-        ? encodeArticleCursor(articles[articles.length - 1])
-        : null,
+      hasMore && articles.length > 0 ? encodeArticleCursor(articles[articles.length - 1]) : null,
   }
 }
 
