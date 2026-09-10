@@ -3,8 +3,35 @@ name: Test & Deploy Mukoko News
 on:
   push:
     branches: [ main ]
+  # No `branches:` filter on pull_request, deliberately. Filtering to `main`
+  # meant a PR based on ANOTHER PR never ran test or build — measured on this
+  # repo, three stacked PRs sat at two checks each (claude-review and a Vercel
+  # status) for a full CI window and were merge-ready on nobody's evidence.
+  #
+  # That is the same failure as a check that reports green without asserting
+  # anything: the list looks complete while the tests it implies never ran. A
+  # stacked PR is where review attention is thinnest, so it is the worst place
+  # to have no gate. Every PR now runs, whatever it is based on; the
+  # concurrency group below keeps the extra runs cheap.
   pull_request:
-    branches: [ main ]
+
+# The jobs below now run in parallel rather than in a chain, which means a push
+# starts nine of them at once. Cancel a superseded in-flight run so that costs
+# queue time rather than wall-clock. Never on `main`: that ref's run is what
+# reports deployable state, and cancelling it half-way leaves a commit with no
+# verdict at all.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Node version defined ONCE and referenced by every job below. Five jobs each
+# carried their own hardcoded Node 20 pin, which is how a repo ends up
+# with jobs on different majors without anyone deciding to. 24 is Active LTS —
+# deliberately not the minimum a toolchain will accept, because sitting on the
+# bottom threshold is what produces "requires at least Node vX" failures the
+# moment any tool moves its floor.
+env:
+  NODE_VERSION: '24'
 
 permissions:
   contents: read
@@ -78,7 +105,7 @@ jobs:
       if: matrix.check == 'prettier'
       uses: actions/setup-node@v4
       with:
-        node-version: '20'
+        node-version: ${{ env.NODE_VERSION }}
     - name: Run prettier
       if: matrix.check == 'prettier'
       run: |
@@ -98,9 +125,16 @@ jobs:
         yamllint -c .yamllint.yml .
 
   # ── Frontend pipeline ──────────────────────────────────────────────────────
-  # Sequential stages (ESLint → Typecheck → Test → Build) so the Actions graph
-  # shows a clear pipeline and pinpoints exactly which stage failed, instead of
-  # bundling everything into one opaque job.
+  # These four ran chained — ESLint -> Typecheck -> Test -> Build, each `needs:`
+  # the last. The chain was not buying ordering that anything relied on: none of
+  # these jobs consumes another's output, they each check out and `npm ci` from
+  # scratch. What it bought was a run that could only ever report ONE failure,
+  # because the first red stage skipped the other three. A lint slip hid whether
+  # the tests passed; a test failure hid whether it even builds.
+  #
+  # They are independent now, so one run tells you everything that is wrong.
+  # Job NAMES are unchanged on purpose — the org ruleset's required checks and
+  # the Vercel commit statuses both match on them.
   eslint:
     runs-on: ubuntu-latest
     name: ESLint
@@ -113,7 +147,7 @@ jobs:
     - uses: actions/checkout@v4
     - uses: actions/setup-node@v4
       with:
-        node-version: '20'
+        node-version: ${{ env.NODE_VERSION }}
         cache: 'npm'
     - run: npm ci
     - name: Run ESLint
@@ -122,7 +156,6 @@ jobs:
   typecheck:
     runs-on: ubuntu-latest
     name: Typecheck
-    needs: eslint
     steps:
     - name: Notify Vercel
       uses: vercel/repository-dispatch/actions/status@v1
@@ -132,7 +165,7 @@ jobs:
     - uses: actions/checkout@v4
     - uses: actions/setup-node@v4
       with:
-        node-version: '20'
+        node-version: ${{ env.NODE_VERSION }}
         cache: 'npm'
     - run: npm ci
     - name: Run tsc --noEmit
@@ -141,7 +174,6 @@ jobs:
   test:
     runs-on: ubuntu-latest
     name: Test
-    needs: typecheck
     steps:
     - name: Notify Vercel
       uses: vercel/repository-dispatch/actions/status@v1
@@ -151,16 +183,19 @@ jobs:
     - uses: actions/checkout@v4
     - uses: actions/setup-node@v4
       with:
-        node-version: '20'
+        node-version: ${{ env.NODE_VERSION }}
         cache: 'npm'
     - run: npm ci
-    - name: Run Vitest
-      run: npm run test
+    # `npm run test:coverage`, not `npm run test`. The coverage thresholds in
+    # vitest.config.ts have existed for a long time and CI never ran the script
+    # that enforces them, so they gated nothing. (`@vitest/coverage-v8` was not
+    # even installed — the script could not have run.)
+    - name: Run Vitest with coverage
+      run: npm run test:coverage
 
   build:
     runs-on: ubuntu-latest
     name: Build
-    needs: test
     steps:
     - name: Notify Vercel
       uses: vercel/repository-dispatch/actions/status@v1
@@ -170,7 +205,7 @@ jobs:
     - uses: actions/checkout@v4
     - uses: actions/setup-node@v4
       with:
-        node-version: '20'
+        node-version: ${{ env.NODE_VERSION }}
         cache: 'npm'
     - run: npm ci
     - name: Build Next.js
