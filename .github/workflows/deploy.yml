@@ -6,6 +6,15 @@ on:
   pull_request:
     branches: [ main ]
 
+# The jobs below now run in parallel rather than in a chain, which means a push
+# starts nine of them at once. Cancel a superseded in-flight run so that costs
+# queue time rather than wall-clock. Never on `main`: that ref's run is what
+# reports deployable state, and cancelling it half-way leaves a commit with no
+# verdict at all.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
   pull-requests: read
@@ -98,9 +107,16 @@ jobs:
         yamllint -c .yamllint.yml .
 
   # ── Frontend pipeline ──────────────────────────────────────────────────────
-  # Sequential stages (ESLint → Typecheck → Test → Build) so the Actions graph
-  # shows a clear pipeline and pinpoints exactly which stage failed, instead of
-  # bundling everything into one opaque job.
+  # These four ran chained — ESLint -> Typecheck -> Test -> Build, each `needs:`
+  # the last. The chain was not buying ordering that anything relied on: none of
+  # these jobs consumes another's output, they each check out and `npm ci` from
+  # scratch. What it bought was a run that could only ever report ONE failure,
+  # because the first red stage skipped the other three. A lint slip hid whether
+  # the tests passed; a test failure hid whether it even builds.
+  #
+  # They are independent now, so one run tells you everything that is wrong.
+  # Job NAMES are unchanged on purpose — the org ruleset's required checks and
+  # the Vercel commit statuses both match on them.
   eslint:
     runs-on: ubuntu-latest
     name: ESLint
@@ -122,7 +138,6 @@ jobs:
   typecheck:
     runs-on: ubuntu-latest
     name: Typecheck
-    needs: eslint
     steps:
     - name: Notify Vercel
       uses: vercel/repository-dispatch/actions/status@v1
@@ -141,7 +156,6 @@ jobs:
   test:
     runs-on: ubuntu-latest
     name: Test
-    needs: typecheck
     steps:
     - name: Notify Vercel
       uses: vercel/repository-dispatch/actions/status@v1
@@ -154,13 +168,16 @@ jobs:
         node-version: '20'
         cache: 'npm'
     - run: npm ci
-    - name: Run Vitest
-      run: npm run test
+    # `npm run test:coverage`, not `npm run test`. The coverage thresholds in
+    # vitest.config.ts have existed for a long time and CI never ran the script
+    # that enforces them, so they gated nothing. (`@vitest/coverage-v8` was not
+    # even installed — the script could not have run.)
+    - name: Run Vitest with coverage
+      run: npm run test:coverage
 
   build:
     runs-on: ubuntu-latest
     name: Build
-    needs: test
     steps:
     - name: Notify Vercel
       uses: vercel/repository-dispatch/actions/status@v1
