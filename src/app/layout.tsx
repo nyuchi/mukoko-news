@@ -100,9 +100,11 @@ export const metadata: Metadata = {
       'max-snippet': -1,
     },
   },
-  alternates: {
-    canonical: BASE_URL,
-  },
+  // NOTE: no `alternates.canonical` here. App Router inherits root metadata
+  // per top-level field, so a canonical set at the root is emitted verbatim on
+  // every route that does not override it — which made /about, /topic/[slug]
+  // and /publishers/claim all self-canonicalise to the homepage. Each route
+  // now declares its own canonical (see src/app/page.tsx for the home one).
   category: 'news',
   classification: 'News Aggregator',
   referrer: 'origin-when-cross-origin',
