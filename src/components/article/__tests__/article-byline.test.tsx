@@ -113,6 +113,68 @@ describe('ArticleByline', () => {
     expect(time?.textContent).toBe(DATE)
   })
 
+  it('links a named journalist to their own page', () => {
+    render(
+      <ArticleByline
+        article={{ ...base, author: 'Abubakar Ibrahim' }}
+        formattedDate={DATE}
+      />
+    )
+    expect(screen.getByRole('link', { name: 'By Abubakar Ibrahim' })).toHaveAttribute(
+      'href',
+      '/author/abubakar-ibrahim'
+    )
+  })
+
+  it('scopes a desk byline to the publishing newsroom', () => {
+    // "Staff Reporter" is 198 articles across ten mastheads in four countries.
+    // The link must carry the newsroom or the page it lands on presents all of
+    // them as one journalist.
+    render(
+      <ArticleByline
+        article={{
+          ...base,
+          author: 'Staff Reporter',
+          publisher: { id: 'o1', name: 'The Herald', isVerified: false },
+        }}
+        formattedDate={DATE}
+      />
+    )
+    expect(screen.getByRole('link', { name: 'By Staff Reporter' })).toHaveAttribute(
+      'href',
+      '/author/the-herald/staff-reporter'
+    )
+  })
+
+  it('renders a desk byline as plain text when no newsroom resolved', () => {
+    // There is nothing to scope it to, and an unscoped desk page is the false
+    // attribution this whole mechanism exists to prevent. Plain text is the
+    // smaller loss.
+    render(<ArticleByline article={{ ...base, author: 'Staff Reporter' }} formattedDate={DATE} />)
+    expect(screen.getByText('By Staff Reporter')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /Staff Reporter/ })).not.toBeInTheDocument()
+  })
+
+  it('builds the author link from the ORGANISATION name, not the feed label', () => {
+    // The page resolves the newsroom segment against the organisation
+    // catalogue. A feed-source label ("Daily Monitor v2") addresses a masthead
+    // that does not exist there, so the link would 404.
+    render(
+      <ArticleByline
+        article={{
+          ...base,
+          author: 'Staff Reporter',
+          publisher: { id: 'o1', name: 'Daily Monitor Uganda', isVerified: false },
+        }}
+        formattedDate={DATE}
+      />
+    )
+    expect(screen.getByRole('link', { name: 'By Staff Reporter' })).toHaveAttribute(
+      'href',
+      '/author/daily-monitor-uganda/staff-reporter'
+    )
+  })
+
   it('has no Follow control, because nothing stores a follow', () => {
     // The design mock puts one here. There is no collection, no action and no
     // read behind it in this app, so the button would either do nothing or

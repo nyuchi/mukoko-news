@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { BadgeCheck, MapPin } from 'lucide-react'
 import { SourceIcon, sourceIconProps } from '@/components/ui/source-icon'
 import { STATIC_COUNTRIES } from '@/lib/countries'
+import { authorHref } from '@/lib/author-identity'
 import type { Article } from '@/lib/api'
 
 /**
@@ -71,6 +72,7 @@ export function ArticleByline({
   const verified = article.publisher?.isVerified === true
   const href = article.source_id ? `/sources?source=${encodeURIComponent(article.source_id)}` : null
   const place = countryName(article.country)
+  const authorLink = authorHref(article.author, article.publisher?.name)
 
   const nameNode = (
     <span className="font-semibold text-foreground">{name}</span>
@@ -110,10 +112,29 @@ export function ArticleByline({
               carried no author until the 2026-09 backfill, so this is absent
               far more often than it is present, and an absent byline renders
               nothing rather than falling back to the outlet's name — which
-              would attribute a newsroom's staff writer to the masthead. */}
+              would attribute a newsroom's staff writer to the masthead.
+
+              It links to that byline's own page — but only when there is one to
+              link to. `authorHref` returns null for a DESK byline with no
+              resolvable newsroom ("Staff Reporter" files under ten mastheads in
+              four countries, so an unscoped page would present ten newsrooms'
+              staff as one writer), and the byline then renders as plain text.
+              The newsroom passed here is the ORGANISATION's name, never
+              `publisherName`'s feed-source fallback: the page resolves the
+              newsroom segment against the organisation catalogue, so a
+              feed-source label would address a masthead that does not exist. */}
           {article.author && (
             <>
-              <span className="text-text-secondary">By {article.author}</span>
+              {authorLink ? (
+                <Link
+                  href={authorLink}
+                  className="rounded-sm text-text-secondary hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                >
+                  By {article.author}
+                </Link>
+              ) : (
+                <span className="text-text-secondary">By {article.author}</span>
+              )}
               <span aria-hidden="true">·</span>
             </>
           )}
