@@ -3,8 +3,17 @@ name: Test & Deploy Mukoko News
 on:
   push:
     branches: [ main ]
+  # No `branches:` filter on pull_request, deliberately. Filtering to `main`
+  # meant a PR based on ANOTHER PR never ran test or build — measured on this
+  # repo, three stacked PRs sat at two checks each (claude-review and a Vercel
+  # status) for a full CI window and were merge-ready on nobody's evidence.
+  #
+  # That is the same failure as a check that reports green without asserting
+  # anything: the list looks complete while the tests it implies never ran. A
+  # stacked PR is where review attention is thinnest, so it is the worst place
+  # to have no gate. Every PR now runs, whatever it is based on; the
+  # concurrency group below keeps the extra runs cheap.
   pull_request:
-    branches: [ main ]
 
 # The jobs below now run in parallel rather than in a chain, which means a push
 # starts nine of them at once. Cancel a superseded in-flight run so that costs
