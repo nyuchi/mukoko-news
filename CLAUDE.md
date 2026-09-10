@@ -22,6 +22,7 @@ This repo (`nyuchi/mukoko-news`) is the **Next.js frontend only**. It deploys to
 - Frontend reads/writes directly to MongoDB Atlas via Next.js Server Actions — never through the gateway Worker
 - The gateway (`news.mukoko.com/api/*`, `/mcp`) is a separate product API; the frontend does not call it except for **admin mutations** (see `src/lib/admin/gateway.ts`)
 - The only external trigger is the pipeline refresh — one server action (`src/lib/actions/refresh.ts`) that pings the Fly.io worker's `/trigger/collect` endpoint
+- The header's date/time + weather strip (`src/components/layout/datetime-weather.tsx`) reads the sibling weather app's PUBLIC embed endpoint `weather.mukoko.com/api/embed/current` via `src/lib/weather.ts` — **from the reader's browser only, never server-side**. The endpoint derives the location from the caller's IP, so a server-side call would hand every reader the Vercel datacenter's location (measured: `"Your location"`, 37.751/-97.822, the US centroid). It is not a gateway call, it is fail-soft (any failure renders no weather at all), and it is suppressed on `/newsbytes` and `/embed*`.
 
 > History: the gateway and pipeline used to live in this repo. They were extracted in the v5.1.0 three-repo split (see `CHANGELOG.md`). If you find references to `backend/`, `fly-worker/`, `processing/`, etc., they are stale — those directories no longer exist here.
 
