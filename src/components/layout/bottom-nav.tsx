@@ -26,7 +26,7 @@ export function BottomNav() {
     // via env(safe-area-inset-bottom) (requires viewport-fit=cover, set in
     // layout.tsx). 16px radius per the card doctrine.
     <nav
-      className="fixed bottom-[calc(env(safe-area-inset-bottom,0px)_+_0.75rem)] left-4 right-4 z-50 md:hidden mx-auto max-w-md rounded-2xl border border-border bg-background/90 backdrop-blur-xl shadow-lg"
+      className="fixed bottom-[calc(env(safe-area-inset-bottom,0px)_+_0.75rem)] left-4 right-4 z-50 md:hidden mx-auto max-w-md rounded-2xl border border-outline bg-background/90 backdrop-blur-xl shadow-lg"
       aria-label="Main navigation"
     >
       <div className="flex items-center justify-around h-16 px-2">

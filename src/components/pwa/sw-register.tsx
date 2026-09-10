@@ -109,7 +109,7 @@ export function ServiceWorkerRegister({ reloadPage }: ServiceWorkerRegisterProps
   return (
     <div
       role="status"
-      className="fixed left-4 right-4 z-50 mx-auto flex max-w-md items-center gap-3 rounded-2xl border border-border bg-background/95 p-3 pl-4 shadow-lg backdrop-blur-xl bottom-[calc(env(safe-area-inset-bottom,0px)_+_5.75rem)] md:bottom-6"
+      className="fixed left-4 right-4 z-50 mx-auto flex max-w-md items-center gap-3 rounded-2xl border border-outline bg-background/95 p-3 pl-4 shadow-lg backdrop-blur-xl bottom-[calc(env(safe-area-inset-bottom,0px)_+_5.75rem)] md:bottom-6"
     >
       <p className="flex-1 text-sm text-foreground">Update available</p>
       <button

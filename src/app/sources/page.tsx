@@ -188,14 +188,14 @@ export default function SourcesPage() {
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search sources..."
               aria-label="Search sources by name, URL, or category"
-              className="w-full pl-10 pr-4 py-2.5 bg-surface rounded-xl border border-elevated text-foreground placeholder:text-text-tertiary outline-none focus:ring-2 focus:ring-primary/50 text-sm"
+              className="w-full pl-10 pr-4 py-2.5 bg-surface rounded-xl border border-outline text-foreground placeholder:text-text-tertiary outline-none focus:ring-2 focus:ring-primary/50 text-sm"
             />
           </div>
           <select
             aria-label="Filter sources by country"
             value={countryFilter}
             onChange={(e) => setCountryFilter(e.target.value)}
-            className="px-4 py-2.5 bg-surface rounded-xl border border-elevated text-foreground text-sm outline-none focus:ring-2 focus:ring-primary/50"
+            className="px-4 py-2.5 bg-surface rounded-xl border border-outline text-foreground text-sm outline-none focus:ring-2 focus:ring-primary/50"
           >
             <option value="all">All Countries</option>
             {availableCountries.map((c) => (
@@ -208,7 +208,7 @@ export default function SourcesPage() {
             aria-label="Sort sources"
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value as SortKey)}
-            className="px-4 py-2.5 bg-surface rounded-xl border border-elevated text-foreground text-sm outline-none focus:ring-2 focus:ring-primary/50"
+            className="px-4 py-2.5 bg-surface rounded-xl border border-outline text-foreground text-sm outline-none focus:ring-2 focus:ring-primary/50"
           >
             <option value="articles">Most Articles</option>
             <option value="recent">Most Recent</option>
@@ -244,7 +244,7 @@ function StatCard({
   warn?: boolean;
 }) {
   return (
-    <div className="p-4 bg-surface rounded-xl border border-elevated">
+    <div className="p-4 bg-surface rounded-xl border border-outline">
       <p className="text-xs text-text-tertiary mb-1">{label}</p>
       <p
         className={`text-2xl font-bold ${warn ? "text-warning" : "text-foreground"}`}

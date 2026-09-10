@@ -15,7 +15,7 @@ export default function Error({
 
   return (
     <div className="flex flex-1 items-center justify-center p-6">
-      <div className="w-full max-w-md rounded-card border border-border bg-surface p-8 text-center">
+      <div className="w-full max-w-md rounded-card border border-outline bg-surface p-8 text-center">
         <h2 className="font-serif text-xl font-semibold text-foreground">
           Something went wrong loading Mukoko News
         </h2>

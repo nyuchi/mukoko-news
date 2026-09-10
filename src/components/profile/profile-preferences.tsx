@@ -139,7 +139,7 @@ export function ProfilePreferences({
   }, []);
 
   return (
-    <div className="bg-surface border border-elevated rounded-2xl overflow-hidden mb-6">
+    <div className="bg-surface border border-outline rounded-2xl overflow-hidden mb-6">
       <h2 className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-text-tertiary border-b border-elevated">
         Your feed
       </h2>

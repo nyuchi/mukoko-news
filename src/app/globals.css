@@ -34,7 +34,7 @@
   --wash: color-mix(in oklab, var(--surface) 88%, var(--brand-accent));
   --background: #0E0D0C;   /* Mzizi `base`      — matte page */
   --foreground: #FFFFFF;
-  --surface: #131211;   /* Mzizi backgrounds.surface — was `muted`, the deepest fill */
+  --surface: #080807;   /* Mzizi `void` — the card sits BELOW the matte page, not above it */
   --elevated: #1E1D1A;     /* Mzizi `container` — hover rows, menus, raised chrome */
 
   /* Text hierarchy */
@@ -113,11 +113,12 @@
   /* UI Elements */
   --muted: #050504;
   --muted-foreground: #E8E8E4;   /* was #B8B8B3 — Lc 63 on the card, under the floor */
-  --card: #131211;               /* the card IS the deep well, not a lighter slab */
+  --card: #080807;               /* = --surface. The card IS the well, not a lighter slab */
   --card-foreground: #FFFFFF;
   --popover: #23221F;   /* Mzizi backgrounds.overlay (was container) */            /* popovers rise ABOVE the card, so they lighten */
   --popover-foreground: #FFFFFF;
   --border: #2A2927;             /* Mzizi `border` — warm stone, not cool grey */
+  --outline: transparent;        /* component OUTLINES are off by default — see the block below */
   --input: #100F0E;   /* Mzizi semantic.input — a SURFACE, not the border colour it used to copy */
   --ring: var(--cobalt);   /* Mzizi semantic.ring — deliberately NOT the brand hue, so a focus ring is never read as a brand fill */
   --radius: 0.75rem;
@@ -135,7 +136,7 @@
   --wash: color-mix(in oklab, var(--surface) 88%, var(--brand-accent));
   --background: #0E0D0C;   /* Mzizi `base`      — matte page */
   --foreground: #FFFFFF;
-  --surface: #131211;   /* Mzizi backgrounds.surface — was `muted`, the deepest fill */
+  --surface: #080807;   /* Mzizi `void` — the card sits BELOW the matte page, not above it */
   --elevated: #1E1D1A;     /* Mzizi `container` — hover rows, menus, raised chrome */
 
   /* Text hierarchy - AAA compliant (7:1+ contrast on #0A0A0A) */
@@ -213,11 +214,12 @@
   /* UI Elements */
   --muted: #050504;
   --muted-foreground: #E8E8E4;   /* was #B8B8B3 — Lc 63 on the card, under the floor */
-  --card: #131211;               /* the card IS the deep well, not a lighter slab */
+  --card: #080807;               /* = --surface. The card IS the well, not a lighter slab */
   --card-foreground: #FFFFFF;
   --popover: #23221F;   /* Mzizi backgrounds.overlay (was container) */            /* popovers rise ABOVE the card, so they lighten */
   --popover-foreground: #FFFFFF;
   --border: #2A2927;             /* Mzizi `border` — warm stone, not cool grey */
+  --outline: transparent;        /* component OUTLINES are off by default — see the block below */
   --input: #100F0E;   /* Mzizi semantic.input — a SURFACE, not the border colour it used to copy */
   --ring: var(--cobalt);   /* Mzizi semantic.ring — deliberately NOT the brand hue, so a focus ring is never read as a brand fill */
 }
@@ -305,6 +307,7 @@
   --popover: #E0DFDC;   /* Mzizi backgrounds.overlay (was `pitch`, a media-well token) */
   --popover-foreground: #000000;
   --border: #E7E5E0;             /* Mzizi `border` — warm stone, not cool grey */
+  --outline: transparent;        /* component OUTLINES are off by default — see the block below */
   --input: #FFFFFF;   /* Mzizi semantic.input — a SURFACE, not the border colour it used to copy */
   --ring: var(--cobalt);   /* Mzizi semantic.ring — deliberately NOT the brand hue, so a focus ring is never read as a brand fill */
 }
@@ -344,6 +347,7 @@
   --color-popover: var(--popover);
   --color-popover-foreground: var(--popover-foreground);
   --color-border: var(--border);
+  --color-outline: var(--outline);
   --color-input: var(--input);
   --color-ring: var(--ring);
 
@@ -520,10 +524,48 @@
   color-scheme: light;
 }
 
+/* ── Component outlines are an ACCESSIBILITY option, not the default look ─────
+ *
+ * A card is a SURFACE. It reads as a separate object because its fill differs
+ * from the page it sits on, its corners are rounded and its content is inset —
+ * not because a 1px line is drawn around it. Outlining every component makes
+ * the whole app look like a high-contrast theme that nobody asked for, and it
+ * flattens hierarchy: when everything is boxed, nothing is emphasised.
+ *
+ * So `--outline` is TRANSPARENT by default and every boxed component draws
+ * `border border-outline` rather than `border-border`. The border is still in
+ * the box model, so switching it on shifts nothing.
+ *
+ * `--border` keeps its colour and stays visible — it is for SEPARATORS
+ * (`border-b`, `divide-y`, the byline rule), which are lines that mean
+ * "these two things are different", not lines that mean "here is an edge".
+ * Those are different jobs and this is why they are different tokens now.
+ *
+ * Two things turn outlines on:
+ *
+ *   1. `data-outlines="on"` — the reader's own choice, from /profile. Set on
+ *      <html> before first paint so it never flashes.
+ *   2. `prefers-contrast: more` — NOT optional there. That block replaces every
+ *      surface with `Canvas`, so the page, the card and the hover row become
+ *      one colour and fill can no longer separate anything. Outlines are the
+ *      only thing left that can, which is the whole argument for keeping them
+ *      one token away rather than deleting them.
+ *
+ * ⚠️ This deliberately diverges from the Mzizi card spec, which specifies
+ * "a full 1px border" (`mzizi_get_tokens: componentSpecs`). Owner decision
+ * 2026-09-10; reported upstream rather than silently forked.
+ */
+:root[data-outlines='on'] {
+  --outline: var(--border);
+}
+
 @media (prefers-contrast: more) {
   :root,
   .dark,
   .light {
+    /* Every surface collapses to Canvas below, so the outline is the only
+       separation left. It is not a preference here. */
+    --outline: CanvasText;
     --background: Canvas;
     --surface: Canvas;
     --elevated: Canvas;

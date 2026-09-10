@@ -229,7 +229,7 @@ export default function ArticleDetailClient({
   if (error || !article) {
     return (
       <div className="min-h-[calc(100vh-200px)] flex items-center justify-center px-6">
-        <div className="text-center bg-surface border border-elevated rounded-2xl p-8 max-w-md">
+        <div className="text-center bg-surface border border-outline rounded-2xl p-8 max-w-md">
           <AlertCircle className="w-16 h-16 text-text-tertiary mx-auto mb-4" />
           <h2 className="font-serif text-xl font-bold mb-2">Something went wrong</h2>
           <p className="text-text-secondary mb-6">{error || "This article doesn't exist."}</p>
@@ -407,7 +407,7 @@ export default function ArticleDetailClient({
                     <Link
                       key={kw.id}
                       href={`/topic/${slug}`}
-                      className="inline-flex min-h-[var(--touch-chip)] items-center gap-1.5 rounded-full border border-border bg-surface px-3 text-sm text-foreground transition-colors hover:border-primary hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                      className="inline-flex min-h-[var(--touch-chip)] items-center gap-1.5 rounded-full border border-outline bg-elevated px-3 text-sm text-foreground transition-colors hover:border-primary hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                     >
                       <Tag className="h-3.5 w-3.5" aria-hidden="true" />
                       {kw.name}

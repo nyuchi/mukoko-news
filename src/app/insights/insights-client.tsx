@@ -73,7 +73,7 @@ function StatTile({
   caption?: string
 }) {
   return (
-    <div className="bg-surface rounded-2xl p-5 border border-elevated">
+    <div className="bg-surface rounded-2xl p-5 border border-outline">
       <Icon className="w-6 h-6 text-primary mb-3" aria-hidden="true" />
       <div className="text-2xl font-bold text-foreground font-mono">{value}</div>
       <div className="text-sm text-text-secondary">{label}</div>
@@ -234,7 +234,7 @@ function SourceLeaderboard({ rows }: { rows: LeaderRow[] }) {
   )
 
   return (
-    <div className="overflow-x-auto rounded-2xl border border-elevated">
+    <div className="overflow-x-auto rounded-2xl border border-outline">
       <table className="w-full text-sm border-collapse">
         <thead className="bg-elevated/40">
           <tr>
@@ -316,7 +316,7 @@ function Section({
         {deepDive && (
           <Link
             href={deepDive.href}
-            className="inline-flex shrink-0 items-center gap-1.5 min-h-[var(--touch-chip)] rounded-full border border-elevated px-3 text-xs font-medium text-primary transition-colors hover:bg-elevated/50"
+            className="inline-flex shrink-0 items-center gap-1.5 min-h-[var(--touch-chip)] rounded-full border border-outline px-3 text-xs font-medium text-primary transition-colors hover:bg-elevated/50"
           >
             {deepDive.label}
             <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
@@ -340,7 +340,7 @@ function Section({
  */
 function SignInToSeeMore() {
   return (
-    <div className="mt-8 rounded-2xl border border-elevated bg-surface p-8 text-center">
+    <div className="mt-8 rounded-2xl border border-outline bg-surface p-8 text-center">
       <div className="w-14 h-14 bg-container-tanzanite rounded-full flex items-center justify-center mx-auto mb-4">
         <Lock className="w-7 h-7 text-on-container-tanzanite" aria-hidden="true" />
       </div>
@@ -359,7 +359,7 @@ function SignInToSeeMore() {
         </Link>
         <Link
           href="/"
-          className="px-5 py-2.5 bg-surface border border-elevated text-foreground font-medium rounded-xl hover:bg-elevated transition-colors"
+          className="px-5 py-2.5 bg-surface border border-outline text-foreground font-medium rounded-xl hover:bg-elevated transition-colors"
         >
           Back to news
         </Link>
@@ -420,7 +420,7 @@ export default function InsightsClient({
             </a>
             <Link
               href="/analytics"
-              className="inline-flex items-center gap-2 px-4 py-2 bg-surface border border-elevated text-foreground rounded-full text-sm font-medium hover:bg-elevated/50 transition-colors"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-surface border border-outline text-foreground rounded-full text-sm font-medium hover:bg-elevated/50 transition-colors"
             >
               <LineChart className="w-4 h-4" aria-hidden="true" />
               Query the corpus
@@ -431,7 +431,7 @@ export default function InsightsClient({
             </Link>
             <a
               href="/api/insights/export?format=csv"
-              className="inline-flex items-center gap-2 px-4 py-2 bg-surface border border-elevated text-foreground rounded-full text-sm font-medium hover:bg-elevated/50 transition-colors"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-surface border border-outline text-foreground rounded-full text-sm font-medium hover:bg-elevated/50 transition-colors"
               download
             >
               <Download className="w-4 h-4" aria-hidden="true" />
@@ -502,7 +502,7 @@ export default function InsightsClient({
                   volume.from
                 )} – ${formatDay(volume.to)}).`}
               >
-                <div className="bg-surface rounded-2xl border border-elevated p-5">
+                <div className="bg-surface rounded-2xl border border-outline p-5">
                   <VolumeChart series={volume.series} />
                   <div className="flex justify-between mt-2 text-xs text-text-tertiary font-mono">
                     <span>{formatDay(volume.from)}</span>
@@ -585,7 +585,7 @@ export default function InsightsClient({
                   sentiment.total
                 )} articles) — the rest is not yet processed.`}
               >
-                <div className="bg-surface rounded-2xl border border-elevated p-5 space-y-3">
+                <div className="bg-surface rounded-2xl border border-outline p-5 space-y-3">
                   {sentiment.breakdown.map((s) => {
                     const style = SENTIMENT_STYLE[s.sentiment] ?? {
                       bar: 'bg-text-tertiary',

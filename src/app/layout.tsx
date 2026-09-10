@@ -144,14 +144,21 @@ export default function RootLayout({
     >
       <head>
         {/* Fonts are self-hosted via next/font — no Google Fonts preconnect needed */}
-        {/* Theme bootstrap: applies the stored theme class before first paint so
-            ThemeProvider can render SSR HTML without a wrong-theme flash.
-            Static script (no interpolation); key must match ThemeProvider's
-            storageKey ("mukoko-news-theme"). */}
+        {/* Appearance bootstrap: applies the stored theme class AND the outline
+            preference before first paint, so SSR HTML never flashes the wrong
+            theme or an un-outlined frame.
+
+            Static script (no interpolation). It runs before any module is
+            evaluated, so both storage keys are string literals here and cannot
+            import their constants — `appearance.test.ts` asserts this script
+            still agrees with `ThemeProvider`'s storageKey ("mukoko-news-theme")
+            and with `OUTLINE_STORAGE_KEY` / `OUTLINE_ATTRIBUTE`, which is the
+            only thing standing between a rename and a setting that silently
+            stops applying. */}
         <script
           dangerouslySetInnerHTML={{
             __html:
-              "(function(){try{var t=localStorage.getItem('mukoko-news-theme');var d=t==='light'?false:t==='dark'?true:window.matchMedia('(prefers-color-scheme: dark)').matches;var c=document.documentElement.classList;c.remove('light','dark');c.add(d?'dark':'light');}catch(e){}})()",
+              "(function(){try{var t=localStorage.getItem('mukoko-news-theme');var d=t==='light'?false:t==='dark'?true:window.matchMedia('(prefers-color-scheme: dark)').matches;var c=document.documentElement.classList;c.remove('light','dark');c.add(d?'dark':'light');if(localStorage.getItem('mukoko-news-outlines')==='on')document.documentElement.setAttribute('data-outlines','on');}catch(e){}})()",
           }}
         />
         <OrganizationJsonLd />

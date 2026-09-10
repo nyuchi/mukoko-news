@@ -13,7 +13,7 @@ export function AdminSignOut() {
       type="button"
       disabled={isPending}
       onClick={() => startTransition(() => signOutAction())}
-      className="flex items-center gap-2 px-4 py-2 rounded-xl bg-surface border border-elevated text-foreground text-sm font-medium hover:bg-elevated transition-colors disabled:opacity-60"
+      className="flex items-center gap-2 px-4 py-2 rounded-xl bg-surface border border-outline text-foreground text-sm font-medium hover:bg-elevated transition-colors disabled:opacity-60"
     >
       {isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogOut className="w-4 h-4" />}
       Sign out

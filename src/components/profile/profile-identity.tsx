@@ -96,7 +96,7 @@ export function ProfileIdentity({
                 onChange={(e) => setFirst(e.target.value)}
                 maxLength={60}
                 autoComplete="given-name"
-                className="mt-1 w-full min-h-[var(--touch-input,43px)] px-3 rounded-xl bg-background border border-elevated focus:outline-none focus:ring-2 focus:ring-primary"
+                className="mt-1 w-full min-h-[var(--touch-input,43px)] px-3 rounded-xl bg-background border border-outline focus:outline-none focus:ring-2 focus:ring-primary"
               />
             </label>
             <label className="block">
@@ -106,7 +106,7 @@ export function ProfileIdentity({
                 onChange={(e) => setLast(e.target.value)}
                 maxLength={60}
                 autoComplete="family-name"
-                className="mt-1 w-full min-h-[var(--touch-input,43px)] px-3 rounded-xl bg-background border border-elevated focus:outline-none focus:ring-2 focus:ring-primary"
+                className="mt-1 w-full min-h-[var(--touch-input,43px)] px-3 rounded-xl bg-background border border-outline focus:outline-none focus:ring-2 focus:ring-primary"
               />
             </label>
           </div>
@@ -133,7 +133,7 @@ export function ProfileIdentity({
               type="button"
               onClick={cancel}
               disabled={saving}
-              className="inline-flex items-center gap-2 px-4 min-h-[var(--touch-cta,47px)] rounded-xl border border-elevated text-foreground"
+              className="inline-flex items-center gap-2 px-4 min-h-[var(--touch-cta,47px)] rounded-xl border border-outline text-foreground"
             >
               <X className="w-4 h-4" aria-hidden="true" />
               Cancel

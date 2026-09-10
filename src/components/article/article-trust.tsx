@@ -64,7 +64,7 @@ export function ArticleTrustPanel({ article }: { article: Article }) {
   return (
     <aside
       aria-labelledby="article-trust-heading"
-      className="my-8 grid gap-3 rounded-2xl bg-surface p-5 ring-1 ring-border"
+      className="my-8 grid gap-3 rounded-2xl bg-surface p-5 ring-1 ring-outline"
     >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2

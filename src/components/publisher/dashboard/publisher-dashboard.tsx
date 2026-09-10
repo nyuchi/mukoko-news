@@ -56,7 +56,7 @@ export function PublisherDashboard({ context }: { context: PublisherContext }) {
                 className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                   o.id === org.id
                     ? 'bg-primary text-on-primary'
-                    : 'bg-surface border border-elevated text-text-secondary hover:bg-elevated'
+                    : 'bg-surface border border-outline text-text-secondary hover:bg-elevated'
                 }`}
               >
                 {o.name}
@@ -76,7 +76,7 @@ export function PublisherDashboard({ context }: { context: PublisherContext }) {
 
 function Card({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <section className="mb-6 rounded-2xl border border-elevated bg-surface overflow-hidden">
+    <section className="mb-6 rounded-2xl border border-outline bg-surface overflow-hidden">
       <div className="flex items-center justify-between px-5 py-3 border-b border-elevated">
         <h2 className="text-sm font-bold uppercase tracking-wider text-text-tertiary">{title}</h2>
         {action}
@@ -97,7 +97,7 @@ function StatRow({ org }: { org: DashboardOrganization }) {
   return (
     <div className="mb-6 grid grid-cols-2 sm:grid-cols-4 gap-3">
       {stats.map((s) => (
-        <div key={s.label} className="rounded-2xl border border-elevated bg-surface p-4">
+        <div key={s.label} className="rounded-2xl border border-outline bg-surface p-4">
           <s.icon className="w-4 h-4 text-text-tertiary mb-2" />
           <div className="font-serif text-2xl font-bold">{s.value}</div>
           <div className="text-xs text-text-tertiary">{s.label}</div>
@@ -114,7 +114,7 @@ function StatRow({ org }: { org: DashboardOrganization }) {
 
 function MiniStat({ label, value, icon: Icon }: { label: string; value: number | string; icon: typeof Eye }) {
   return (
-    <div className="rounded-xl border border-elevated bg-surface px-4 py-3 flex items-center gap-3">
+    <div className="rounded-xl border border-outline bg-surface px-4 py-3 flex items-center gap-3">
       <Icon className="w-4 h-4 text-text-tertiary shrink-0" />
       <div>
         <div className="font-semibold">{typeof value === 'number' ? value.toLocaleString() : value}</div>
@@ -208,7 +208,7 @@ function FeedRow({ source }: { source: DashboardSource }) {
         : { label: source.isActive ? 'Active' : 'Inactive', cls: 'bg-elevated text-text-secondary' }
 
   return (
-    <div className="flex items-start justify-between gap-4 rounded-xl border border-elevated p-3">
+    <div className="flex items-start justify-between gap-4 rounded-xl border border-outline p-3">
       <div className="min-w-0">
         <div className="flex items-center gap-2">
           <Rss className="w-4 h-4 text-text-tertiary shrink-0" />
@@ -274,7 +274,7 @@ function DirectFeedForm({ orgId, onDone }: { orgId: string; onDone: () => void }
   }
 
   return (
-    <form onSubmit={onSubmit} className="mb-5 rounded-xl border border-elevated bg-background/40 p-4 space-y-3">
+    <form onSubmit={onSubmit} className="mb-5 rounded-xl border border-outline bg-background/40 p-4 space-y-3">
       <p className="text-sm text-text-secondary">
         Give us a direct feed and we ingest your full articles automatically — no scraping. Staff review
         it before it goes live.
@@ -289,13 +289,13 @@ function DirectFeedForm({ orgId, onDone }: { orgId: string; onDone: () => void }
         type="url"
         required
         placeholder="https://yoursite.com/full-content-feed.xml"
-        className="w-full rounded-lg border border-elevated bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+        className="w-full rounded-lg border border-outline bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
       />
       <div className="flex flex-wrap items-center gap-3">
         <select
           name="feedType"
           defaultValue="rss"
-          className="rounded-lg border border-elevated bg-background px-3 py-2 text-sm"
+          className="rounded-lg border border-outline bg-background px-3 py-2 text-sm"
         >
           <option value="rss">RSS</option>
           <option value="atom">Atom</option>
@@ -319,7 +319,7 @@ function DirectFeedForm({ orgId, onDone }: { orgId: string; onDone: () => void }
         <button
           type="button"
           onClick={onDone}
-          className="rounded-lg border border-elevated px-4 py-2 text-sm font-medium hover:bg-elevated transition-colors"
+          className="rounded-lg border border-outline px-4 py-2 text-sm font-medium hover:bg-elevated transition-colors"
         >
           Cancel
         </button>
@@ -360,7 +360,7 @@ function ProfileCard({ org }: { org: DashboardOrganization }) {
         !editing && (
           <button
             onClick={() => setEditing(true)}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-surface border border-elevated px-3 py-1.5 text-xs font-medium hover:bg-elevated transition-colors"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-surface border border-outline px-3 py-1.5 text-xs font-medium hover:bg-elevated transition-colors"
           >
             <Pencil className="w-3.5 h-3.5" />
             Edit
@@ -387,7 +387,7 @@ function ProfileCard({ org }: { org: DashboardOrganization }) {
               rows={3}
               maxLength={2000}
               defaultValue={org.description ?? ''}
-              className="w-full rounded-lg border border-elevated bg-background px-3 py-2 text-sm resize-y focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+              className="w-full rounded-lg border border-outline bg-background px-3 py-2 text-sm resize-y focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
             />
           </div>
           <div className="flex gap-2">
@@ -402,7 +402,7 @@ function ProfileCard({ org }: { org: DashboardOrganization }) {
             <button
               type="button"
               onClick={() => setEditing(false)}
-              className="rounded-lg border border-elevated px-4 py-2 text-sm font-medium hover:bg-elevated transition-colors"
+              className="rounded-lg border border-outline px-4 py-2 text-sm font-medium hover:bg-elevated transition-colors"
             >
               Cancel
             </button>
@@ -460,7 +460,7 @@ function LabeledInput({
         required={required}
         maxLength={maxLength}
         defaultValue={defaultValue}
-        className="w-full rounded-lg border border-elevated bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+        className="w-full rounded-lg border border-outline bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
       />
     </div>
   )
