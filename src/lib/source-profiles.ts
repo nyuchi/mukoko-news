@@ -257,30 +257,54 @@ export function getSourceProfile(sourceName: string): SourceProfile {
 }
 
 /**
- * The brand-table domain for an EXACT (case-insensitive) name match, or null.
+ * The brand-table entry for an EXACT (case-insensitive) name match, or null.
  *
- * Deliberately not `getSourceProfile().domain`: that one falls through to a
- * substring test, which is fine for picking an avatar colour and actively wrong
- * for picking whose logo to show. This is the only domain lookup the icon
- * resolver is allowed to use, and it is the last tier before initials.
+ * Deliberately not `getSourceProfile()`: that one falls through to a substring
+ * test, and a substring test cannot tell one masthead from another. Measured
+ * against the live catalogue, it matched 38 of 587 sources and got 11 of those
+ * wrong — "National Geographic" and "Amnesty International" both contain
+ * "Nation" and so both resolved to Kenya's Daily Nation; "The Standard
+ * Newspaper | Gambia" resolved to Zimbabwe's thestandard.co.zw; Sierra Leone's
+ * "The Patriotic Vanguard" resolved to Nigeria's Vanguard.
+ *
+ * Everything a profile carries is publisher IDENTITY — the logo, the brand
+ * colour, the initials printed on the avatar — so a wrong match is a
+ * misattribution in all three, not just the logo. A Gambian paper rendered in
+ * a Zimbabwean paper's navy under the letters "TS" is stating something false
+ * about who published the article, in exactly the way the `publisher` field
+ * was. Better a neutral generated identity than a confident wrong one.
  */
-export function getExactProfileDomain(sourceName: string | null | undefined): string | null {
+function exactProfile(sourceName: string | null | undefined): SourceProfile | null {
   const trimmed = sourceName?.trim();
   if (!trimmed) return null;
 
-  if (SOURCE_PROFILES[trimmed]?.domain) return SOURCE_PROFILES[trimmed].domain;
+  if (SOURCE_PROFILES[trimmed]) return SOURCE_PROFILES[trimmed];
 
   const normalized = trimmed.toLowerCase();
   for (const [key, profile] of Object.entries(SOURCE_PROFILES)) {
-    if (key.toLowerCase() === normalized) return profile.domain;
+    if (key.toLowerCase() === normalized) return profile;
   }
   return null;
 }
 
-export function getSourceColors(sourceName: string) {
-  return getSourceProfile(sourceName).colors;
+/** The brand-table domain for an exact name match, or null. See `exactProfile`. */
+export function getExactProfileDomain(sourceName: string | null | undefined): string | null {
+  return exactProfile(sourceName)?.domain ?? null;
 }
 
+/**
+ * The publisher's brand colours, or a deterministic colour derived from its own
+ * name. Never another publisher's colours — see `exactProfile`.
+ */
+export function getSourceColors(sourceName: string) {
+  return exactProfile(sourceName)?.colors ?? getColorForSource(sourceName);
+}
+
+/**
+ * The publisher's brand initials, or initials generated from its own name.
+ * Never another publisher's initials — see `exactProfile`.
+ */
 export function getSourceInitials(sourceName: string) {
-  return getSourceProfile(sourceName).initials;
+  if (!sourceName) return '?';
+  return exactProfile(sourceName)?.initials ?? generateInitials(sourceName);
 }
