@@ -9,6 +9,16 @@ interface Article {
   content?: string;
   content_markdown?: string;
   /**
+   * The enrichment worker's one-paragraph summary (`aiSummary`), present only
+   * on the single-article read.
+   *
+   * It is MACHINE-WRITTEN and must be labelled as such wherever it is shown —
+   * a reader who mistakes it for the newsroom's own standfirst is being misled
+   * about who wrote the words. It never replaces `description`, which is the
+   * publisher's own.
+   */
+  summary?: string;
+  /**
    * The FEED SOURCE name (`feedSources.name`) — a delivery endpoint, not a
    * masthead. One newsroom can hold several, under names that disagree. Use
    * `publisher` when you mean "who published this"; see `publisher` below.
@@ -44,6 +54,16 @@ interface Article {
    * Consumed by the source icon; see `@/lib/publisher-icon`.
    */
   source_url?: string;
+  /**
+   * The publisher's trust score, 0-100, resolved on read from its feed-source
+   * record. DERIVED, never stored — see `source_url` above for why.
+   *
+   * `undefined` means the publisher-verification flow has never scored this
+   * source. That is NOT a score of zero, and must never be rendered as one:
+   * an unassessed publisher shown at 0/100 is an accusation the platform did
+   * not make. Render the panel only when this is a number.
+   */
+  source_trust?: number;
   slug: string;
   category?: string;
   category_id?: string;  // API returns category_id

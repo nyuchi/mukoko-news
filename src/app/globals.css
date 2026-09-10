@@ -433,6 +433,23 @@
   --density-touch: var(--touch-default);
   --density-touch-input: var(--touch-a11y);
   --density-icon: var(--icon-default);
+
+  /* ── Page widths ────────────────────────────────────────────────────────
+     Every centred column on the site comes from one of these three, and the
+     side gutter from `--page-gutter`. They exist because the widths had been
+     hand-written at 36 call sites in NINE different combinations — `max-w-
+     [1200px] mx-auto px-6`, `max-w-[1200px] mx-auto px-4 sm:px-6`, `max-w-
+     [800px] mx-auto px-6`, `max-w-[840px] …`, `max-w-[900px] …`, `max-w-
+     [1000px] …`, `max-w-[600px] …`, `max-w-3xl …` — so the header and the
+     content it sat above disagreed on both the width AND the gutter, and the
+     page visibly stepped in at the shoulder. A token cannot drift from itself.
+
+     Consume them through `<PageContainer>`, not by hand. */
+  --width-wide: 1200px; /* chrome: header, footer, index pages */
+  --width-reading: 800px; /* one column of running text — the article body */
+  --width-form: 600px; /* a single form or auth card */
+  --page-gutter: 1rem; /* 16px — the a11y floor at every width */
+  --page-gutter-sm: 1.5rem; /* 24px from the `sm` breakpoint up */
 }
 
 /* Data-dense surfaces: admin tables, dashboards, power-user tools. */

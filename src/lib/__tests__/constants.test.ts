@@ -16,10 +16,12 @@ describe('COUNTRIES', () => {
       expect(country).toHaveProperty('code');
       expect(country).toHaveProperty('name');
       expect(country).toHaveProperty('flag');
-      expect(country).toHaveProperty('color');
       expect(country.code).toMatch(/^[A-Z]{2}$/);
       expect(country.flag).toBeTruthy();
-      expect(country.color).toMatch(/^bg-/);
+      // No `color`. Each row used to carry a raw Tailwind utility that was
+      // painted BEHIND the flag emoji — invisible, and an arbitrary hue
+      // asserted beside a national flag. Pinned so it does not come back.
+      expect(country).not.toHaveProperty('color');
     });
   });
 
@@ -46,7 +48,10 @@ describe('CATEGORY_META', () => {
     commonCategories.forEach((category) => {
       expect(CATEGORY_META[category]).toBeDefined();
       expect(CATEGORY_META[category].emoji).toBeTruthy();
-      expect(CATEGORY_META[category].color).toMatch(/^bg-/);
+      // Colour is no longer here. It was a second, disagreeing copy of the
+      // colour table in `app/categories/page.tsx`; both are replaced by
+      // `categoryTone`, which returns a Mzizi container pair.
+      expect(CATEGORY_META[category]).not.toHaveProperty('color');
     });
   });
 

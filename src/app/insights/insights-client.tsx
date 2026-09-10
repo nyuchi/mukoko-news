@@ -397,7 +397,7 @@ export default function InsightsClient({
         <div className="p-8 text-center text-text-secondary">Failed to render insights</div>
       }
     >
-      <div className="max-w-[1200px] mx-auto px-6 py-8">
+      <div className="mx-auto w-full max-w-[var(--width-wide)] px-[var(--page-gutter)] sm:px-[var(--page-gutter-sm)] py-8">
         {/* Header */}
         <header className="mb-8">
           <div className="flex items-center gap-3 mb-2">

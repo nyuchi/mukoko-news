@@ -109,7 +109,7 @@ export function FeedPageSkeleton() {
 export function InsightsPageSkeleton() {
   return (
     <div
-      className="max-w-[1200px] mx-auto px-6 py-8"
+      className="mx-auto w-full max-w-[var(--width-wide)] px-[var(--page-gutter)] sm:px-[var(--page-gutter-sm)] py-8"
       aria-label="Loading insights"
       role="status"
       aria-live="polite"
@@ -146,9 +146,17 @@ export function InsightsPageSkeleton() {
   );
 }
 
+/**
+ * Same column as the article it stands in for.
+ *
+ * It was `max-w-3xl` (768px) against the article's 800px, with a 16px gutter
+ * against the article's 24px, so every article visibly jumped sideways the
+ * moment it loaded. Both now read `--width-reading` and `--page-gutter`, so
+ * they cannot disagree.
+ */
 export function ArticlePageSkeleton() {
   return (
-    <div className="max-w-3xl mx-auto px-4 py-8" aria-label="Loading article" role="status" aria-live="polite">
+    <div className="mx-auto w-full max-w-[var(--width-reading)] px-[var(--page-gutter)] sm:px-[var(--page-gutter-sm)] py-8" aria-label="Loading article" role="status" aria-live="polite">
       {/* Back button */}
       <Skeleton className="h-10 w-24 mb-6" />
 
