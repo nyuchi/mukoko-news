@@ -20,6 +20,8 @@ interface Article {
   published_at: string;
   updated_at?: string;
   author?: string;
+  /** BCP-47 / ISO language of the article body, from the source document. */
+  language?: string;
   keywords?: Array<{ id: string; name: string; slug: string }>;
   word_count?: number;
   reading_time?: number;

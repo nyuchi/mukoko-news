@@ -31,6 +31,11 @@ interface MongoArticle {
   articleBodyMarkdown?: string
   articleSection?: string
   datePublished?: Date
+  // Schema.org sub-document, NOT a string — both ingestion paths write
+  // `{ '@type': 'Person', name }` (see sources.ts / analytics.ts, which already
+  // read it this way). It was never declared here, so `toArticle` never mapped
+  // it and `Article.author` was undefined for every article in the corpus.
+  author?: { '@type'?: string; name?: string }
   // Image has been stored in several shapes across pipeline versions:
   //   schema.org array:  image: [{ url }]       (fly-worker rss/newsdata collectors)
   //   schema.org object: image: { url }         (parser intermediate)
@@ -168,6 +173,19 @@ function toArticle(
       ? stripHtml(doc.articleBodyProcessed || doc.articleBody) || undefined
       : undefined,
     content_markdown: opts.fullContent ? doc.articleBodyMarkdown?.trim() || undefined : undefined,
+    // The journalist's byline. The pipeline backfilled these onto `author.name`
+    // in 2026-09; without this line none of that reached the page, the article
+    // metadata, the NewsArticle JSON-LD or the markdown served to agents — all
+    // of which silently fell back to attributing the piece to the outlet.
+    author: typeof doc.author?.name === 'string' && doc.author.name.trim()
+      ? doc.author.name.trim()
+      : undefined,
+    // The corpus is not monolingual (it carries francophone sources), and the
+    // document records its own language. Falling back to undefined lets the
+    // caller decide rather than asserting English.
+    language: typeof doc.inLanguage === 'string' && doc.inLanguage.trim()
+      ? doc.inLanguage.trim()
+      : undefined,
     source: source?.name || doc.feedSourceId,
     source_id: doc.feedSourceId,
     slug: doc.slug,

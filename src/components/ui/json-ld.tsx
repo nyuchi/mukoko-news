@@ -138,7 +138,11 @@ export function ArticleJsonLd({ article, url }: { article: Article; url: string 
       "@id": url,
     },
     isAccessibleForFree: true,
-    inLanguage: "en",
+    // The corpus is not monolingual — it carries francophone newsrooms
+    // (rfi.fr, france24) among others, and the source document records its own
+    // language. Hard-coding "en" told answer engines a French article was
+    // English, which is worse than saying nothing.
+    inLanguage: article.language || "en",
     keywords: article.keywords?.map((k) => k.name).join(", ") || undefined,
     articleSection: article.category_id || article.category || undefined,
     wordCount: article.word_count || undefined,
