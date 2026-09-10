@@ -39,6 +39,15 @@ jobs:
     # case that matters — a failing check.
     - name: Notify Vercel
       uses: vercel/repository-dispatch/actions/status@v1
+      env:
+        # On a `pull_request` event GITHUB_SHA is the ephemeral MERGE commit
+        # (refs/pull/N/merge), not the PR head, and this action reads
+        # `context.sha` straight out of that variable. Without the override it
+        # posts to a commit GitHub never displays: verified in run 34425929192,
+        # where it set the status on 18e10b1 (the merge ref) while the PR head
+        # was 92b65cf — the check ran, passed, and was invisible on the PR.
+        # `github.event.pull_request` is null on push, so this falls back cleanly.
+        GITHUB_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       with:
         name: 'Vercel - mukoko-news: lint / ${{ matrix.check }}'
 
@@ -96,6 +105,15 @@ jobs:
     steps:
     - name: Notify Vercel
       uses: vercel/repository-dispatch/actions/status@v1
+      env:
+        # On a `pull_request` event GITHUB_SHA is the ephemeral MERGE commit
+        # (refs/pull/N/merge), not the PR head, and this action reads
+        # `context.sha` straight out of that variable. Without the override it
+        # posts to a commit GitHub never displays: verified in run 34425929192,
+        # where it set the status on 18e10b1 (the merge ref) while the PR head
+        # was 92b65cf — the check ran, passed, and was invisible on the PR.
+        # `github.event.pull_request` is null on push, so this falls back cleanly.
+        GITHUB_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       with:
         name: 'Vercel - mukoko-news: ESLint'
 
@@ -115,6 +133,15 @@ jobs:
     steps:
     - name: Notify Vercel
       uses: vercel/repository-dispatch/actions/status@v1
+      env:
+        # On a `pull_request` event GITHUB_SHA is the ephemeral MERGE commit
+        # (refs/pull/N/merge), not the PR head, and this action reads
+        # `context.sha` straight out of that variable. Without the override it
+        # posts to a commit GitHub never displays: verified in run 34425929192,
+        # where it set the status on 18e10b1 (the merge ref) while the PR head
+        # was 92b65cf — the check ran, passed, and was invisible on the PR.
+        # `github.event.pull_request` is null on push, so this falls back cleanly.
+        GITHUB_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       with:
         name: 'Vercel - mukoko-news: Typecheck'
 
@@ -134,6 +161,15 @@ jobs:
     steps:
     - name: Notify Vercel
       uses: vercel/repository-dispatch/actions/status@v1
+      env:
+        # On a `pull_request` event GITHUB_SHA is the ephemeral MERGE commit
+        # (refs/pull/N/merge), not the PR head, and this action reads
+        # `context.sha` straight out of that variable. Without the override it
+        # posts to a commit GitHub never displays: verified in run 34425929192,
+        # where it set the status on 18e10b1 (the merge ref) while the PR head
+        # was 92b65cf — the check ran, passed, and was invisible on the PR.
+        # `github.event.pull_request` is null on push, so this falls back cleanly.
+        GITHUB_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       with:
         name: 'Vercel - mukoko-news: Test'
 
@@ -153,6 +189,15 @@ jobs:
     steps:
     - name: Notify Vercel
       uses: vercel/repository-dispatch/actions/status@v1
+      env:
+        # On a `pull_request` event GITHUB_SHA is the ephemeral MERGE commit
+        # (refs/pull/N/merge), not the PR head, and this action reads
+        # `context.sha` straight out of that variable. Without the override it
+        # posts to a commit GitHub never displays: verified in run 34425929192,
+        # where it set the status on 18e10b1 (the merge ref) while the PR head
+        # was 92b65cf — the check ran, passed, and was invisible on the PR.
+        # `github.event.pull_request` is null on push, so this falls back cleanly.
+        GITHUB_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       with:
         name: 'Vercel - mukoko-news: Build'
 
