@@ -262,6 +262,36 @@ export default function ArticleDetailClient({
     <ErrorBoundary fallback={<div className="p-8 text-center text-text-secondary">Failed to render article content</div>}>
       <ArticleJsonLd article={article} url={articleUrl} />
       <div className="pb-16">
+        {/* Reader controls.
+            These used to be `absolute top-6 left-6` / `right-6` on a full-bleed
+            banner, which pinned them to the VIEWPORT edge — on a wide screen
+            they sat hundreds of pixels away from the 800px column they act on,
+            reading as page chrome rather than as controls for this article.
+            They now sit in the content column, in normal flow, so they line up
+            with the headline beneath them at every width.
+
+            Sized on `--touch-a11y` (43px), the token for secondary buttons.
+            The previous fixed `w-10 h-10` was 40px — below even `--touch-min`
+            (41px), the documented absolute floor. Both are icon-only, so both
+            carry an explicit accessible name. */}
+        <div className="max-w-[800px] mx-auto px-6 pt-4 flex items-center justify-between gap-4">
+          <button
+            onClick={() => router.back()}
+            aria-label="Go back"
+            className="inline-flex min-h-[var(--touch-a11y)] min-w-[var(--touch-a11y)] items-center justify-center rounded-full bg-surface text-foreground transition-colors hover:bg-elevated focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+          >
+            <ChevronLeft className="w-5 h-5" aria-hidden="true" />
+          </button>
+
+          <button
+            onClick={handleShare}
+            aria-label="Share this article"
+            className="inline-flex min-h-[var(--touch-a11y)] min-w-[var(--touch-a11y)] items-center justify-center rounded-full bg-surface text-foreground transition-colors hover:bg-elevated focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+          >
+            <Share2 className="w-5 h-5" aria-hidden="true" />
+          </button>
+        </div>
+
         {/* Breadcrumb */}
         <div className="max-w-[800px] mx-auto px-6 py-3">
           <Breadcrumb
@@ -272,55 +302,62 @@ export default function ArticleDetailClient({
           />
         </div>
 
-        {/* Hero Section */}
-        <div className="bg-primary text-on-primary px-6 py-12 relative">
-        {/* Back Button */}
-        <button
-          onClick={() => router.back()}
-          className="absolute top-6 left-6 w-10 h-10 flex items-center justify-center bg-background/20 rounded-full hover:bg-background/30 transition-colors"
-        >
-          <ChevronLeft className="w-5 h-5" />
-        </button>
-
-        {/* Share Button */}
-        <button
-          onClick={handleShare}
-          className="absolute top-6 right-6 w-10 h-10 flex items-center justify-center bg-background/20 rounded-full hover:bg-background/30 transition-colors"
-        >
-          <Share2 className="w-5 h-5" />
-        </button>
-
-        <div className="max-w-[800px] mx-auto pt-12">
-          {/* Category Badge */}
-          {(article.category_id || article.category) && (
-            <div className="flex items-center gap-2 mb-4">
-              <Tag className="w-4 h-4" />
-              <span className="text-sm font-bold uppercase tracking-wider">
-                {article.category_id || article.category}
-              </span>
-            </div>
+        {/* Article header.
+            Previously a full-bleed `bg-primary` slab — a solid tanzanite block
+            across the whole viewport, `py-12` with another `pt-12` inside it.
+            At the brand's primary weight and that size it dominated the page
+            and pushed the article itself below the fold. The headline is set in
+            Noto Serif and can carry the page on its own; tanzanite now appears
+            once, as the category accent, which is what an accent colour is for. */}
+        <header className="max-w-[800px] mx-auto px-6 pb-6">
+          {category && (
+            <span className="inline-flex min-h-[var(--touch-badge)] items-center gap-1.5 rounded-full bg-container-tanzanite px-3 text-xs font-bold uppercase tracking-wider text-on-container-tanzanite">
+              <Tag className="w-3.5 h-3.5" aria-hidden="true" />
+              {category}
+            </span>
           )}
 
-          {/* Title */}
-          <h1 className="font-serif text-3xl md:text-4xl font-bold leading-tight mb-6">
+          <h1 className="font-serif text-3xl md:text-4xl font-bold leading-tight text-foreground mt-4 mb-4 text-balance">
             {article.title}
           </h1>
 
-          {/* Source and Date */}
-          <div className="flex items-center gap-4 text-on-primary/80">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-text-secondary">
             <span className="font-medium">{article.source}</span>
             <span className="flex items-center gap-1">
-              <Clock className="w-4 h-4" />
+              <Clock className="w-4 h-4" aria-hidden="true" />
               {formatDate(article.published_at)}
             </span>
           </div>
-        </div>
-      </div>
+
+          {/* Tags belong with the byline, not after the article.
+              They were previously below the entire body, so the only way to see
+              what a story was about — or to reach its /topic timeline — was to
+              scroll past every paragraph first. That is backwards for metadata
+              a reader uses to DECIDE whether to read. */}
+          {article.keywords && article.keywords.length > 0 && (
+            <div className="mt-5 flex flex-wrap gap-2">
+              {article.keywords.slice(0, 6).map((kw) => {
+                const slug = topicSlug(kw.slug || kw.name);
+                if (!slug) return null;
+                return (
+                  <Link
+                    key={kw.id}
+                    href={`/topic/${slug}`}
+                    className="inline-flex min-h-[var(--touch-chip)] items-center gap-1.5 rounded-full border border-elevated bg-surface px-3 py-1 text-sm text-foreground transition-colors hover:border-primary/30 hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                  >
+                    <Tag className="w-3.5 h-3.5" aria-hidden="true" />
+                    {kw.name}
+                  </Link>
+                );
+              })}
+            </div>
+          )}
+        </header>
 
       {/* Article Image — hidden entirely if the proxy can't fetch it (some
           publisher WAFs block server-side fetches); no empty placeholder box. */}
       {article.image_url && isValidImageUrl(article.image_url) && !heroImageFailed && (
-        <div className="max-w-[900px] mx-auto px-6 -mt-6">
+        <div className="max-w-[900px] mx-auto px-6">
           <div className="rounded-2xl overflow-hidden shadow-xl">
             <img
               src={imageProxyUrl(article.image_url, { width: 900 })}
@@ -380,31 +417,6 @@ export default function ArticleDetailClient({
 
         {/* Divider */}
         <div className="border-t border-elevated my-8" />
-
-        {/* Follow the story — each tag opens its /topic timeline */}
-        {article.keywords && article.keywords.length > 0 && (
-          <div className="mb-8">
-            <p className="font-mono text-[13px] uppercase tracking-wide text-text-tertiary mb-3">
-              Follow the story
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {article.keywords.slice(0, 6).map((kw) => {
-                const slug = topicSlug(kw.slug || kw.name);
-                if (!slug) return null;
-                return (
-                  <Link
-                    key={kw.id}
-                    href={`/topic/${slug}`}
-                    className="inline-flex min-h-[var(--touch-chip)] items-center gap-1.5 rounded-full border border-elevated bg-surface px-3 py-1 text-sm text-foreground transition-colors hover:border-primary/30 hover:text-primary"
-                  >
-                    <Tag className="w-3.5 h-3.5" aria-hidden="true" />
-                    {kw.name}
-                  </Link>
-                );
-              })}
-            </div>
-          </div>
-        )}
 
         {/* Action Buttons */}
         <div className="flex items-center gap-4 flex-wrap">
