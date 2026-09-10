@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { Mail, MessageCircle, ChevronRight } from "lucide-react";
+import { Mail, MessageCircle, ChevronRight, BookOpen } from "lucide-react";
+import { SUPPORT_EMAIL, SUPPORT_URL } from "@/lib/constants";
 
 const faqs = [
   {
@@ -39,9 +40,23 @@ export default function HelpPage() {
       </p>
 
       {/* Quick Actions */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-12">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-12">
         <Link
-          href="mailto:support@mukoko.com"
+          href={SUPPORT_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-4 p-4 bg-surface rounded-xl hover:bg-elevated transition-colors"
+        >
+          <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center">
+            <BookOpen className="w-6 h-6 text-primary" />
+          </div>
+          <div>
+            <p className="font-semibold text-foreground">Help Centre</p>
+            <p className="text-sm text-text-secondary">Full guides &amp; troubleshooting</p>
+          </div>
+        </Link>
+        <Link
+          href={`mailto:${SUPPORT_EMAIL}`}
           className="flex items-center gap-4 p-4 bg-surface rounded-xl hover:bg-elevated transition-colors"
         >
           <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center">
@@ -49,7 +64,7 @@ export default function HelpPage() {
           </div>
           <div>
             <p className="font-semibold text-foreground">Email Support</p>
-            <p className="text-sm text-text-secondary">support@mukoko.com</p>
+            <p className="text-sm text-text-secondary">{SUPPORT_EMAIL}</p>
           </div>
         </Link>
         <Link
@@ -90,10 +105,19 @@ export default function HelpPage() {
       <div className="mt-12 p-6 bg-primary/10 rounded-xl text-center">
         <h3 className="font-semibold text-foreground mb-2">Still need help?</h3>
         <p className="text-text-secondary text-sm mb-4">
-          Our support team is here to assist you
+          Browse the full guides in our{" "}
+          <Link
+            href={SUPPORT_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-secondary font-medium hover:underline"
+          >
+            Help Centre
+          </Link>
+          , or email us and a person will reply.
         </p>
         <Link
-          href="mailto:support@mukoko.com"
+          href={`mailto:${SUPPORT_EMAIL}`}
           className="inline-block px-6 py-2.5 bg-primary text-on-primary font-medium rounded-xl hover:opacity-90 transition-opacity"
         >
           Contact Support

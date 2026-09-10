@@ -17,6 +17,9 @@ vi.mock('../ui/source-icon', () => ({
   SourceBadge: ({ source }: { source: string }) => (
     <span data-testid="source-badge">{source}</span>
   ),
+  // The real helper maps article fields onto icon props; the resolver itself is
+  // covered in source-icon.test.tsx.
+  sourceIconProps: ({ source }: { source: string }) => ({ source }),
 }));
 
 // Mock the image proxy to a stable pass-through

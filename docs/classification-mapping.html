@@ -1,0 +1,753 @@
+<title>Mukoko Classification Mapping</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif:opsz,wght@6..72,400;6..72,600;6..72,700&family=Noto+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap">
+
+<style>
+  :root {
+    --background: #F3F3F1; --surface: #EEEEEC; --elevated: #E5E4E1;
+    --border: #E7E5E0; --rule: #D9D6CF;
+    --foreground: #000000; --text-secondary: #2E2B27; --text-tertiary: #474139;
+    --tanzanite: #4B0082; --cobalt: #0047AB; --malachite: #004D40;
+    --terracotta: #A0522D; --copper: #BF5A36; --gold: #5D4037;
+    --tanzanite-wash: rgba(75,0,130,0.10);
+    --cobalt-wash: rgba(0,71,171,0.10);
+    --gold-wash: rgba(93,64,55,0.10);
+    --container-tanzanite: #EDE7F6; --on-container-tanzanite: #2A004D;
+    --container-terracotta: #F5E6D3; --on-container-terracotta: #5D2906;
+    --container-malachite: #D9F2EC; --on-container-malachite: #00332B;
+    --font-serif: 'Noto Serif', ui-serif, Georgia, serif;
+    --font-sans: 'Noto Sans', ui-sans-serif, system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --background: #0E0D0C; --surface: #050504; --elevated: #1E1D1A;
+      --border: #2A2927; --rule: #38352F;
+      --foreground: #FFFFFF; --text-secondary: #E8E8E4; --text-tertiary: #D4D4CF;
+      --tanzanite: #B388FF; --cobalt: #00B0FF; --malachite: #64FFDA;
+      --terracotta: #E1B07E; --copper: #FF8A65; --gold: #FFD740;
+      --tanzanite-wash: rgba(179,136,255,0.14);
+      --cobalt-wash: rgba(0,176,255,0.13);
+      --gold-wash: rgba(255,215,64,0.12);
+      --container-tanzanite: #2A1B4D; --on-container-tanzanite: #D7C6FF;
+      --container-terracotta: #3E2817; --on-container-terracotta: #FFCCBC;
+      --container-malachite: #063A31; --on-container-malachite: #8CFFE6;
+    }
+  }
+  :root[data-theme="dark"] {
+    --background: #0E0D0C; --surface: #050504; --elevated: #1E1D1A;
+    --border: #2A2927; --rule: #38352F;
+    --foreground: #FFFFFF; --text-secondary: #E8E8E4; --text-tertiary: #D4D4CF;
+    --tanzanite: #B388FF; --cobalt: #00B0FF; --malachite: #64FFDA;
+    --terracotta: #E1B07E; --copper: #FF8A65; --gold: #FFD740;
+    --tanzanite-wash: rgba(179,136,255,0.14);
+    --cobalt-wash: rgba(0,176,255,0.13);
+    --gold-wash: rgba(255,215,64,0.12);
+    --container-tanzanite: #2A1B4D; --on-container-tanzanite: #D7C6FF;
+    --container-terracotta: #3E2817; --on-container-terracotta: #FFCCBC;
+    --container-malachite: #063A31; --on-container-malachite: #8CFFE6;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--background); color: var(--foreground);
+    font-family: var(--font-sans); font-size: 16px; line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+  .page {
+    max-width: 880px; margin: 0 auto; padding-inline: 20px;
+    padding-block: 56px 96px; display: flex; flex-direction: column; gap: 58px;
+  }
+  .eyebrow {
+    font-family: var(--font-mono); font-size: 11px; font-weight: 500;
+    letter-spacing: 0.14em; text-transform: uppercase; color: var(--tanzanite);
+  }
+  h1 {
+    font-family: var(--font-serif); font-weight: 700;
+    font-size: clamp(30px, 5.4vw, 46px); line-height: 1.12;
+    letter-spacing: -0.02em; margin: 0; text-wrap: balance;
+  }
+  .standfirst {
+    font-size: 18px; line-height: 1.6; color: var(--text-secondary);
+    margin: 0; max-width: 62ch; text-wrap: pretty;
+  }
+  header.masthead { display: flex; flex-direction: column; gap: 18px; }
+  .meta {
+    display: flex; flex-wrap: wrap; gap: 8px 20px;
+    font-family: var(--font-mono); font-size: 12px; color: var(--text-tertiary);
+    padding-top: 6px; border-top: 1px solid var(--rule);
+  }
+  section { display: flex; flex-direction: column; gap: 20px; }
+  h2 {
+    font-family: var(--font-serif); font-weight: 600; font-size: 25px;
+    line-height: 1.25; letter-spacing: -0.01em; margin: 0; text-wrap: balance;
+  }
+  h3 { font-family: var(--font-sans); font-weight: 600; font-size: 15px; margin: 0; }
+  p { margin: 0; max-width: 68ch; text-wrap: pretty; }
+  code, .slug {
+    font-family: var(--font-mono); font-size: 0.86em; background: var(--elevated);
+    padding: 1px 5px; border-radius: 4px; white-space: nowrap;
+  }
+  strong { font-weight: 600; }
+
+  /* four layers */
+  .layers { display: grid; gap: 14px; }
+  .layer {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 14px; padding: 18px 20px;
+    display: flex; flex-direction: column; gap: 9px;
+    border-left: 3px solid var(--lc, var(--tanzanite));
+  }
+  .layer .lh { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; }
+  .layer h3 { font-size: 17px; font-family: var(--font-serif); font-weight: 600; }
+  .layer .shape {
+    font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--lc, var(--tanzanite));
+  }
+  .layer p { font-size: 14px; color: var(--text-secondary); }
+  .layer .ex { font-size: 13.5px; color: var(--text-tertiary); }
+
+  /* figure */
+  figure { margin: 0; display: flex; flex-direction: column; gap: 12px; }
+  .figframe {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 16px; padding: 22px 20px; overflow-x: auto;
+  }
+  svg.diagram {
+    display: block; width: 100%; min-width: 640px; max-width: 100%;
+    height: auto; color: var(--foreground);
+  }
+  .box { fill: var(--elevated); stroke: currentColor; stroke-width: 1.1; }
+  .box-quiet { fill: none; stroke: currentColor; stroke-width: 1; stroke-opacity: 0.4; }
+  .flow { stroke: currentColor; stroke-width: 1.3; fill: none; }
+  .t { font-family: 'JetBrains Mono', ui-monospace, monospace; fill: currentColor; }
+  .t-title { font-family: 'Noto Sans', system-ui, sans-serif; font-weight: 600; fill: currentColor; }
+  .t-dim { fill: currentColor; opacity: 0.6; }
+  figcaption { font-size: 13.5px; color: var(--text-tertiary); max-width: 70ch; line-height: 1.55; }
+  figcaption b { color: var(--text-secondary); font-weight: 600; }
+
+  /* topic table */
+  .scroller { overflow-x: auto; border: 1px solid var(--border); border-radius: 14px; }
+  table { border-collapse: collapse; width: 100%; font-size: 13.5px; min-width: 640px; }
+  thead th {
+    text-align: left; font-family: var(--font-mono); font-size: 10.5px;
+    font-weight: 500; letter-spacing: 0.09em; text-transform: uppercase;
+    color: var(--text-tertiary); padding: 12px 14px; background: var(--elevated);
+    border-bottom: 1px solid var(--rule); white-space: nowrap;
+  }
+  tbody td { padding: 10px 14px; border-bottom: 1px solid var(--rule); color: var(--text-secondary); vertical-align: top; }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr.attn td { background: var(--container-terracotta); color: var(--on-container-terracotta); }
+  tbody tr.attn td .slug { background: rgba(0,0,0,0.10); }
+  td.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+  td.topicname { font-weight: 600; color: var(--foreground); white-space: nowrap; }
+  .cats { display: flex; flex-wrap: wrap; gap: 4px; }
+  .cats .slug { font-size: 11px; }
+  .shared { outline: 1px solid var(--gold); }
+  .verdict { font-family: var(--font-mono); font-size: 11px; white-space: nowrap; }
+  .v-same { color: var(--malachite); } .v-rename { color: var(--cobalt); }
+  .v-demote { color: var(--tanzanite); } .v-open { color: var(--copper); font-weight: 700; }
+  .tablenote { font-size: 13px; color: var(--text-tertiary); max-width: 70ch; }
+
+  /* story anatomy */
+  .anatomy { border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
+  .anatomy .hl {
+    background: var(--elevated); padding: 13px 18px;
+    font-family: var(--font-serif); font-size: 15.5px; font-weight: 600;
+  }
+  .arow {
+    display: grid; grid-template-columns: minmax(130px, 0.5fr) 1.7fr;
+    gap: 16px; padding: 11px 18px; border-top: 1px solid var(--rule); align-items: baseline;
+  }
+  .arow .lk {
+    font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--text-tertiary);
+  }
+  .arow .lv { font-size: 13.5px; color: var(--text-secondary); }
+
+  /* phases */
+  .phases { display: flex; flex-direction: column; }
+  .phase {
+    display: grid; grid-template-columns: 44px 1fr; gap: 18px;
+    padding: 22px 0; border-top: 1px solid var(--rule);
+  }
+  .phase:last-child { border-bottom: 1px solid var(--rule); }
+  .phase-n {
+    font-family: var(--font-mono); font-size: 13px; font-weight: 700;
+    color: var(--tanzanite); padding-top: 2px; font-variant-numeric: tabular-nums;
+  }
+  .phase-body { display: flex; flex-direction: column; gap: 9px; }
+  .phase h3 { font-size: 17px; font-family: var(--font-serif); font-weight: 600; }
+  .phase p { font-size: 14.5px; color: var(--text-secondary); }
+  .repo { font-family: var(--font-mono); font-size: 11px; color: var(--text-tertiary); }
+  .gate {
+    background: var(--container-malachite); color: var(--on-container-malachite);
+    border-radius: 8px; padding: 9px 13px; font-size: 13px; max-width: 66ch;
+  }
+  .gate b { font-weight: 700; }
+  .gate code { background: rgba(125,125,125,0.22); color: inherit; }
+
+  .decisions { display: grid; gap: 14px; }
+  .decision {
+    background: var(--container-tanzanite); color: var(--on-container-tanzanite);
+    border-radius: 14px; padding: 18px 20px;
+    display: flex; flex-direction: column; gap: 7px;
+  }
+  .decision h3 { font-size: 15px; color: inherit; }
+  .decision p { font-size: 13.5px; color: inherit; opacity: 0.93; max-width: 64ch; }
+  .decision .slug, .decision code { background: rgba(125,125,125,0.22); color: inherit; }
+  .rec { font-size: 13.5px; font-weight: 600; }
+
+  .correction {
+    background: var(--container-terracotta); color: var(--on-container-terracotta);
+    border-radius: 14px; padding: 20px 22px;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .correction .lab {
+    font-family: var(--font-mono); font-size: 11px;
+    letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.85;
+  }
+  .correction p { font-size: 14.5px; color: inherit; max-width: 66ch; }
+  .correction code, .correction .slug { background: rgba(125,125,125,0.22); color: inherit; }
+
+  footer {
+    border-top: 1px solid var(--rule); padding-top: 20px;
+    font-size: 13px; color: var(--text-tertiary); max-width: 70ch;
+  }
+  @media (max-width: 640px) { .arow { grid-template-columns: 1fr; gap: 3px; } }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+
+<div class="page">
+
+  <header class="masthead">
+    <div class="eyebrow">Mukoko News · classification</div>
+    <h1>Topics, interest categories, stories, tags — four layers, four jobs</h1>
+    <p class="standfirst">
+      Topics are the big buckets a reader navigates by. Interest categories are the
+      platform's fixed 40. Stories are events that unfold over days. Tags are open and
+      always will be. The platform has two of the four.
+    </p>
+    <div class="meta">
+      <span>rev. 3 · 10 Sep 2026</span>
+      <span>63,830 articles</span>
+      <span>39,368 embedded</span>
+      <span>measured on the live cluster</span>
+    </div>
+  </header>
+
+  <div class="correction">
+    <div class="lab">Correcting revision 2</div>
+    <p>
+      I called <code>engagement.tags = aiKeywords</code> a defect and proposed resolving
+      keywords against a controlled vocabulary. Wrong on both counts —
+      <strong>tags are meant to be open</strong>, so writing the model's keywords there is
+      the intended behaviour, not a bug.
+    </p>
+    <p>
+      What is actually wrong with tags is far smaller: the same array is stored twice, and
+      it is never normalised, so <span class="slug">AI researcher</span> and
+      <span class="slug">ai researcher</span> are two different tags today. Open is not the
+      same as unnormalised.
+    </p>
+  </div>
+
+  <!-- ══ THE FOUR LAYERS ══ -->
+  <section>
+    <h2>The four layers</h2>
+
+    <div class="layers">
+
+      <div class="layer" style="--lc: var(--tanzanite);">
+        <div class="lh"><h3>Topic</h3><span class="shape">~12 · editorial · stable</span></div>
+        <p>
+          The big buckets, as Google News, the BBC and the NYT use them. A topic maps to
+          <strong>several</strong> interest categories, and a category can sit in several
+          topics — a genuine many-to-many. This is the nav.
+        </p>
+        <p class="ex">Politics · Business &amp; Economy · Africa · Sport · Technology · Climate</p>
+      </div>
+
+      <div class="layer" style="--lc: var(--cobalt);">
+        <div class="lh"><h3>Interest category</h3><span class="shape">40 · platform-wide · fixed</span></div>
+        <p>
+          <code>engagement.interestCategories</code>. Shared with lingo and the other
+          products, immovable, and not a news concept — which is exactly why a news topic
+          layer has to sit above them rather than replace them.
+        </p>
+        <p class="ex"><span class="slug">politics-governance</span> <span class="slug">world-news</span> <span class="slug">football</span> <span class="slug">ai-machine-learning</span></p>
+      </div>
+
+      <div class="layer" style="--lc: var(--gold);">
+        <div class="lh"><h3>Story</h3><span class="shape">many · event-shaped · has a lifespan</span></div>
+        <p>
+          A thing that is happening. It begins, it runs, it ends. Articles attach to it over
+          days or months, and a reader can come back and scroll the whole arc. Lives at
+          <code>/story/[slug]</code>, stored so history survives.
+        </p>
+        <p class="ex">Zimbabwe presidential election · Dangote Refinery IPO · CAF Champions League 2026</p>
+      </div>
+
+      <div class="layer" style="--lc: var(--copper);">
+        <div class="lh"><h3>Tag</h3><span class="shape">open · never a set list</span></div>
+        <p>
+          Whatever this article is about, in its own words. No vocabulary, no approval, no
+          registry. Normalised to a slug so the same term from two articles matches — and
+          nothing more.
+        </p>
+        <p class="ex"><span class="slug">peter-obi</span> <span class="slug">n1-9tn</span> <span class="slug">strait-of-hormuz</span> <span class="slug">nintendo-switch-2</span></p>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ══ DIAGRAM ══ -->
+  <section>
+    <h2>How they relate</h2>
+
+    <figure>
+      <div class="figframe">
+        <svg class="diagram" viewBox="0 0 820 330" role="img"
+             aria-label="Topics map many-to-many onto the forty interest categories: agriculture belongs to both Business and Climate. Stories run along a separate time axis, gathering articles across days, and carry their own topics.">
+          <defs>
+            <marker id="am" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+              <polygon points="0,0 10,5 0,10" fill="currentColor"/>
+            </marker>
+          </defs>
+
+          <!-- headers -->
+          <text class="t-title" x="0" y="16" font-size="12">TOPICS · ~12</text>
+          <text class="t-title" x="250" y="16" font-size="12">INTEREST CATEGORIES · 40 fixed</text>
+
+          <!-- topics -->
+          <rect x="0" y="30" width="132" height="34" rx="7" fill="var(--tanzanite-wash)" stroke="var(--tanzanite)"/>
+          <text class="t" x="66" y="51" font-size="11.5" text-anchor="middle">Politics</text>
+
+          <rect x="0" y="80" width="132" height="34" rx="7" fill="var(--tanzanite-wash)" stroke="var(--tanzanite)"/>
+          <text class="t" x="66" y="101" font-size="11.5" text-anchor="middle">Business</text>
+
+          <rect x="0" y="130" width="132" height="34" rx="7" fill="var(--tanzanite-wash)" stroke="var(--tanzanite)"/>
+          <text class="t" x="66" y="151" font-size="11.5" text-anchor="middle">Climate</text>
+
+          <!-- categories -->
+          <rect class="box" x="270" y="24" width="176" height="26" rx="6"/>
+          <text class="t" x="280" y="41" font-size="10.5">politics-governance</text>
+
+          <rect class="box" x="270" y="56" width="176" height="26" rx="6"/>
+          <text class="t" x="280" y="73" font-size="10.5">local-news</text>
+
+          <rect class="box" x="270" y="88" width="176" height="26" rx="6"/>
+          <text class="t" x="280" y="105" font-size="10.5">business</text>
+
+          <rect class="box" x="270" y="120" width="176" height="26" rx="6" stroke="var(--gold)" stroke-width="1.6"/>
+          <text class="t" x="280" y="137" font-size="10.5" fill="var(--gold)">agriculture</text>
+
+          <rect class="box" x="270" y="152" width="176" height="26" rx="6"/>
+          <text class="t" x="280" y="169" font-size="10.5">environment-climate</text>
+
+          <!-- edges: many-to-many -->
+          <line class="flow" x1="132" y1="42" x2="264" y2="37" marker-end="url(#am)"/>
+          <line class="flow" x1="132" y1="50" x2="264" y2="69" marker-end="url(#am)"/>
+          <line class="flow" x1="132" y1="94" x2="264" y2="101" marker-end="url(#am)"/>
+          <line class="flow" x1="132" y1="104" x2="264" y2="130" stroke="var(--gold)" marker-end="url(#am)"/>
+          <line class="flow" x1="132" y1="142" x2="264" y2="136" stroke="var(--gold)" marker-end="url(#am)"/>
+          <line class="flow" x1="132" y1="152" x2="264" y2="163" marker-end="url(#am)"/>
+
+          <text class="t" x="466" y="137" font-size="10" fill="var(--gold)">in two topics at once</text>
+
+          <!-- divider -->
+          <line x1="0" y1="200" x2="820" y2="200" stroke="currentColor" stroke-opacity="0.16"/>
+
+          <!-- stories band -->
+          <text class="t-title" x="0" y="224" font-size="12">STORIES · a separate axis — time</text>
+
+          <rect x="0" y="238" width="620" height="46" rx="9"
+                fill="var(--gold-wash)" stroke="var(--gold)" stroke-width="1.3"/>
+          <text class="t" x="14" y="257" font-size="11.5" fill="var(--gold)">Zimbabwe presidential election</text>
+          <text class="t t-dim" x="14" y="274" font-size="10">topic: Politics · categories: politics-governance, local-news · ZW</text>
+
+          <!-- articles on the timeline -->
+          <circle cx="70" cy="304" r="5" class="box"/>
+          <circle cx="170" cy="304" r="5" class="box"/>
+          <circle cx="270" cy="304" r="5" class="box"/>
+          <circle cx="370" cy="304" r="5" class="box"/>
+          <circle cx="470" cy="304" r="5" class="box"/>
+          <circle cx="570" cy="304" r="5" class="box"/>
+          <line class="flow" x1="60" y1="304" x2="616" y2="304" stroke-opacity="0.35"/>
+          <text class="t t-dim" x="640" y="308" font-size="10">articles, over months</text>
+
+          <path class="flow" d="M 300 238 L 300 214" stroke="var(--gold)" marker-end="url(#am)"/>
+          <text class="t t-dim" x="308" y="216" font-size="10">a story carries its topic — not the reverse</text>
+        </svg>
+      </div>
+      <figcaption>
+        <b>Two independent axes.</b> Topics and categories are a fixed many-to-many —
+        <span class="slug">agriculture</span> belongs to Business <em>and</em> Climate, which
+        is precisely what <code>groupName</code> cannot express, since it gives each category
+        exactly one parent. Stories run along time instead, gathering articles across months
+        and inheriting their topic from what they are about.
+      </figcaption>
+    </figure>
+  </section>
+
+  <!-- ══ THE TOPIC SET ══ -->
+  <section>
+    <h2>A proposed topic set</h2>
+    <p>
+      Twelve, drawn from what the corpus actually publishes rather than from a generic
+      section list. Gold marks a category that appears in more than one topic — the
+      many-to-many earning its place.
+    </p>
+
+    <div class="scroller">
+      <table>
+        <thead>
+          <tr><th>Topic</th><th class="num">Vol.</th><th>Interest categories</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="topicname">Politics</td><td class="num">1,363</td>
+            <td class="cats"><span class="slug">politics-governance</span><span class="slug shared">local-news</span><span class="slug shared">world-news</span></td>
+          </tr>
+          <tr>
+            <td class="topicname">Business &amp; Economy</td><td class="num">1,206</td>
+            <td class="cats"><span class="slug">business</span><span class="slug">investment</span><span class="slug">fintech-mobile-money</span><span class="slug">real-estate</span><span class="slug shared">agriculture</span><span class="slug">housing-urban-development</span></td>
+          </tr>
+          <tr>
+            <td class="topicname">Africa</td><td class="num">633</td>
+            <td class="cats"><span class="slug shared">world-news</span><span class="slug shared">african-culture</span><span class="slug">african-identity</span><span class="slug">diaspora-migration</span></td>
+          </tr>
+          <tr>
+            <td class="topicname">Crime &amp; Justice</td><td class="num">414</td>
+            <td class="cats"><span class="slug shared">local-news</span></td>
+          </tr>
+          <tr>
+            <td class="topicname">Sport</td><td class="num">384</td>
+            <td class="cats"><span class="slug">football</span><span class="slug">other-sports</span><span class="slug shared">fitness-wellness</span></td>
+          </tr>
+          <tr>
+            <td class="topicname">Technology</td><td class="num">345</td>
+            <td class="cats"><span class="slug">technology</span><span class="slug">ai-machine-learning</span><span class="slug">crypto-web3</span></td>
+          </tr>
+          <tr>
+            <td class="topicname">Health</td><td class="num">226</td>
+            <td class="cats"><span class="slug">mental-health-wellness</span><span class="slug shared">fitness-wellness</span></td>
+          </tr>
+          <tr>
+            <td class="topicname">Culture &amp; Entertainment</td><td class="num">343</td>
+            <td class="cats"><span class="slug shared">african-culture</span><span class="slug">music</span><span class="slug">film-tv</span><span class="slug">celebrity-pop-culture</span><span class="slug">visual-arts</span><span class="slug">literature-books</span><span class="slug">comedy-humour</span><span class="slug">fashion-style</span></td>
+          </tr>
+          <tr>
+            <td class="topicname">Education &amp; Science</td><td class="num">220</td>
+            <td class="cats"><span class="slug">education</span><span class="slug">science-research</span><span class="slug">history</span><span class="slug">languages-learning</span></td>
+          </tr>
+          <tr>
+            <td class="topicname">Climate &amp; Environment</td><td class="num">203</td>
+            <td class="cats"><span class="slug">environment-climate</span><span class="slug">wildlife-conservation</span><span class="slug shared">agriculture</span></td>
+          </tr>
+          <tr>
+            <td class="topicname">Life</td><td class="num">77</td>
+            <td class="cats"><span class="slug">relationships-family</span><span class="slug">parenting</span><span class="slug">spirituality-faith</span><span class="slug">food-cuisine</span><span class="slug">automotive-transport</span></td>
+          </tr>
+          <tr>
+            <td class="topicname">Travel</td><td class="num">16</td>
+            <td class="cats"><span class="slug">travel-tourism</span><span class="slug shared">wildlife-conservation</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="tablenote">
+      Volumes are current article assignments rolled up through the category mapping, over a
+      3,000-article sample of the last 30 days — so they show what each topic would hold
+      today, not a guess. <strong>Africa is the one topic no generic section list would
+      contain</strong>, and on a Pan-African product it is arguably the masthead.
+    </p>
+  </section>
+
+  <!-- ══ STORIES ══ -->
+  <section>
+    <h2>Stories</h2>
+    <p>
+      A story is not a bucket and not a tag. It is a thing that happened, with a first
+      article and eventually a last one, and its value is exactly the thing the product
+      cannot do today: let a reader come back next week and scroll the whole arc.
+    </p>
+
+    <div class="anatomy">
+      <div class="hl">/story/zimbabwe-presidential-election-2028</div>
+      <div class="arow"><div class="lk">Title</div><div class="lv">Zimbabwe presidential election</div></div>
+      <div class="arow"><div class="lk">Topic</div><div class="lv"><span class="slug">politics</span> — one topic, inherited from what it is about</div></div>
+      <div class="arow"><div class="lk">Categories</div><div class="lv"><span class="slug">politics-governance</span> <span class="slug">local-news</span> — derived from its articles, still two of the untouched 40</div></div>
+      <div class="arow"><div class="lk">Country</div><div class="lv"><span class="slug">ZW</span> — from the articles' own <code>countryCode</code></div></div>
+      <div class="arow"><div class="lk">Lifecycle</div><div class="lv"><code>firstArticleAt</code> · <code>lastArticleAt</code> · <code>articleCount</code> · <code>sourceCount</code> · status <span class="slug">developing</span> → <span class="slug">active</span> → <span class="slug">dormant</span></div></div>
+      <div class="arow"><div class="lk">Matching</div><div class="lv"><code>centroid</code> — the mean embedding, so a new article joins by similarity rather than by keyword luck</div></div>
+      <div class="arow"><div class="lk">On the article</div><div class="lv"><code>storySlugs: ['zimbabwe-presidential-election-2028']</code> — so a feed card can say “part of a developing story”</div></div>
+    </div>
+
+    <h3>How a story is born</h3>
+    <p>
+      Not from a list — nobody knows next month's stories. From the embeddings, which are
+      already there and already unused for this. <strong>39,368</strong> of the last
+      fortnight's articles carry a BGE-M3 vector, and the
+      <span class="slug">articles_vector_search</span> index already filters on
+      <span class="slug">datePublished</span>, so a k-NN query against a rolling window works
+      today with no index change: one vector query per new article, in a pipeline that
+      already spends one AI call per article.
+    </p>
+    <p>
+      A neighbourhood becomes a story when it is dense, <strong>spans several distinct
+      sources</strong>, and persists across more than one day. That middle test does most of
+      the quality work by itself — one outlet writing about a thing is an article, five
+      outlets over two days is a story. It rejects the noise without a rule per failure
+      mode: in the live extraction sample it discards <span class="slug">GreenWef</span> (a
+      garbled organisation) and <span class="slug">September 16, 2026</span> (a date the
+      model typed as an <code>EVENT</code>), while passing the Dangote Refinery IPO, which
+      four Nigerian outlets covered inside 48 hours.
+    </p>
+  </section>
+
+  <!-- ══ WHERE IT LIVES ══ -->
+  <section>
+    <h2>Where each piece lives</h2>
+    <p>
+      The split follows your own documented rule, not convenience: <em>if a key under
+      <code>engagement.*</code> on an article is not an engagement concern, it belongs in its
+      own domain.</em> Topics are classification, so they are engagement. A developing news
+      story is a news concept, so it is not.
+    </p>
+
+    <div class="scroller">
+      <table>
+        <thead><tr><th>Collection / field</th><th>Holds</th><th>Written by</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="slug">engagement.interestCategories</span></td>
+            <td>The 40. Platform-wide, immovable, untouched by any of this.</td>
+            <td>nobody — fixed</td>
+          </tr>
+          <tr>
+            <td><span class="slug">engagement.topics</span> <em>new</em></td>
+            <td><code>slug</code>, <code>name</code>, <code>categorySlugs[]</code>, <code>sortOrder</code>, <code>isActive</code>. Twelve rows, edited by hand, changed about as often as a masthead.</td>
+            <td>staff</td>
+          </tr>
+          <tr>
+            <td><span class="slug">article.engagement.topics</span> <em>new</em></td>
+            <td>Denormalised topic slugs — derived from the article's categories, not asked of the model.</td>
+            <td>enrichment</td>
+          </tr>
+          <tr>
+            <td><span class="slug">news.stories</span> <em>new</em></td>
+            <td>The story registry and its lifecycle. In <code>news</code> because a developing news story is a news concept — and because it keeps the pipeline from writing another domain.</td>
+            <td>story job + staff</td>
+          </tr>
+          <tr>
+            <td><span class="slug">article.storySlugs</span> <em>new</em></td>
+            <td>Top-level, <strong>not</strong> under <code>engagement.</code> — a story is not an engagement concern, and the rule is explicit about that.</td>
+            <td>story job</td>
+          </tr>
+          <tr>
+            <td><span class="slug">article.engagement.tags</span></td>
+            <td>Open tags. Keep — but normalise to slugs and stop storing the same array twice.</td>
+            <td>enrichment</td>
+          </tr>
+          <tr class="attn">
+            <td><span class="slug">engagement.tags</span></td>
+            <td>The 288 improvised definitions. Retire — tags need no registry. Note 67 are country names duplicating the <code>places</code> domain, which is a domain violation sitting in the taxonomy today.</td>
+            <td>deprecate</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ══ CATEGORY MAPPING ══ -->
+  <section>
+    <h2>Still required: the category mapping</h2>
+    <p>
+      None of the above works until articles carry the platform's slugs. Today they carry 17
+      invented in the pipeline, overlapping the 40 on four values. Thirteen map
+      deterministically and backfill with no model.
+    </p>
+
+    <div class="scroller">
+      <table>
+        <thead><tr><th>Article slug</th><th class="num">Vol.</th><th>Interest category</th><th>Verdict</th></tr></thead>
+        <tbody>
+          <tr><td><span class="slug">politics</span></td><td class="num">1,363</td><td><span class="slug">politics-governance</span></td><td class="verdict v-rename">rename</td></tr>
+          <tr><td><span class="slug">economy</span></td><td class="num">808</td><td><span class="slug">business</span></td><td class="verdict v-demote">merge</td></tr>
+          <tr><td><span class="slug">international</span></td><td class="num">633</td><td><span class="slug">world-news</span></td><td class="verdict v-rename">rename</td></tr>
+          <tr><td><span class="slug">crime</span></td><td class="num">414</td><td><span class="slug">local-news</span></td><td class="verdict v-demote">merge</td></tr>
+          <tr><td><span class="slug">business</span></td><td class="num">398</td><td><span class="slug">business</span></td><td class="verdict v-same">identical</td></tr>
+          <tr class="attn"><td><span class="slug">sports</span></td><td class="num">384</td><td><span class="slug">football</span> / <span class="slug">other-sports</span></td><td class="verdict v-open">needs split</td></tr>
+          <tr><td><span class="slug">technology</span></td><td class="num">345</td><td><span class="slug">technology</span></td><td class="verdict v-same">identical</td></tr>
+          <tr class="attn"><td><span class="slug">health</span></td><td class="num">226</td><td><span class="slug">mental-health-wellness</span></td><td class="verdict v-open">poor fit</td></tr>
+          <tr><td><span class="slug">education</span></td><td class="num">179</td><td><span class="slug">education</span></td><td class="verdict v-same">identical</td></tr>
+          <tr class="attn"><td><span class="slug">entertainment</span></td><td class="num">177</td><td><span class="slug">celebrity-pop-culture</span> / <span class="slug">music</span> / <span class="slug">film-tv</span></td><td class="verdict v-open">needs split</td></tr>
+          <tr><td><span class="slug">culture</span></td><td class="num">166</td><td><span class="slug">african-culture</span></td><td class="verdict v-rename">rename</td></tr>
+          <tr><td><span class="slug">environment</span></td><td class="num">151</td><td><span class="slug">environment-climate</span></td><td class="verdict v-rename">rename</td></tr>
+          <tr class="attn"><td><span class="slug">lifestyle</span></td><td class="num">67</td><td>— no counterpart —</td><td class="verdict v-open">no home</td></tr>
+          <tr><td><span class="slug">agriculture</span></td><td class="num">52</td><td><span class="slug">agriculture</span></td><td class="verdict v-same">identical</td></tr>
+          <tr><td><span class="slug">science</span></td><td class="num">41</td><td><span class="slug">science-research</span></td><td class="verdict v-rename">rename</td></tr>
+          <tr><td><span class="slug">travel</span></td><td class="num">16</td><td><span class="slug">travel-tourism</span></td><td class="verdict v-rename">rename</td></tr>
+          <tr><td><span class="slug">food</span></td><td class="num">10</td><td><span class="slug">food-cuisine</span></td><td class="verdict v-rename">rename</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="tablenote">
+      The four highlighted rows carry <strong>854 of 5,430 assignments — 16%</strong>, and
+      each needs a judgement rather than a map.
+    </p>
+  </section>
+
+  <!-- ══ BUILD ORDER ══ -->
+  <section>
+    <h2>Build order</h2>
+    <p>Numbered because the dependencies are real — nothing downstream is safe before 1 and 2 land.</p>
+
+    <div class="phases">
+
+      <div class="phase">
+        <div class="phase-n">01</div>
+        <div class="phase-body">
+          <div class="repo">mukoko-news-pipeline · fundi-news-enrichment</div>
+          <h3>Classify into the 40</h3>
+          <p>
+            Replace <code>CATEGORY_ENUM</code>'s invented literals with the 40 read from
+            <code>engagement.interestCategories</code>, offered to the model as its ten
+            <code>groupName</code>s rather than a flat list.
+            <code>assembleCategories</code> keeps its role as the closed gate. Normalise tags
+            to slugs in the same change, and stop writing the keyword array twice.
+          </p>
+          <div class="gate"><b>Gate:</b> a failed startup read falls back to a pinned copy of the 40, never an open set — an empty vocabulary lets every classification through.</div>
+        </div>
+      </div>
+
+      <div class="phase">
+        <div class="phase-n">02</div>
+        <div class="phase-body">
+          <div class="repo">mukoko-news-pipeline · fly-worker</div>
+          <h3>Backfill the 13 deterministic slugs</h3>
+          <p>
+            A pure map, oldest-first in bounded batches — the shape
+            <code>country_backfill</code> already proves. No network, no AI. The four open
+            rows wait for their decisions.
+          </p>
+        </div>
+      </div>
+
+      <div class="phase">
+        <div class="phase-n">03</div>
+        <div class="phase-body">
+          <div class="repo">engagement · seed data</div>
+          <h3>Create the twelve topics</h3>
+          <p>
+            Twelve rows in <code>engagement.topics</code>, each listing its
+            <code>categorySlugs</code>. Deriving an article's topics is then pure set
+            intersection against categories it already has — no model call, and it backfills
+            the whole corpus in one pass.
+          </p>
+          <div class="gate"><b>Gate:</b> every one of the 40 must appear in at least one topic, or articles in it become unreachable from the nav.</div>
+        </div>
+      </div>
+
+      <div class="phase">
+        <div class="phase-n">04</div>
+        <div class="phase-body">
+          <div class="repo">mukoko-news</div>
+          <h3>Topic nav and <code>/topic/[slug]</code></h3>
+          <p>
+            The category bar becomes a topic bar — twelve buckets instead of a
+            title-cased list derived from article slugs. <code>/topic/[slug]</code> stops
+            being a regex search and becomes what it should always have been: the bucket page,
+            with its categories as filters inside it.
+          </p>
+        </div>
+      </div>
+
+      <div class="phase">
+        <div class="phase-n">05</div>
+        <div class="phase-body">
+          <div class="repo">mukoko-news-pipeline · fly-worker</div>
+          <h3>Story detection — read-only first</h3>
+          <p>
+            k-NN each new article against a rolling 7-day window; apply the density,
+            multi-source and persistence tests; write candidates to <code>news.stories</code>
+            with <code>status: 'candidate'</code> and touch no article.
+          </p>
+          <div class="gate"><b>Gate:</b> this is the one step with real unknowns — the similarity threshold and window are empirical. Run it for several days and read the candidates before it writes <code>storySlugs</code> to anything.</div>
+        </div>
+      </div>
+
+      <div class="phase">
+        <div class="phase-n">06</div>
+        <div class="phase-body">
+          <div class="repo">mukoko-news · mukoko-news-gateway</div>
+          <h3><code>/story/[slug]</code> and the promotion screen</h3>
+          <p>
+            The existing timeline component moves from <code>/topic/[slug]</code> to
+            <code>/story/[slug]</code> — it was built for this and has been pointed at the
+            wrong concept. Staff name, merge and feature stories from an admin screen over the
+            candidates; <code>engagement.followActions</code>, a collection that exists and is
+            empty, finally has something worth following.
+          </p>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ══ DECISIONS ══ -->
+  <section>
+    <h2>Decisions still open</h2>
+
+    <div class="decisions">
+
+      <div class="decision">
+        <h3>Is the twelve-topic set right?</h3>
+        <p>
+          It is my proposal from the corpus, not a given. <strong>Africa</strong> is the one
+          no generic section list would include and the one most worth arguing about — on a
+          Pan-African product it may deserve to be the masthead rather than the third row.
+          <span class="slug">Crime &amp; Justice</span> is also a judgement: 414 articles say
+          it earns a bucket, most Western outlets say it does not.
+        </p>
+        <p class="rec">Recommend: ship these twelve, rename freely — they are twelve rows in a collection, not a migration.</p>
+      </div>
+
+      <div class="decision">
+        <h3><span class="slug">sports</span> → <span class="slug">football</span> or <span class="slug">other-sports</span>? · 384</h3>
+        <p>The 40 have no generic sports category. Splitting needs the model, so these get re-enriched rather than backfilled.</p>
+        <p class="rec">Recommend: backfill all to <span class="slug">other-sports</span>, let re-enrichment promote football over time. Imprecise, never wrong — and the Sport <em>topic</em> covers both, so the nav is right either way.</p>
+      </div>
+
+      <div class="decision">
+        <h3><span class="slug">health</span> → <span class="slug">mental-health-wellness</span>? · 226</h3>
+        <p>
+          The only health category in the 40 sits in the Lifestyle group and names mental
+          health. A cholera outbreak is not lifestyle content — but the platform already filed
+          <span class="slug">hospital</span>, <span class="slug">disease</span> and
+          <span class="slug">pandemic</span> there.
+        </p>
+        <p class="rec">Recommend: follow the existing placement. The Health topic hides the awkwardness from readers; raise the naming with whoever owns the 40.</p>
+      </div>
+
+      <div class="decision">
+        <h3><span class="slug">lifestyle</span> has no counterpart · 67</h3>
+        <p>“Lifestyle” is a group in the 40, not a category. There is nothing to map it to.</p>
+        <p class="rec">Recommend: drop and re-enrich — the same reasoning that removed <span class="slug">general</span>.</p>
+      </div>
+
+    </div>
+  </section>
+
+  <footer>
+    Measured against the live cluster on 10 September 2026: category volumes over a
+    3,000-article sample of the last 30 days; keyword frequencies over the most recent 2,000
+    enriched articles; entity-extraction confidences and the 39,368 embedding count over the
+    last 14 days; tag provenance from <code>mukoko.sourceProject</code> across all 288
+    definitions. Topic volumes are those category volumes rolled up through the mapping, so
+    they show what each topic would hold today.
+  </footer>
+
+</div>

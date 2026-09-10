@@ -22,6 +22,9 @@ vi.mock('@/components/ui/source-icon', () => ({
   SourceIcon: ({ source, size }: { source: string; size: number }) => (
     <span data-testid="source-icon" data-source={source} data-size={size} />
   ),
+  // The real helper maps article fields onto icon props; the resolver itself is
+  // covered in source-icon.test.tsx.
+  sourceIconProps: ({ source }: { source: string }) => ({ source }),
 }));
 
 const createMockCluster = (overrides: Partial<StoryClusterType> = {}): StoryClusterType => ({

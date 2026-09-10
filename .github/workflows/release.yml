@@ -3,8 +3,25 @@ name: Release (auto version + tag)
 # Every merge to main bumps the MINOR version by 0.1.0 and pushes a matching
 # vX.Y.0 annotated tag + GitHub Release. Authors only add a `## [x.y.0]` section
 # to CHANGELOG.md in their PR; CI owns the VERSION file and the tag.
+# GATED ON CI, not on the push. This used to trigger on `push: branches: [main]`,
+# which cut a version, an annotated tag and a GitHub Release on EVERY merge —
+# whether or not the tests passed. That is not theoretical: v4.28.0 and v4.29.0
+# were both released off a `main` whose latest CI run had failed the coverage
+# gate, and because the bot's own commit carries `[skip ci]` the release commit
+# is never checked either, so `main` was left with no green verdict at all while
+# still shipping tagged releases.
+#
+# `workflow_run` fires only after the test workflow COMPLETES, and the `if` below
+# admits only a successful conclusion. A red `main` now gets no tag and no
+# release — the version numbers go back to meaning "this was verified".
+#
+# Self-triggering is prevented twice over: the release commit carries `[skip ci]`
+# so the test workflow never runs on it (hence no `workflow_run` to chain from),
+# and the `chore(release):` guard below still holds independently of that.
 on:
-  push:
+  workflow_run:
+    workflows: ["Test & Deploy Mukoko News"]
+    types: [completed]
     branches: [main]
 
 permissions:
@@ -14,8 +31,16 @@ concurrency: release-${{ github.ref }}
 
 jobs:
   release:
-    # Skip the bot's own release commit so it can't trigger itself.
-    if: ${{ !startsWith(github.event.head_commit.message, 'chore(release):') }}
+    # Two conditions, both required.
+    #   1. The test workflow must have SUCCEEDED. `workflow_run` fires on every
+    #      completion — failure, cancelled and timed_out included — so without
+    #      this the gate would be decorative.
+    #   2. The bot's own release commit is skipped so it cannot trigger itself.
+    # `github.event.head_commit` does not exist on a `workflow_run` event; the
+    # triggering commit is under `github.event.workflow_run.head_commit`.
+    if: >-
+      ${{ github.event.workflow_run.conclusion == 'success'
+      && !startsWith(github.event.workflow_run.head_commit.message, 'chore(release):') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
