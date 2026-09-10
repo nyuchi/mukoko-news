@@ -1,8 +1,10 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { SquareDashed } from 'lucide-react'
+import { Check } from 'lucide-react'
 
+import { useTheme, type Theme } from '@/components/theme-provider'
+import { AppearancePreview } from '@/components/profile/appearance-preview'
 import {
   applyOutlinePreference,
   readOutlinePreference,
@@ -11,78 +13,164 @@ import {
 } from '@/lib/appearance'
 
 /**
- * Accessibility appearance settings.
+ * Appearance: theme and component outlines, both picked by looking.
  *
- * One control today: whether components draw a visible outline. The app's
- * default is that a card separates from the page by its FILL — outlining every
- * component makes the whole product look like a high-contrast theme and
- * flattens hierarchy, because when everything is boxed nothing is emphasised.
- * A reader who wants harder edges gets them here.
+ * ## Why these are previews and not a switch
  *
- * Rendered for signed-out readers too: it is a rendering preference stored on
- * the device, and gating an accessibility control behind a sign-in would make
- * it unreachable for exactly the readers most likely to want it.
+ * Outlines used to be a lone toggle with a paragraph explaining what it did,
+ * and the theme was a *cycle button* somewhere else on the page that showed
+ * only its current value — a reader had to tap it three times to find out what
+ * the options even were, and never saw two of them side by side. Both are
+ * purely visual settings, so the honest control is the thing itself: each
+ * option renders a miniature of the app in that setting. "Dark" is a picture
+ * of dark; "Outlines on" is a picture of a card with an edge.
  *
- * ## Why the control can start "off" and be wrong for one frame — and does not
+ * Putting them in one card is the other half of it. They are the same
+ * decision — how the app looks — and they interact: outlines matter more in a
+ * theme where the surface steps sit closer together. Two controls in two
+ * places, one of them a cycle button labelled "Appearance", was three taps and
+ * a guess.
  *
- * The stored value is read in an effect, which is a paint too late. The
- * pre-paint bootstrap in `layout.tsx` has already set the ATTRIBUTE, so the
- * page itself is never wrong; this only syncs the switch to it, and it reads
- * from the same helper the bootstrap mirrors.
+ * Rendered for signed-out readers too: both are rendering preferences stored
+ * on the device, and gating an accessibility control behind a sign-in makes it
+ * unreachable for the readers most likely to need it.
+ *
+ * ## The one-frame question
+ *
+ * Both values are read in an effect, which is a paint too late — but the
+ * pre-paint bootstrap in `layout.tsx` has already set the class and the
+ * attribute, so the PAGE is never wrong. This only syncs the controls to it,
+ * from the same helpers the bootstrap mirrors.
  */
+
+const THEMES: { value: Theme; label: string; hint: string }[] = [
+  { value: 'light', label: 'Light', hint: 'Always light' },
+  { value: 'dark', label: 'Dark', hint: 'Always dark' },
+  { value: 'system', label: 'System', hint: 'Follows your device' },
+]
+
 export function ProfileAppearance() {
+  const { theme, setTheme } = useTheme()
   const [outlines, setOutlines] = useState<OutlinePreference>('off')
 
   useEffect(() => {
     setOutlines(readOutlinePreference())
   }, [])
 
-  function choose(next: OutlinePreference) {
+  function chooseOutlines(next: OutlinePreference) {
     setOutlines(next)
     storeOutlinePreference(next)
     applyOutlinePreference(next, document.documentElement)
   }
 
-  const on = outlines === 'on'
+  const outlined = outlines === 'on'
 
   return (
     <div className="mb-6 overflow-hidden rounded-2xl border border-outline bg-surface">
       <h2 className="border-b border-elevated px-4 py-3 text-xs font-bold uppercase tracking-wider text-text-tertiary">
-        Accessibility
+        Appearance
       </h2>
 
-      <div className="flex items-start justify-between gap-4 px-4 py-4">
-        <div className="min-w-0">
-          <div className="mb-1 flex items-center gap-2">
-            <SquareDashed className="h-4 w-4 text-secondary" aria-hidden="true" />
-            <span className="font-medium">Component outlines</span>
-          </div>
-          <p id="outlines-hint" className="text-xs text-text-secondary">
-            Draw a visible edge around cards, panels and chips. Off by default — they are
-            separated by their background instead. Your device already turns this on
-            automatically if you have asked your system for more contrast.
-          </p>
+      <fieldset className="border-b border-elevated px-4 py-4">
+        <legend className="mb-3 text-sm font-medium">Theme</legend>
+        <div className="grid grid-cols-3 gap-3">
+          {THEMES.map((t) => (
+            <Option
+              key={t.value}
+              label={t.label}
+              hint={t.hint}
+              selected={theme === t.value}
+              onSelect={() => setTheme(t.value)}
+            >
+              <AppearancePreview
+                theme={t.value === 'light' ? 'light' : 'dark'}
+                split={t.value === 'system'}
+                outlined={outlined}
+              />
+            </Option>
+          ))}
         </div>
+      </fieldset>
 
-        <button
-          type="button"
-          role="switch"
-          aria-checked={on}
-          aria-describedby="outlines-hint"
-          onClick={() => choose(on ? 'off' : 'on')}
-          className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface ${
-            on ? 'bg-primary' : 'bg-elevated'
-          }`}
-        >
-          <span className="sr-only">Component outlines</span>
-          <span
-            aria-hidden="true"
-            className={`inline-block h-5 w-5 transform rounded-full bg-background transition-transform ${
-              on ? 'translate-x-6' : 'translate-x-1'
-            }`}
-          />
-        </button>
-      </div>
+      <fieldset className="px-4 py-4">
+        <legend className="mb-1 text-sm font-medium">Component outlines</legend>
+        <p className="mb-3 text-xs text-text-secondary">
+          A card is separated from the page by its background. Turn this on to draw an edge
+          around cards, panels and chips as well. Your device switches it on by itself if you
+          have asked your system for more contrast.
+        </p>
+        <div className="grid grid-cols-2 gap-3">
+          <Option
+            label="Off"
+            hint="Separated by fill"
+            selected={!outlined}
+            onSelect={() => chooseOutlines('off')}
+          >
+            <AppearancePreview theme={theme === 'light' ? 'light' : 'dark'} />
+          </Option>
+          <Option
+            label="On"
+            hint="Draw an edge"
+            selected={outlined}
+            onSelect={() => chooseOutlines('on')}
+          >
+            <AppearancePreview theme={theme === 'light' ? 'light' : 'dark'} outlined />
+          </Option>
+        </div>
+      </fieldset>
     </div>
+  )
+}
+
+/**
+ * One choice: the preview, its name, and a check when it is the active one.
+ *
+ * A `radio` rather than a button — these are exclusive choices within a named
+ * group, and the role is what lets a screen reader say "2 of 3" instead of
+ * reading three unrelated buttons. The check mark carries the selected state
+ * visually as well as through the ring, because a ring alone is a colour-only
+ * signal.
+ */
+function Option({
+  label,
+  hint,
+  selected,
+  onSelect,
+  children,
+}: {
+  label: string
+  hint: string
+  selected: boolean
+  onSelect: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selected}
+      onClick={onSelect}
+      className={`group flex flex-col gap-2 rounded-xl p-2 text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface ${
+        selected ? 'bg-elevated' : 'hover:bg-elevated/60'
+      }`}
+    >
+      <span
+        className={`block overflow-hidden rounded-lg ring-2 transition-colors ${
+          selected ? 'ring-primary' : 'ring-control'
+        }`}
+      >
+        {children}
+      </span>
+      <span className="flex min-w-0 items-center gap-1">
+        <Check
+          className={`h-3.5 w-3.5 shrink-0 text-primary ${selected ? '' : 'invisible'}`}
+          aria-hidden="true"
+        />
+        <span className="min-w-0">
+          <span className="block truncate text-xs font-medium">{label}</span>
+          <span className="block truncate text-[11px] text-text-tertiary">{hint}</span>
+        </span>
+      </span>
+    </button>
   )
 }

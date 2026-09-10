@@ -572,26 +572,52 @@
 }
 
 @media (prefers-contrast: more) {
+  /* Raise contrast WITHIN the Mzizi scale — never replace it.
+     ------------------------------------------------------------------
+     This block used to set every surface to `Canvas` and every border and
+     text colour to `CanvasText`. On a phone with the OS "Increase Contrast"
+     switch on, that is what the reader actually got: all eight background
+     steps (void, base, surface, muted, container, overlay, raised, pitch)
+     collapsed into ONE flat system colour, and every card, chip and the nav
+     pill outlined in stark white on black. The card no longer read as a card,
+     because the only thing separating it from the page — its fill — was gone;
+     the borders were the sole remaining structure, so the product looked like
+     a wireframe.
+
+     That was the wrong reading of the query. `prefers-contrast: more` means
+     "make the difference between things easier to see", not "throw away the
+     palette" — that is `forced-colors`, which is a separate block below and
+     already does exactly that. The Mzizi scale is not low contrast; it is
+     eight deliberately distinct steps, and it is the thing carrying the
+     structure.
+
+     So: keep every surface, turn outlines on (they stop being optional here —
+     see the doctrine note in CLAUDE.md), lift the two dimmer text roles to
+     full foreground, and give the border a genuinely visible value taken from
+     the palette rather than from the system. */
   :root,
   .dark,
   .light {
-    /* Every surface collapses to Canvas below, so the outline is the only
-       separation left. It is not a preference here. */
-    --outline: CanvasText;
-    --background: Canvas;
-    --surface: Canvas;
-    --elevated: Canvas;
-    --foreground: CanvasText;
-    --text-primary: CanvasText;
-    --text-secondary: CanvasText;
-    --text-tertiary: CanvasText;
-    --card: Canvas;
-    --card-foreground: CanvasText;
-    --popover: Canvas;
-    --popover-foreground: CanvasText;
-    --border: CanvasText;
-    --muted: Canvas;
-    --muted-foreground: CanvasText;
+    --outline: var(--border);
+  }
+
+  /* Dark, including the bare `:root` defaults. `--border` takes the value
+     `--text-tertiary` normally holds — a measured, on-palette step (APCA
+     Lc 80.3 on the card) that reads clearly as an edge without the
+     wireframe look of a pure-white hairline. */
+  :root,
+  .dark {
+    --text-secondary: #ffffff;
+    --text-tertiary: #ffffff;
+    --border: #d4d4cf;
+    --control: #d4d4cf;
+  }
+
+  .light {
+    --text-secondary: #000000;
+    --text-tertiary: #000000;
+    --border: #474139;
+    --control: #474139;
   }
 }
 

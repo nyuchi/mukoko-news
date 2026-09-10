@@ -29,7 +29,6 @@ import { ProfileNavigation } from "@/components/profile/profile-navigation";
 import { ProfileAdminLink } from "@/components/profile/profile-admin-link";
 
 function ProfileContent() {
-  const { theme, cycleTheme } = useTheme();
   const { user, loading, signOut } = useAuth();
   const isLoggedIn = !!user;
   // The canonical profile record — richer than the session claims (the picture
@@ -53,27 +52,7 @@ function ProfileContent() {
     };
   }, [user]);
 
-  const getThemeIcon = () => {
-    switch (theme) {
-      case "dark":
-        return <Moon className="w-5 h-5" />;
-      case "light":
-        return <Sun className="w-5 h-5" />;
-      default:
-        return <Monitor className="w-5 h-5" />;
-    }
-  };
 
-  const getThemeLabel = () => {
-    switch (theme) {
-      case "dark":
-        return "Dark";
-      case "light":
-        return "Light";
-      default:
-        return "System";
-    }
-  };
 
   if (loading) {
     return (
@@ -103,7 +82,7 @@ function ProfileContent() {
           </Link>
         </div>
 
-        <SettingsCard themeIcon={getThemeIcon()} themeLabel={getThemeLabel()} onTheme={cycleTheme} />
+        <ProfileAppearance />
         {/* The full site map. It is on the signed-OUT branch too: an anonymous
             reader who taps Profile from the bottom bar is the reader most
             likely to be looking for a way around the app, not for an account. */}
@@ -171,20 +150,6 @@ function ProfileContent() {
           Settings
         </h2>
 
-        <button
-          onClick={cycleTheme}
-          className="w-full flex items-center justify-between px-4 py-4 hover:bg-elevated transition-colors border-b border-elevated"
-        >
-          <div className="flex items-center gap-3">
-            {getThemeIcon()}
-            <span className="font-medium">Appearance</span>
-          </div>
-          <div className="flex items-center gap-2 text-text-secondary">
-            <span>{getThemeLabel()}</span>
-            <ChevronRight className="w-4 h-4" />
-          </div>
-        </button>
-
         <Link
           href="/saved"
           className="w-full flex items-center justify-between px-4 py-4 hover:bg-elevated transition-colors"
@@ -210,36 +175,6 @@ function ProfileContent() {
   );
 }
 
-function SettingsCard({
-  themeIcon,
-  themeLabel,
-  onTheme,
-}: {
-  themeIcon: React.ReactNode;
-  themeLabel: string;
-  onTheme: () => void;
-}) {
-  return (
-    <div className="bg-surface border border-outline rounded-2xl overflow-hidden">
-      <h2 className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-text-tertiary border-b border-elevated">
-        Settings
-      </h2>
-      <button
-        onClick={onTheme}
-        className="w-full flex items-center justify-between px-4 py-4 hover:bg-elevated transition-colors"
-      >
-        <div className="flex items-center gap-3">
-          {themeIcon}
-          <span className="font-medium">Appearance</span>
-        </div>
-        <div className="flex items-center gap-2 text-text-secondary">
-          <span>{themeLabel}</span>
-          <ChevronRight className="w-4 h-4" />
-        </div>
-      </button>
-    </div>
-  );
-}
 
 function AboutCard() {
   const links = [
