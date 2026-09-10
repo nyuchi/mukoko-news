@@ -1,11 +1,33 @@
 import type { Article } from "@/lib/api";
-import { BASE_URL, getFullUrl, getArticleUrl } from "@/lib/constants";
+import {
+  BASE_URL,
+  getFullUrl,
+  getArticleUrl,
+  COVERAGE_FRAGMENT,
+  RELEASED_COUNTRY_COUNT,
+  COUNTRY_SCOPE_TOTAL,
+} from "@/lib/constants";
+import { toExcerpt } from "@/lib/excerpt";
 
 interface NewsArticleSchema {
   "@context": "https://schema.org";
   "@type": "NewsArticle";
   headline: string;
   description?: string;
+  /**
+   * An EXCERPT of the article — never the publisher's full text.
+   *
+   * This carried `article.content`, which is the complete body of someone
+   * else's reporting, emitted machine-readable on Mukoko's own origin. It
+   * earned nothing (no `NewsArticle` rich result reads `articleBody`; the
+   * appearance comes from `headline`/`description`/`datePublished` and the
+   * rendered page), it duplicated the largest payload on the page for readers
+   * on metered mobile data, and it let an answer engine satisfy a reader
+   * end-to-end without the newsroom that wrote it ever being fetched.
+   *
+   * Bounded by `ARTICLE_EXCERPT_MAX_CHARS`; omitted entirely when the only text
+   * available is the description, which `description` already carries.
+   */
   articleBody?: string;
   image?: string | { "@type": "ImageObject"; url: string; width?: number; height?: number };
   datePublished: string;
@@ -15,10 +37,28 @@ interface NewsArticleSchema {
     name: string;
     url?: string;
   };
-  publisher: {
+  /**
+   * The ORIGINATING NEWSROOM — CNN, The Herald — not Mukoko.
+   *
+   * Optional, and `logo` with it. Both were required, which is what forced the
+   * component to hardcode `name: "Mukoko News"` and Mukoko's own icon onto every
+   * article: an aggregator declaring itself the publisher of someone else's
+   * reporting, with someone else's byline underneath it.
+   *
+   * `logo` is now optional because schema.org does not require it and because
+   * the honest alternative was worse — Mukoko's icon attached to CNN's publisher
+   * record is a stronger false claim than no logo at all. Only a logo the
+   * newsroom's OWN record carries is emitted; today no organisation record on
+   * the cluster has one, so in practice this is omitted.
+   *
+   * The whole property is optional because a publisher that cannot be resolved
+   * must be omitted, not guessed. See `resolvePublisher` below.
+   */
+  publisher?: {
     "@type": "Organization";
     name: string;
-    logo: {
+    url?: string;
+    logo?: {
       "@type": "ImageObject";
       url: string;
     };
@@ -65,9 +105,11 @@ interface ItemListSchema {
         "@type": "Organization";
         name: string;
       };
-      publisher: {
+      /** The originating newsroom, or omitted. Never Mukoko — see below. */
+      publisher?: {
         "@type": "Organization";
         name: string;
+        url?: string;
       };
     };
   }>;
@@ -107,17 +149,74 @@ function safeJsonLdStringify(obj: unknown): string {
     .replace(/&/g, "\\u0026"); // Escape & for HTML entity safety
 }
 
+/**
+ * The publisher of an article is the newsroom that published it.
+ *
+ * Owner decision: "publisher is ie.. cnn news, source should be the same thing",
+ * and "a publisher is also an entity". So this resolves through the platform's
+ * entity model — `articles.mediaOrganizationId` → `news.newsMediaOrganizations`,
+ * which links on to `entity.entities` via `entityId` — rather than through a
+ * display string.
+ *
+ * Three tiers, in order, and the last one is the point:
+ *
+ *  1. `article.publisher` — the resolved organisation. Stable across the several
+ *     feed-source records one masthead can hold (measured on the live cluster:
+ *     35 organisations own feed sources whose names disagree, covering 24% of
+ *     the corpus), so "Daily Monitor Uganda" is emitted once rather than as
+ *     "Monitor", "Daily Monitor" and "Daily Monitor v2" on neighbouring pieces.
+ *  2. `article.source` — the feed-source name. Less stable, but it is still the
+ *     newsroom, and naming the right organisation imprecisely beats naming the
+ *     wrong one exactly.
+ *  3. `undefined` — omit the property. schema.org permits that; asserting a
+ *     publisher we cannot establish does not become true for being well-formed.
+ *     This is the same rule the pipeline's country backfill follows, in its own
+ *     words: it "never invents a country", because a null is a known gap and a
+ *     wrong value is a silent error every consumer then reports as fact.
+ *
+ * What is NOT here: "Mukoko News". Mukoko aggregates this reporting; it did not
+ * publish it, and the `NewsMediaOrganization` schema on every page already says
+ * who Mukoko is.
+ */
+function resolvePublisher(article: Article):
+  | { "@type": "Organization"; name: string; url?: string; logo?: { "@type": "ImageObject"; url: string } }
+  | undefined {
+  const org = article.publisher;
+  if (org?.name) {
+    return {
+      "@type": "Organization",
+      name: org.name,
+      url: org.url,
+      // The newsroom's own logo or none. Mukoko's icon on someone else's
+      // publisher record would be a worse claim than an absent one.
+      logo: org.logo ? { "@type": "ImageObject", url: org.logo } : undefined,
+    };
+  }
+  const fallback = article.source?.trim();
+  return fallback ? { "@type": "Organization", name: fallback } : undefined;
+}
+
 export function ArticleJsonLd({ article, url }: { article: Article; url: string }) {
-  // Determine author type: if author field differs from source, treat as Person
-  const authorName = article.author || article.source;
-  const isPersonAuthor = article.author && article.author !== article.source;
+  const publisher = resolvePublisher(article);
+  // Determine author type: a real byline is a Person; with no byline the
+  // newsroom itself is the author. Fall back to the RESOLVED publisher name
+  // rather than the feed-source name, so an un-bylined piece does not emit
+  // author "Daily Monitor v2" alongside publisher "Daily Monitor Uganda" — two
+  // names for one newsroom in one document.
+  const orgName = publisher?.name || article.source;
+  const authorName = article.author || orgName;
+  const isPersonAuthor = Boolean(article.author && article.author !== orgName);
 
   const schema: NewsArticleSchema = {
     "@context": "https://schema.org",
     "@type": "NewsArticle",
     headline: article.title,
     description: article.description,
-    articleBody: article.content || article.description,
+    // An excerpt, not the body. See `NewsArticleSchema.articleBody` above and
+    // `@/lib/excerpt` for the bound and why it is that number. No fallback to
+    // `description`: it is emitted a line above, and repeating it here would be
+    // the same bytes twice for no additional meaning.
+    articleBody: toExcerpt(article.content || article.content_markdown),
     image: article.image_url,
     datePublished: article.published_at,
     dateModified: article.updated_at || article.published_at,
@@ -125,14 +224,7 @@ export function ArticleJsonLd({ article, url }: { article: Article; url: string 
       "@type": isPersonAuthor ? "Person" : "Organization",
       name: authorName,
     },
-    publisher: {
-      "@type": "Organization",
-      name: "Mukoko News",
-      logo: {
-        "@type": "ImageObject",
-        url: `${BASE_URL}/mukoko-icon-dark.png`,
-      },
-    },
+    publisher,
     mainEntityOfPage: {
       "@type": "WebPage",
       "@id": url,
@@ -189,7 +281,7 @@ export function OrganizationJsonLd() {
     name: "Mukoko News",
     legalName: "Mukoko News by Nyuchi Technology",
     description:
-      "Pan-African digital news aggregation platform covering Zimbabwe, South Africa, Kenya, Nigeria, and 12 more African countries.",
+      `Pan-African digital news aggregation platform, ${COVERAGE_FRAGMENT}.`,
     url: BASE_URL,
     logo: {
       "@type": "ImageObject",
@@ -277,10 +369,16 @@ export function ItemListJsonLd({
               name: article.source,
             }
           : undefined,
-        publisher: {
-          "@type": "Organization",
-          name: "Mukoko News",
-        },
+        // Same correction as the article page, deliberately WITHOUT a catalogue
+        // read. A list item is a pointer — its `@id` is the article URL, where
+        // the authoritative NewsArticle lives — so it resolves through whatever
+        // the list read already carries and falls back to the feed-source name.
+        // Paying a publisher lookup per home-feed render to make a pointer's
+        // publisher marginally more consistent is not a trade this app's readers
+        // (metered African mobile data, and a feed that is the hottest path in
+        // the product) should pay for. What matters is that it no longer claims
+        // Mukoko published someone else's reporting.
+        publisher: resolvePublisher(article),
       },
     })),
   };
@@ -361,7 +459,7 @@ export function WebSiteJsonLd() {
     alternateName: "Mukoko",
     url: BASE_URL,
     description:
-      "Pan-African digital news aggregation platform. Breaking news, top stories, and in-depth coverage from 16 African countries.",
+      `Pan-African digital news aggregation platform. Breaking news, top stories and in-depth coverage — ${COVERAGE_FRAGMENT}.`,
     publisher: {
       "@type": "NewsMediaOrganization",
       name: "Mukoko News",
@@ -413,6 +511,8 @@ export function WebPageJsonLd({
       name: "Mukoko News",
       url: BASE_URL,
     },
+    // Mukoko's OWN pages (help, terms, …) — Mukoko really is the publisher
+    // here, unlike a NewsArticle, which belongs to the newsroom that wrote it.
     publisher: {
       "@type": "Organization",
       name: "Mukoko News",
@@ -460,7 +560,7 @@ export function SoftwareApplicationJsonLd() {
       url: BASE_URL,
     },
     featureList:
-      "5 layouts (cards, compact, hero, ticker, list), 4 feed types, 16 African countries, dark/light theme, responsive design",
+      `5 layouts (cards, compact, hero, ticker, list), 4 feed types, ${RELEASED_COUNTRY_COUNT} African countries live (${COUNTRY_SCOPE_TOTAL} in scope), dark/light theme, responsive design`,
     softwareVersion: "1.0",
     isAccessibleForFree: true,
   };

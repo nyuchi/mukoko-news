@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { NextRequest } from 'next/server';
+import { RELEASED_COUNTRY_COUNT, COUNTRY_SCOPE_TOTAL } from '@/lib/constants';
 
 import { GET as protectedResource } from '../.well-known/oauth-protected-resource/route';
 import { GET as authServer } from '../.well-known/oauth-authorization-server/route';
@@ -100,5 +101,79 @@ describe('Markdown for Agents (/api/agent-md)', () => {
     const req = new NextRequest('https://news.mukoko.com/api/agent-md?path=/article/missing');
     const res = await GET(req);
     expect(res.status).toBe(404);
+  });
+
+  /**
+   * This endpoint used to serve the publisher's COMPLETE body under a "Read on
+   * Mukoko News" link listed above "Original source" — an agent could satisfy a
+   * reader end-to-end without the newsroom ever being fetched, from a document
+   * whose link order said the aggregator was the destination.
+   */
+  it('serves an excerpt, not the publisher\'s full text', async () => {
+    const { GET } = await import('../api/agent-md/route');
+    const fullBody = Array.from({ length: 300 }, (_, i) => `paragraph ${i} of real reporting`).join('. ');
+    mockGetArticle.mockResolvedValue({
+      id: 'a1',
+      title: 'Big Story',
+      source: 'Herald',
+      published_at: '2026-07-03',
+      content: fullBody,
+      original_url: 'https://herald.co.zw/big-story',
+    });
+    const req = new NextRequest('https://news.mukoko.com/api/agent-md?path=/article/a1');
+    const text = await (await GET(req)).text();
+
+    expect(text).not.toContain(fullBody);
+    expect(text).not.toContain(fullBody.slice(-80)); // the tail never ships
+    expect(text).toContain(fullBody.slice(0, 60)); // the opening does
+    expect(text).toContain('Excerpt only.');
+  });
+
+  it('links the publisher first and labels it as the full article', async () => {
+    const { GET } = await import('../api/agent-md/route');
+    mockGetArticle.mockResolvedValue({
+      id: 'a1',
+      title: 'Big Story',
+      source: 'Herald',
+      published_at: '2026-07-03',
+      content: 'Short body.',
+      original_url: 'https://herald.co.zw/big-story',
+    });
+    const req = new NextRequest('https://news.mukoko.com/api/agent-md?path=/article/a1');
+    const text = await (await GET(req)).text();
+
+    const publisherLink = text.indexOf('https://herald.co.zw/big-story');
+    const mukokoLink = text.indexOf('/article/a1');
+    expect(publisherLink).toBeGreaterThan(-1);
+    expect(mukokoLink).toBeGreaterThan(-1);
+    expect(publisherLink).toBeLessThan(mukokoLink);
+    expect(text).toContain('Read the full article at Herald');
+  });
+
+  it('still links Mukoko when the article has no original URL', async () => {
+    const { GET } = await import('../api/agent-md/route');
+    mockGetArticle.mockResolvedValue({
+      id: 'a1',
+      title: 'Big Story',
+      source: 'Herald',
+      published_at: '2026-07-03',
+      content: 'Short body.',
+    });
+    const req = new NextRequest('https://news.mukoko.com/api/agent-md?path=/article/a1');
+    const text = await (await GET(req)).text();
+    expect(text).toContain('/article/a1');
+  });
+
+  it('states the 54-in-scope / 16-live coverage claim on the index', async () => {
+    const { GET } = await import('../api/agent-md/route');
+    mockGetArticles.mockResolvedValue({
+      articles: [{ id: 'a1', title: 'One', source: 'Herald', published_at: '2026-07-03' }],
+      total: 1,
+    });
+    const req = new NextRequest('https://news.mukoko.com/api/agent-md?path=/');
+    const text = await (await GET(req)).text();
+    expect(text).toContain(String(RELEASED_COUNTRY_COUNT));
+    expect(text).toContain(String(COUNTRY_SCOPE_TOTAL));
+    expect(text.toLowerCase()).toContain('coming soon');
   });
 });
