@@ -29,7 +29,11 @@ vi.mock('next/link', () => ({
   ),
 }));
 
-vi.mock('@/components/ui/source-icon', () => ({
+// Partial mock: only the rendering half of the module is stubbed. `sourceIconProps`
+// is a pure derivation the card calls before rendering, and mocking it away would
+// mean this file no longer exercises the real call the card makes.
+vi.mock('@/components/ui/source-icon', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/components/ui/source-icon')>()),
   SourceBadge: ({ source }: { source: string }) => <span>{source}</span>,
 }));
 
