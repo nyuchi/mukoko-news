@@ -25,29 +25,26 @@ export interface CountryOption {
   code: string;
   name: string;
   flag: string;
-  color: string;
 }
 
 /**
- * Presentation for a code — flag and accent colour.
+ * Presentation for a code — the flag.
  *
  * Keyed by plain `string`, not the literal union `COUNTRIES` infers, because the
  * whole point is looking up codes this constant does NOT contain: a country
  * `places` knows and this app has no art for must resolve to the placeholder
  * rather than fail to compile.
  */
-export const COUNTRY_PRESENTATION = new Map<string, { flag: string; color: string }>(
-  COUNTRIES.map((c) => [c.code as string, { flag: c.flag, color: c.color }])
+export const COUNTRY_PRESENTATION = new Map<string, string>(
+  COUNTRIES.map((c) => [c.code as string, c.flag])
 );
 
 /** Shown for a country `places` lists that this app has no flag for. */
 export const FALLBACK_FLAG = '🌍';
-export const FALLBACK_COLOR = 'bg-gray-500';
 
 /** The static list, in the shape the pickers consume. */
 export const STATIC_COUNTRIES: CountryOption[] = COUNTRIES.map((c) => ({
   code: c.code,
   name: c.name,
   flag: c.flag,
-  color: c.color,
 }));

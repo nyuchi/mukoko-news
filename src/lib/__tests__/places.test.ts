@@ -55,11 +55,14 @@ describe('getCountries', () => {
     expect(country.name).toBe('Republic of Zimbabwe');
   });
 
-  it('decorates with the local flag and colour', async () => {
+  it('decorates with the local flag', async () => {
     toArray.mockResolvedValue([{ isoCode: 'ZW', name: 'Zimbabwe' }]);
     const [country] = await getCountries();
     expect(country.flag).toBe('🇿🇼');
-    expect(country.color).toBeTruthy();
+    // The accent colour that used to ride along here is gone: it was painted
+    // behind the flag, so it was never visible, and it stated a hue next to a
+    // national flag that nothing chose deliberately.
+    expect(country).not.toHaveProperty('color');
   });
 
   it('still lists a country the app has no flag for', async () => {

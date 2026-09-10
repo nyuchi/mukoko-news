@@ -201,8 +201,8 @@ export function ShareModal({ article, isOpen, onClose }: ShareModalProps) {
           >
             {copied ? (
               <>
-                <Check className="w-5 h-5 text-green-500" aria-hidden="true" />
-                <span className="text-green-500" role="status">
+                <Check className="w-5 h-5 text-success" aria-hidden="true" />
+                <span className="text-success" role="status">
                   Copied!
                 </span>
               </>

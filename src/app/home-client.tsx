@@ -370,7 +370,7 @@ export default function HomeClient({ initialFeed = null, initialCategories = nul
         />
       )}
 
-      <div className="max-w-[1200px] mx-auto px-4 sm:px-6">
+      <div className="mx-auto w-full max-w-[var(--width-wide)] px-[var(--page-gutter)] sm:px-[var(--page-gutter-sm)]">
       {/* Pull-to-refresh indicator (mobile) */}
       {pullDistance > 0 && (
         <div

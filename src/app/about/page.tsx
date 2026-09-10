@@ -28,7 +28,7 @@ const values = [
 
 export default function AboutPage() {
   return (
-    <div className="max-w-[800px] mx-auto px-6 py-12">
+    <div className="mx-auto w-full max-w-[var(--width-reading)] px-[var(--page-gutter)] sm:px-[var(--page-gutter-sm)] py-12">
       <h1 className="text-3xl font-bold text-foreground mb-2">About Mukoko News</h1>
       <p className="text-text-secondary mb-8">
         A Pan-African digital news aggregation platform bringing the continent&rsquo;s stories

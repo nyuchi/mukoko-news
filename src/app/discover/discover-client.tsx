@@ -9,6 +9,7 @@ import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { DiscoverPageSkeleton } from "@/components/ui/discover-skeleton";
 import { type Article, type Category } from "@/lib/api";
 import { getArticlesAction, getCategoriesAction, getSourcesAction } from "@/lib/actions/feed";
+import { categoryTone } from "@/lib/category-tone";
 import {
   COUNTRIES,
   CATEGORY_META,
@@ -191,7 +192,7 @@ export default function DiscoverClient({
         description={`Explore African news by category, country and trending topics. Browse sources and discover stories — ${COVERAGE_FRAGMENT}.`}
         url={getFullUrl("/discover")}
       />
-      <div className="max-w-[1200px] mx-auto px-6 py-8">
+      <div className="mx-auto w-full max-w-[var(--width-wide)] px-[var(--page-gutter)] sm:px-[var(--page-gutter-sm)] py-8">
       {/* Header */}
       <div className="mb-10">
         <h1 className="text-3xl font-bold text-foreground mb-2">Discover</h1>
@@ -303,15 +304,17 @@ export default function DiscoverClient({
             <h2 className="text-xl font-bold text-foreground mb-6">Browse by Category</h2>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
               {categories.map((category) => {
-                const meta = CATEGORY_META[category.id] || { emoji: "📰", color: "bg-gray-500" };
+                const meta = CATEGORY_META[category.id];
                 return (
                   <Link
                     key={category.id}
                     href={`/discover?category=${category.id}`}
                     className="flex items-center gap-3 p-4 bg-surface rounded-xl border border-elevated hover:border-primary/30 hover:bg-elevated transition-all group"
                   >
-                    <div className={`w-10 h-10 rounded-full ${meta.color} flex items-center justify-center text-lg`}>
-                      {meta.emoji}
+                    <div
+                      className={`flex h-10 w-10 items-center justify-center rounded-full text-lg ${categoryTone(category.id)}`}
+                    >
+                      {meta?.emoji ?? "📰"}
                     </div>
                     <div className="min-w-0">
                       <p className="font-medium text-foreground truncate group-hover:underline decoration-2 underline-offset-2">
@@ -340,7 +343,10 @@ export default function DiscoverClient({
                     href={`/discover?country=${country.code}`}
                     className="flex items-center gap-3 p-4 bg-surface rounded-xl border border-elevated hover:border-primary/30 hover:bg-elevated transition-all group"
                   >
-                    <div className={`w-10 h-10 rounded-full ${country.color} flex items-center justify-center text-lg`}>
+                    {/* Neutral, not a per-country hue: the flag is the
+                        country's identity and the circle is just the shape it
+                        sits in. See the note on `COUNTRIES` in constants.ts. */}
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-elevated text-lg">
                       {country.flag}
                     </div>
                     <div className="min-w-0">
