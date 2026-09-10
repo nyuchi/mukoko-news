@@ -75,47 +75,54 @@ export const COUNTRIES = [
 export type CountryCode = (typeof COUNTRIES)[number]["code"];
 
 /**
- * The countries Mukoko News is actually LIVE in, as opposed to in scope for.
+ * The last known-good answer to "which countries are we aggregating from" —
+ * used ONLY when the live read fails.
  *
- * The platform's scope is all 54 African Union member states (`COUNTRIES`);
- * 16 of them are released and the rest are coming soon. Before this list
- * existed, three numbers disagreed on the same site: `COUNTRIES` and the
- * sitemap said 54, every piece of public copy said 16, and the actual source
- * coverage was a third number — so an answer engine repeated whichever it read
- * first. Everything that states coverage now derives from here.
+ * ## This is no longer the source of truth
  *
- * ## Measured, not chosen (live cluster, 2026-09-10)
+ * It used to be: a hand-measured list of sixteen codes that everything on the
+ * site derived its coverage claim from. That was accurate the day it was
+ * measured and wrong the moment a new source started producing — a country
+ * would be live in the corpus and "coming soon" on the site until somebody
+ * remembered to edit this array. The claim is now a live count
+ * (`getLiveCoverageAction` → `getLiveCountries`), so countries appear and drop
+ * off on their own.
  *
- * A country is released when it has at least one ACTIVE feed source that
- * published in the trailing 30 days, and at least 500 articles in that window.
- * Ranked by 30-day volume the corpus falls off a cliff exactly at 16:
+ * ## Why it still exists
  *
- *   NG 10,987 · ZA 5,638 · ZW 3,518 · GH 3,444 · SN 2,950 · KE 2,339 ·
- *   EG 1,345 · CI 1,037 · ZM 1,005 · UG 992 · MW 978 · NA 740 · TZ 721 ·
- *   CM 653 · ET 551 · LS 510  |  SO 386 · GN 358 · MA 331 · LY 224 · …
+ * Because the failure mode of a live number is worse than the failure mode of a
+ * stale one. If the cluster is unreachable, the aggregation returns empty, and
+ * rendering that honestly would put **"live in 0 African countries"** into the
+ * page title, the JSON-LD, `llms.txt` and the MCP server card — telling every
+ * answer engine that crawls us that the platform covers nowhere. A slightly
+ * stale sixteen is a far smaller lie than a confident zero.
  *
- * The 17th country is 24% below the 16th, so the cut is a real break in the
- * data rather than a threshold tuned to land on a wanted number. Any threshold
- * between 387 and 510 produces the same 16.
+ * So this is a floor, not a fact. It is stamped with the date it was measured
+ * and is expected to drift; nothing should read it directly except the
+ * fallback path in `getLiveCoverageAction`.
  *
- * ## The caveat this list carries
+ * Measured 2026-09-10 at the documented bar (>= 500 articles in 30 days):
+ *
+ *   NG 11,019 · ZA 5,663 · ZW 3,520 · GH 3,450 · SN 2,959 · KE 2,347 ·
+ *   EG 1,348 · CI 1,039 · ZM 1,010 · UG 996 · MW 979 · NA 739 · CM 658 ·
+ *   ET 533 · LS 511 · TZ 505   |   SO 390 · GN 359 · RW 340 · MA 331 · …
+ *
+ * ## The caveat this carries, live count or not
  *
  * `feedSources.countryCode` provenance is unreliable for legacy rows: 315 of
  * 473 pre-provenance sources are `countryCodeSource: "assumed"`, and
- * `articles.countryCode` is stamped from the source, so it inherits the same
- * doubt. Spot-checked on the cluster, ZW's active sources include RT, The
- * Guardian, Foreign Policy and Simple Flying; ET's include Mashable Middle
- * East and Amnesty International; LS's second source is France 24 French.
- * Counting only sources whose country is `declared` or derived from their own
- * ccTLD (`tld`), just 7 countries clear the same 500-article bar (ZA, NG, ZW,
- * KE, UG, TZ, NA).
+ * `articles.countryCode` is stamped from the source, so it inherits the doubt.
+ * Spot-checked, ZW's active sources include RT, The Guardian and Foreign
+ * Policy; ET's include Mashable Middle East; LS's second source is France 24
+ * French. Counting only sources whose country is `declared` or ccTLD-derived,
+ * roughly 7 countries clear the same bar.
  *
- * So 16 is the honest answer to "where do we have a live, producing feed",
- * and it is NOT the answer to "where do we have verified local sources". When
- * the provenance backfill reaches the assumed rows this list should be
- * re-measured, not re-argued.
+ * Making the count live does not fix that — it makes it self-correcting. When
+ * the pipeline's provenance backfill reaches the assumed rows, the mis-filed
+ * articles stop being counted under the wrong country and this number moves on
+ * its own, with no code change and no re-measurement.
  */
-export const RELEASED_COUNTRY_CODES: readonly CountryCode[] = [
+export const FALLBACK_LIVE_COUNTRY_CODES: readonly CountryCode[] = [
   "NG",
   "ZA",
   "ZW",
@@ -128,39 +135,37 @@ export const RELEASED_COUNTRY_CODES: readonly CountryCode[] = [
   "UG",
   "MW",
   "NA",
-  "TZ",
   "CM",
   "ET",
   "LS",
+  "TZ",
 ] as const;
 
-const RELEASED_COUNTRY_SET: ReadonlySet<string> = new Set(RELEASED_COUNTRY_CODES);
-
-/** Every African Union member state — the platform's scope. 54. */
+/** Every African Union member state — the platform's scope. 54, and static. */
 export const COUNTRY_SCOPE_TOTAL = COUNTRIES.length;
-
-/** How many of those are live today. 16. */
-export const RELEASED_COUNTRY_COUNT = RELEASED_COUNTRY_CODES.length;
-
-/** Is this country live, or is it still "coming soon"? */
-export function isReleasedCountry(code: string | null | undefined): boolean {
-  return !!code && RELEASED_COUNTRY_SET.has(code);
-}
 
 /**
  * The ONE sanctioned way to state coverage, mid-sentence.
  *
- * Every description, meta tag and JSON-LD blurb interpolates one of these two
- * constants rather than writing its own number, because the previous state of
- * this repo — nine surfaces each hand-writing "16 African countries", "15
- * other African countries" or "12 more countries" — is exactly how a claim
- * drifts. `src/lib/__tests__/coverage-claim.test.ts` pins them, including in
- * the static files under `public/` that cannot import this module.
+ * A FUNCTION now, not a constant: the count is a live figure the caller has
+ * already resolved, so the copy cannot be baked at module scope. Every
+ * description, meta tag and JSON-LD blurb calls one of these two rather than
+ * writing its own number — the previous state of this repo was nine surfaces
+ * each hand-writing "16 African countries", "15 other African countries" or
+ * "12 more countries", which is exactly how a claim drifts.
+ *
+ * `src/lib/__tests__/coverage-claim.test.ts` enforces that no surface writes a
+ * country count of its own, including the crawler-facing routes that used to be
+ * static files under `public/`.
  */
-export const COVERAGE_FRAGMENT = `live in ${RELEASED_COUNTRY_COUNT} African countries, with all ${COUNTRY_SCOPE_TOTAL} in scope`;
+export function coverageFragment(liveCount: number): string {
+  return `live in ${liveCount} African countries, with all ${COUNTRY_SCOPE_TOTAL} in scope`;
+}
 
 /** The same claim as a standalone sentence, including what "in scope" means. */
-export const COVERAGE_CLAIM = `Live in ${RELEASED_COUNTRY_COUNT} African countries, with all ${COUNTRY_SCOPE_TOTAL} African Union member states in scope — the rest are coming soon.`;
+export function coverageClaim(liveCount: number): string {
+  return `Live in ${liveCount} African countries, with all ${COUNTRY_SCOPE_TOTAL} African Union member states in scope — the rest are coming soon.`;
+}
 
 // Default feed preferences for first-time visitors (and for the server-rendered
 // initial feed). Must stay in sync between PreferencesContext defaults and the

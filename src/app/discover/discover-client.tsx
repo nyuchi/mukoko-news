@@ -10,14 +10,12 @@ import { DiscoverPageSkeleton } from "@/components/ui/discover-skeleton";
 import { type Article, type Category } from "@/lib/api";
 import { getArticlesAction, getCategoriesAction, getSourcesAction } from "@/lib/actions/feed";
 import { categoryTone } from "@/lib/category-tone";
+import { useCoverage } from "@/contexts/coverage-context";
 import {
   COUNTRIES,
   CATEGORY_META,
   getFullUrl,
-  COVERAGE_FRAGMENT,
   COUNTRY_SCOPE_TOTAL,
-  RELEASED_COUNTRY_COUNT,
-  isReleasedCountry,
 } from "@/lib/constants";
 import { WebPageJsonLd } from "@/components/ui/json-ld";
 
@@ -53,6 +51,10 @@ export default function DiscoverClient({
   initialCategories = null,
   initialSources = null,
 }: DiscoverClientProps) {
+  // One shared figure: the page description, the "coming soon" test and the
+  // country grid must all agree, and they only can if they read the same value.
+  const coverage = useCoverage();
+  const liveCodes = useMemo(() => new Set(coverage.codes), [coverage.codes]);
   const searchParams = useSearchParams();
   const router = useRouter();
   const [articles, setArticles] = useState<Article[]>(initialArticles ?? []);
@@ -159,7 +161,7 @@ export default function DiscoverClient({
   // A country that is in scope but not released yet. Its page is honest about
   // that rather than rendering an empty result set, which reads to a reader as
   // "we lost the articles" and to a crawler as a soft-404.
-  const countryComingSoon = !!activeCountry && !isReleasedCountry(activeCountry);
+  const countryComingSoon = !!activeCountry && !liveCodes.has(activeCountry);
 
   if (loading) {
     return <DiscoverPageSkeleton />;
@@ -189,7 +191,7 @@ export default function DiscoverClient({
     <ErrorBoundary fallback={<div className="p-8 text-center text-text-secondary">Failed to load discover page</div>}>
       <WebPageJsonLd
         name="Discover — Mukoko News"
-        description={`Explore African news by category, country and trending topics. Browse sources and discover stories — ${COVERAGE_FRAGMENT}.`}
+        description={`Explore African news by category, country and trending topics. Browse sources and discover stories — ${coverage.fragment}.`}
         url={getFullUrl("/discover")}
       />
       <div className="mx-auto w-full max-w-[var(--width-wide)] px-[var(--page-gutter)] sm:px-[var(--page-gutter-sm)] py-8">
@@ -254,8 +256,8 @@ export default function DiscoverClient({
                     {COUNTRIES.find((c) => c.code === activeCountry)?.name} is coming soon
                   </p>
                   <p className="text-text-secondary text-sm mt-2 max-w-md mx-auto">
-                    Mukoko News is live in {RELEASED_COUNTRY_COUNT} African countries today, with
-                    all {COUNTRY_SCOPE_TOTAL} African Union member states in scope. We have not
+                    Mukoko News is live in {coverage.count} African countries today, with
+                    all {coverage.scopeTotal} African Union member states in scope. We have not
                     onboarded a newsroom here yet.
                   </p>
                   <Link
@@ -336,7 +338,7 @@ export default function DiscoverClient({
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
               {COUNTRIES.map((country) => {
                 const articleCount = articles.filter(a => (a.country_id || a.country) === country.code).length;
-                const released = isReleasedCountry(country.code);
+                const released = liveCodes.has(country.code);
                 return (
                   <Link
                     key={country.code}

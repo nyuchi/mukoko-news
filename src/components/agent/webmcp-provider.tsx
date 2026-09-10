@@ -3,7 +3,8 @@
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { getArticlesAction, searchArticlesAction } from '@/lib/actions/feed'
-import { getArticleUrl, COVERAGE_FRAGMENT } from '@/lib/constants'
+import { getArticleUrl } from '@/lib/constants'
+import { useCoverage } from '@/contexts/coverage-context'
 
 // WebMCP — exposes Mukoko News' key actions to in-browser AI agents via the
 // experimental `navigator.modelContext.provideContext()` API. Tools call the
@@ -26,64 +27,76 @@ function text(t: string) {
   return { content: [{ type: 'text' as const, text: t }] }
 }
 
-const TOOLS: WebMcpTool[] = [
-  {
-    name: 'search_mukoko_news',
-    description:
-      `Search Mukoko News — Pan-African news, ${COVERAGE_FRAGMENT}. Returns matching headlines with links.`,
-    inputSchema: {
-      type: 'object',
-      properties: {
-        query: { type: 'string', description: 'Search terms, e.g. "Zimbabwe elections".' },
-        limit: { type: 'number', description: 'Max results (default 10).' },
+/**
+ * The tool manifest, built per render rather than pinned at module scope.
+ *
+ * The search tool's description states the coverage claim, and that is now a
+ * live count — so the manifest cannot be a module constant without freezing the
+ * number at import time. An answer engine reading a stale figure out of a tool
+ * description is the same defect as a stale figure in the page title, just
+ * harder to notice.
+ */
+function buildTools(coverageFragment: string): WebMcpTool[] {
+  return [
+    {
+      name: 'search_mukoko_news',
+      description:
+        `Search Mukoko News — Pan-African news, ${coverageFragment}. Returns matching headlines with links.`,
+      inputSchema: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'Search terms, e.g. "Zimbabwe elections".' },
+          limit: { type: 'number', description: 'Max results (default 10).' },
+        },
+        required: ['query'],
       },
-      required: ['query'],
-    },
-    execute: async (args) => {
-      const query = String(args.query ?? '').trim()
-      if (!query) return text('Provide a search query.')
-      const limit = Math.min(Math.max(Number(args.limit) || 10, 1), 25)
-      const articles = await searchArticlesAction(query, limit)
-      if (!articles.length) return text(`No results for "${query}".`)
-      const lines = articles.map(
-        (a) => `- ${a.title}${a.source ? ` (${a.source})` : ''} — ${getArticleUrl(a.id)}`
-      )
-      return text(`${articles.length} result(s) for "${query}":\n${lines.join('\n')}`)
-    },
-  },
-  {
-    name: 'get_latest_headlines',
-    description: 'Get the latest Mukoko News headlines across all African sources, newest first.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        limit: { type: 'number', description: 'Max headlines (default 10).' },
+      execute: async (args) => {
+        const query = String(args.query ?? '').trim()
+        if (!query) return text('Provide a search query.')
+        const limit = Math.min(Math.max(Number(args.limit) || 10, 1), 25)
+        const articles = await searchArticlesAction(query, limit)
+        if (!articles.length) return text(`No results for "${query}".`)
+        const lines = articles.map(
+          (a) => `- ${a.title}${a.source ? ` (${a.source})` : ''} — ${getArticleUrl(a.id)}`
+        )
+        return text(`${articles.length} result(s) for "${query}":\n${lines.join('\n')}`)
       },
     },
-    execute: async (args) => {
-      const limit = Math.min(Math.max(Number(args.limit) || 10, 1), 25)
-      const { articles } = await getArticlesAction({ sort: 'latest', limit })
-      if (!articles.length) return text('No headlines available right now.')
-      const lines = articles.map(
-        (a) => `- ${a.title}${a.source ? ` (${a.source})` : ''} — ${getArticleUrl(a.id)}`
-      )
-      return text(`Latest headlines:\n${lines.join('\n')}`)
+    {
+      name: 'get_latest_headlines',
+      description: 'Get the latest Mukoko News headlines across all African sources, newest first.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          limit: { type: 'number', description: 'Max headlines (default 10).' },
+        },
+      },
+      execute: async (args) => {
+        const limit = Math.min(Math.max(Number(args.limit) || 10, 1), 25)
+        const { articles } = await getArticlesAction({ sort: 'latest', limit })
+        if (!articles.length) return text('No headlines available right now.')
+        const lines = articles.map(
+          (a) => `- ${a.title}${a.source ? ` (${a.source})` : ''} — ${getArticleUrl(a.id)}`
+        )
+        return text(`Latest headlines:\n${lines.join('\n')}`)
+      },
     },
-  },
-  {
-    name: 'open_article',
-    description: 'Open a Mukoko News article by its id in the current tab.',
-    inputSchema: {
-      type: 'object',
-      properties: { articleId: { type: 'string', description: 'The article id.' } },
-      required: ['articleId'],
+    {
+      name: 'open_article',
+      description: 'Open a Mukoko News article by its id in the current tab.',
+      inputSchema: {
+        type: 'object',
+        properties: { articleId: { type: 'string', description: 'The article id.' } },
+        required: ['articleId'],
+      },
+      // Wired to the router at registration time (see below).
+      execute: async () => text('Navigation handler not initialised.'),
     },
-    // Wired to the router at registration time (see below).
-    execute: async () => text('Navigation handler not initialised.'),
-  },
-]
+  ]
+}
 
 export function WebMcpProvider() {
+  const coverage = useCoverage()
   const router = useRouter()
 
   useEffect(() => {
@@ -91,7 +104,7 @@ export function WebMcpProvider() {
     if (!mc?.provideContext) return // browser doesn't support WebMCP — no-op
 
     // Bind open_article to the client router (navigation must happen in-page).
-    const tools = TOOLS.map((t) =>
+    const tools = buildTools(coverage.fragment).map((t) =>
       t.name === 'open_article'
         ? {
             ...t,

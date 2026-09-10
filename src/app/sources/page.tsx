@@ -15,7 +15,8 @@ import { SourceIcon } from "@/components/ui/source-icon";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getSourcesAction } from "@/lib/actions/feed";
-import { COUNTRIES, getFullUrl, COVERAGE_FRAGMENT } from "@/lib/constants";
+import { COUNTRIES, getFullUrl } from "@/lib/constants";
+import { useCoverage } from "@/contexts/coverage-context";
 import { WebPageJsonLd } from "@/components/ui/json-ld";
 import { formatTimeAgo } from "@/lib/utils";
 
@@ -50,6 +51,7 @@ function hasHighErrorRate(source: Source): boolean {
 }
 
 export default function SourcesPage() {
+  const coverage = useCoverage();
   const [sources, setSources] = useState<Source[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -138,7 +140,7 @@ export default function SourcesPage() {
     >
       <WebPageJsonLd
         name="News Sources — Mukoko News"
-        description={`Browse all news sources on Mukoko News. View source health, article counts and coverage — ${COVERAGE_FRAGMENT}.`}
+        description={`Browse all news sources on Mukoko News. View source health, article counts and coverage — ${coverage.fragment}.`}
         url={getFullUrl("/sources")}
       />
       <div className="mx-auto w-full max-w-[var(--width-wide)] px-[var(--page-gutter)] sm:px-[var(--page-gutter-sm)] py-8">

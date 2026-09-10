@@ -2,7 +2,21 @@ import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/react';
 import { ArticleJsonLd, BreadcrumbJsonLd, OrganizationJsonLd, WebSiteJsonLd, WebPageJsonLd, SoftwareApplicationJsonLd } from '../ui/json-ld';
 import { ARTICLE_EXCERPT_MAX_CHARS } from '@/lib/excerpt';
-import { RELEASED_COUNTRY_COUNT, COUNTRY_SCOPE_TOTAL } from '@/lib/constants';
+import { COUNTRY_SCOPE_TOTAL, coverageFragment } from '@/lib/constants';
+
+/**
+ * A fixed coverage figure for the schema tests.
+ *
+ * Deliberately NOT the real live count and deliberately not 16: these tests
+ * assert that whatever number they are handed reaches the structured data, and
+ * a fixture that happened to match the production figure could pass while the
+ * prop was ignored entirely.
+ */
+const COVERAGE = {
+  count: 23,
+  scopeTotal: COUNTRY_SCOPE_TOTAL,
+  fragment: coverageFragment(23),
+};
 
 // Helper to extract JSON-LD script content
 function script(container: HTMLElement): string {
@@ -362,7 +376,7 @@ describe('JSON-LD Components', () => {
 
   describe('OrganizationJsonLd', () => {
     it('should render organization schema', () => {
-      const { container } = render(<OrganizationJsonLd />);
+      const { container } = render(<OrganizationJsonLd coverage={COVERAGE} />);
 
       const scriptEl = container.querySelector('script[type="application/ld+json"]');
       expect(scriptEl).toBeTruthy();
@@ -373,7 +387,7 @@ describe('JSON-LD Components', () => {
     });
 
     it('should include legalName and parentOrganization', () => {
-      const { container } = render(<OrganizationJsonLd />);
+      const { container } = render(<OrganizationJsonLd coverage={COVERAGE} />);
       const parsed = parseJsonLd(container);
       expect(parsed.legalName).toBe('Mukoko News by Nyuchi Technology');
       expect(parsed.parentOrganization).toBeTruthy();
@@ -381,7 +395,7 @@ describe('JSON-LD Components', () => {
     });
 
     it('should include contactPoint', () => {
-      const { container } = render(<OrganizationJsonLd />);
+      const { container } = render(<OrganizationJsonLd coverage={COVERAGE} />);
       const parsed = parseJsonLd(container);
       expect(parsed.contactPoint).toBeTruthy();
       expect(parsed.contactPoint['@type']).toBe('ContactPoint');
@@ -389,7 +403,7 @@ describe('JSON-LD Components', () => {
     });
 
     it('should include news media organization policies', () => {
-      const { container } = render(<OrganizationJsonLd />);
+      const { container } = render(<OrganizationJsonLd coverage={COVERAGE} />);
       const parsed = parseJsonLd(container);
       expect(parsed.actionableFeedbackPolicy).toBeTruthy();
       expect(parsed.ethicsPolicy).toBeTruthy();
@@ -417,7 +431,7 @@ describe('JSON-LD Components', () => {
 
   describe('SoftwareApplicationJsonLd', () => {
     it('should render SoftwareApplication schema', () => {
-      const { container } = render(<SoftwareApplicationJsonLd />);
+      const { container } = render(<SoftwareApplicationJsonLd coverage={COVERAGE} />);
 
       const parsed = parseJsonLd(container);
       expect(parsed['@type']).toBe('SoftwareApplication');
@@ -426,7 +440,7 @@ describe('JSON-LD Components', () => {
     });
 
     it('should include free pricing offer', () => {
-      const { container } = render(<SoftwareApplicationJsonLd />);
+      const { container } = render(<SoftwareApplicationJsonLd coverage={COVERAGE} />);
 
       const parsed = parseJsonLd(container);
       expect(parsed.offers).toBeTruthy();
@@ -436,7 +450,7 @@ describe('JSON-LD Components', () => {
     });
 
     it('should include feature list', () => {
-      const { container } = render(<SoftwareApplicationJsonLd />);
+      const { container } = render(<SoftwareApplicationJsonLd coverage={COVERAGE} />);
 
       const parsed = parseJsonLd(container);
       expect(parsed.featureList).toContain('layouts');
@@ -446,7 +460,7 @@ describe('JSON-LD Components', () => {
 
   describe('WebSiteJsonLd', () => {
     it('should render WebSite schema with SearchAction', () => {
-      const { container } = render(<WebSiteJsonLd />);
+      const { container } = render(<WebSiteJsonLd coverage={COVERAGE} />);
 
       const script = container.querySelector('script[type="application/ld+json"]');
       expect(script).toBeTruthy();
@@ -458,7 +472,7 @@ describe('JSON-LD Components', () => {
     });
 
     it('should include search URL template', () => {
-      const { container } = render(<WebSiteJsonLd />);
+      const { container } = render(<WebSiteJsonLd coverage={COVERAGE} />);
 
       const script = container.querySelector('script[type="application/ld+json"]');
       const content = script?.innerHTML || '';
@@ -467,7 +481,7 @@ describe('JSON-LD Components', () => {
     });
 
     it('should escape XSS in search action output', () => {
-      const { container } = render(<WebSiteJsonLd />);
+      const { container } = render(<WebSiteJsonLd coverage={COVERAGE} />);
 
       const script = container.querySelector('script[type="application/ld+json"]');
       const content = script?.innerHTML || '';
@@ -477,7 +491,7 @@ describe('JSON-LD Components', () => {
     });
 
     it('should produce parseable JSON', () => {
-      const { container } = render(<WebSiteJsonLd />);
+      const { container } = render(<WebSiteJsonLd coverage={COVERAGE} />);
 
       const script = container.querySelector('script[type="application/ld+json"]');
       const content = script?.innerHTML || '';
@@ -612,23 +626,23 @@ describe('JSON-LD Components', () => {
    */
   describe('coverage claim in the site-level schemas', () => {
     it('OrganizationJsonLd states the released count and the scope', () => {
-      const { container } = render(<OrganizationJsonLd />);
+      const { container } = render(<OrganizationJsonLd coverage={COVERAGE} />);
       const parsed = parseJsonLd(container);
-      expect(parsed.description).toContain(String(RELEASED_COUNTRY_COUNT));
+      expect(parsed.description).toContain(String(COVERAGE.count));
       expect(parsed.description).toContain(String(COUNTRY_SCOPE_TOTAL));
     });
 
     it('WebSiteJsonLd states the released count and the scope', () => {
-      const { container } = render(<WebSiteJsonLd />);
+      const { container } = render(<WebSiteJsonLd coverage={COVERAGE} />);
       const parsed = parseJsonLd(container);
-      expect(parsed.description).toContain(String(RELEASED_COUNTRY_COUNT));
+      expect(parsed.description).toContain(String(COVERAGE.count));
       expect(parsed.description).toContain(String(COUNTRY_SCOPE_TOTAL));
     });
 
     it('SoftwareApplicationJsonLd (embed widget) states both too', () => {
-      const { container } = render(<SoftwareApplicationJsonLd />);
+      const { container } = render(<SoftwareApplicationJsonLd coverage={COVERAGE} />);
       const parsed = parseJsonLd(container);
-      expect(parsed.featureList).toContain(String(RELEASED_COUNTRY_COUNT));
+      expect(parsed.featureList).toContain(String(COVERAGE.count));
       expect(parsed.featureList).toContain(String(COUNTRY_SCOPE_TOTAL));
     });
   });

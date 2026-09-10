@@ -1,0 +1,3 @@
+minimumReleaseAgeExclude:
+  - node-releases@2.0.55
+  - valibot@1.5.0

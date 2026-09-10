@@ -2,7 +2,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { NextRequest } from 'next/server';
-import { RELEASED_COUNTRY_COUNT, COUNTRY_SCOPE_TOTAL } from '@/lib/constants';
+import { COUNTRY_SCOPE_TOTAL } from '@/lib/constants';
+
+/**
+ * A live count that is deliberately not the production figure — see the
+ * sitemap suite for the same reasoning. If the markdown ignored the read and
+ * fell back to a constant, a fixture equal to the real number would hide it.
+ */
+const LIVE_COUNT = 23;
 
 import { GET as protectedResource } from '../.well-known/oauth-protected-resource/route';
 import { GET as authServer } from '../.well-known/oauth-authorization-server/route';
@@ -13,23 +20,42 @@ const { mockGetArticle, mockGetArticles } = vi.hoisted(() => ({
   mockGetArticles: vi.fn(),
 }));
 
+vi.mock('@/lib/actions/coverage', () => ({
+  getLiveCoverageAction: async () => ({
+    codes: [],
+    count: LIVE_COUNT,
+    scopeTotal: COUNTRY_SCOPE_TOTAL,
+    fragment: `live in ${LIVE_COUNT} African countries, with all ${COUNTRY_SCOPE_TOTAL} in scope`,
+    claim: `Live in ${LIVE_COUNT} African countries, with all ${COUNTRY_SCOPE_TOTAL} African Union member states in scope — the rest are coming soon.`,
+    stale: false,
+  }),
+}));
+
 vi.mock('@/lib/actions/feed', () => ({
   getArticleAction: mockGetArticle,
   getArticlesAction: mockGetArticles,
   searchArticlesAction: vi.fn(),
 }));
 
-describe('MCP server card (static /.well-known/mcp/server-card.json)', () => {
-  it('is valid JSON exposing serverInfo, the MCP transport endpoint and tool capability', () => {
-    const raw = readFileSync(
-      join(process.cwd(), 'public/.well-known/mcp/server-card.json'),
-      'utf-8'
-    );
-    const body = JSON.parse(raw); // also asserts it's valid JSON (matches the CI check)
+describe('MCP server card (/.well-known/mcp/server-card.json)', () => {
+  // No longer a static file: it states the coverage claim, which is a live
+  // count now, so it is rendered per request through the same action as every
+  // other surface. The test moved with it — reading `public/` would now assert
+  // against a file that must NOT exist, since one there would shadow the route.
+  it('is valid JSON exposing serverInfo, the MCP transport endpoint and tool capability', async () => {
+    const { GET: serverCard } = await import('../.well-known/mcp/server-card.json/route');
+    const body = await (await serverCard()).json();
     expect(body.serverInfo.name).toBe('mukoko-news');
     expect(body.serverInfo.version).toBeTruthy();
     expect(body.transport.endpoint).toBe('https://news.mukoko.dev/mcp');
     expect(body.capabilities.tools).toBe(true);
+  });
+
+  it('states the live coverage claim rather than a baked-in number', async () => {
+    const { GET: serverCard } = await import('../.well-known/mcp/server-card.json/route');
+    const body = await (await serverCard()).json();
+    expect(body.serverInfo.description).toContain(String(LIVE_COUNT));
+    expect(body.serverInfo.description).toContain(String(COUNTRY_SCOPE_TOTAL));
   });
 });
 
@@ -172,7 +198,7 @@ describe('Markdown for Agents (/api/agent-md)', () => {
     });
     const req = new NextRequest('https://news.mukoko.com/api/agent-md?path=/');
     const text = await (await GET(req)).text();
-    expect(text).toContain(String(RELEASED_COUNTRY_COUNT));
+    expect(text).toContain(String(LIVE_COUNT));
     expect(text).toContain(String(COUNTRY_SCOPE_TOTAL));
     expect(text.toLowerCase()).toContain('coming soon');
   });
