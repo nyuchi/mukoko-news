@@ -141,10 +141,9 @@ describe('BottomNav', () => {
   });
 
   it('takes its slots from the shared destination registry', () => {
-    // The bar, the header menu, the footer site map and /profile all read
-    // `@/lib/navigation` now. Before that each carried its own array and they
-    // had drifted far enough that no surface in the app could reach every
-    // page. `pick()` throws on an unknown href, so a renamed route fails here
+    // The bar, the nav drawer and /profile all read `@/lib/navigation` now.
+    // Before that each surface carried its own array and they had drifted far
+    // enough that no surface in the app could reach every page. `pick()` throws on an unknown href, so a renamed route fails here
     // rather than silently shortening the bar to four items.
     mockUsePathname.mockReturnValue('/');
 
