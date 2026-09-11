@@ -35,6 +35,18 @@
      rendered — consumers apply `md:` themselves since a CSS variable cannot
      carry a breakpoint. */
   --bottom-nav-clearance: calc(env(safe-area-inset-bottom, 0px) + 5.5rem);
+  /* How wide the navigation sidebar is when docked. Read by the sidebar
+     itself AND by the page inset below, so the column and the space kept for
+     it are one number — if they were two, a docked sidebar would either
+     overlap the content or leave a gap beside it. Below `lg` the sidebar
+     overlays and caps at `88vw` instead, since a fixed 17rem is most of a
+     phone. */
+  --sidebar-width: 18rem;
+  /* The overlay width AND the distance the page is pushed, as one value. Two
+     numbers here would leave a strip of page still covered, or a gap of void
+     beside it. Capped at 86vw so the pushed page stays visibly grabbable
+     rather than vanishing off the right edge. */
+  --sidebar-overlay-width: min(86vw, var(--sidebar-width));
   --void: #080807;      /* app shell behind base */
   --pitch: #050505;     /* deepest — media wells, splash */
   --raised: #2E2C29;    /* above overlay — menus, toasts */
@@ -793,4 +805,71 @@ textarea {
 }
 .scrollbar-hide::-webkit-scrollbar {
   display: none;
+}
+
+/* The docked sidebar's page inset.
+   --------------------------------------------------------------------------
+   Driven by an ATTRIBUTE the pre-paint bootstrap sets, not by React state,
+   and that split is deliberate. The sidebar's own panel can arrive a frame
+   late — it slides in on a transform, so late reads as the animation. The
+   page inset cannot: applied from an effect it would shift the entire
+   document sideways one frame after paint, on every hard load, for a reader
+   who simply left the sidebar open.
+
+   Only from `lg`. Below that the sidebar overlays the content and insetting
+   the page would squeeze the article into a sliver beside it. The breakpoint
+   is 1024px in both places — `SIDEBAR_DOCK_BREAKPOINT_PX` builds the
+   matchMedia query from the same number, and `sidebar.test.ts` asserts this
+   rule still matches it, because a drift would leave a band of widths where
+   the page is inset for a sidebar that still behaves like a modal. */
+@media (min-width: 1024px) {
+  html[data-sidebar='open'] .app-shell {
+    padding-left: var(--sidebar-width);
+  }
+}
+
+/* Below `lg` the sidebar PUSHES the page instead of covering it.
+   --------------------------------------------------------------------------
+   The page slides right by exactly the panel's width and stays on screen,
+   dimmed, with its leading corner rounded — so it reads as the page you were
+   on, moved aside, and it is obvious you get back by tapping it. A panel that
+   simply covers the page leaves nothing to aim at but a scrim.
+
+   `transform` and not `margin-left` because this animates on every open, and
+   only `transform` stays off the layout path. The cost is that a non-`none`
+   transform makes this element the containing block for `position: fixed`
+   descendants — the article action rail, chiefly — so the page's own pinned
+   furniture travels with the page. While the sidebar is open that is the
+   behaviour you want; when it is closed the transform is `none` and nothing
+   is contained. (`none` interpolates as the identity transform, so the
+   transition still animates.)
+
+   `overflow-x` is belt-and-braces against the pushed page widening the
+   document. The overlay's scroll lock already covers it, but that is applied
+   from an effect, so a reload with the sidebar open would be briefly
+   side-scrollable without this. */
+@media (max-width: 1023.98px) {
+  html[data-sidebar='open'] {
+    overflow-x: hidden;
+  }
+
+  html[data-sidebar='open'] .app-shell {
+    transform: translateX(var(--sidebar-overlay-width));
+    border-start-start-radius: 1rem;
+    border-end-start-radius: 1rem;
+  }
+}
+
+.app-shell {
+  /* Its own ground, so the rounded corner above has something to round. */
+  background: var(--background);
+  transition:
+    padding-left 200ms ease-out,
+    transform 200ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-shell {
+    transition: none;
+  }
 }
