@@ -28,6 +28,7 @@ const bundle: InsightsBundle = {
     latest: '2026-06-30T00:00:00.000Z',
   },
   volume: {
+    ok: true,
     days: 30,
     from: '2026-06-01',
     to: '2026-06-30',
@@ -62,6 +63,7 @@ const bundle: InsightsBundle = {
     },
   ],
   categories: {
+    ok: true,
     totalAssignments: 200,
     coverage: 50,
     categories: [{ slug: 'politics', count: 60, share: 30 }],
@@ -71,6 +73,7 @@ const bundle: InsightsBundle = {
     countries: [{ code: 'ZW', name: 'Zimbabwe', count: 75, share: 75 }],
   },
   sentiment: {
+    ok: true,
     total: 100,
     coverage: 25,
     breakdown: [{ sentiment: 'positive', count: 30, share: 30 }],
@@ -91,11 +94,11 @@ const emptyBundle: InsightsBundle = {
     earliest: null,
     latest: null,
   },
-  volume: { days: 30, from: '2026-06-01', to: '2026-06-30', total: 0, series: [], topSources: [] },
+  volume: { ok: true, days: 30, from: '2026-06-01', to: '2026-06-30', total: 0, series: [], topSources: [] },
   leaderboard: [],
-  categories: { totalAssignments: 0, coverage: 0, categories: [] },
+  categories: { ok: true, totalAssignments: 0, coverage: 0, categories: [] },
   countries: { total: 0, countries: [] },
-  sentiment: { total: 0, coverage: 0, breakdown: [] },
+  sentiment: { ok: true, total: 0, coverage: 0, breakdown: [] },
   topics: [],
   generatedAt: '2026-07-02T00:00:00.000Z',
 }
@@ -152,9 +155,19 @@ describe('InsightsClient', () => {
     fireEvent.click(screen.getByRole('button', { name: /Sort by Source/i }))
     expect(rowNames()[0]).toContain('Daily Maverick')
 
-    // Sort by average words desc → Daily Maverick (800) first.
-    fireEvent.click(screen.getByRole('button', { name: /Sort by Avg words/i }))
-    expect(rowNames()[0]).toContain('Daily Maverick')
+    // Sort by country → a real column, unlike the three that were removed.
+    fireEvent.click(screen.getByRole('button', { name: /Sort by Country/i }))
+    expect(rowNames()).toHaveLength(2)
+  })
+
+  it('offers no sort control for a column it cannot fill', () => {
+    // Avg quality, avg words and last-published are null for every row now — a
+    // facet counts documents, it cannot average a field across them. A sort
+    // button over a column of nulls is a control that does nothing.
+    render(<InsightsClient summary={bundle.summary} detail={bundle} signedIn />)
+    expect(screen.queryByRole('button', { name: /Sort by Avg words/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Sort by Avg quality/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Sort by Last published/i })).toBeNull()
   })
 
   it('renders the empty state when the corpus has no data', () => {

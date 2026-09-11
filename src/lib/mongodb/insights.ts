@@ -62,6 +62,86 @@ const AGG_OPTS = { maxTimeMS: AGGREGATE_TIMEOUT_MS } as const
 const SEARCH_INDEX = 'articles_text_search'
 
 /**
+ * The second, purpose-built index — the one that makes the enrichment panels
+ * possible at all.
+ *
+ * `articles_text_search` maps what a reader SEARCHES: headline, description,
+ * body, and the tokens a search can be filtered by. It does not map
+ * `aiSentiment`, `aiKeywords` or `engagement.interest_categories`, and those
+ * three are the whole of the sentiment, topics and category panels. Without a
+ * mapping the only way to count them is to read every document, which on this
+ * M20 is 27.5 seconds for 65,203 articles — longer than the request lives.
+ *
+ * So `articles_insights` maps exactly those fields and nothing expensive: no
+ * bodies, no analysed text, just the tokens and two numbers. It is ADDITIVE —
+ * the search index is untouched, and dropping this one degrades three panels
+ * rather than breaking search.
+ *
+ * The split is deliberate and not tidiness: the reads that already work stay on
+ * the index that already serves them, so a rebuild or a mapping change here
+ * cannot take the corpus summary and country coverage down with it.
+ */
+const INSIGHTS_INDEX = 'articles_insights'
+
+/** One bucket of an Atlas Search facet, before it is trusted. */
+interface RawBucket {
+  _id: unknown
+  count: unknown
+}
+
+/** One bucket after it is. A string facet fills `value`; a date facet fills `at`. */
+interface FacetBucket {
+  value: string
+  at: Date | null
+  count: number
+}
+
+/**
+ * Run one `$searchMeta` facet query and hand back the buckets, already cleaned.
+ *
+ * Every panel below is the same shape — count documents, group by one token
+ * field — so this is the one place that knows how `$searchMeta` replies, how
+ * the counts are coerced, and that `count: {type:'total'}` is required because
+ * the DEFAULT is a lower BOUND. A headline figure that is quietly an
+ * underestimate is worse than a slow one.
+ */
+async function searchFacets(
+  db: Awaited<ReturnType<typeof getDb>>,
+  index: string,
+  operator: Record<string, unknown>,
+  facets: Record<string, Record<string, unknown>>
+): Promise<{ total: number; buckets: Record<string, FacetBucket[]> }> {
+  const rows = (await db
+    .collection('articles')
+    .aggregate(
+      [{ $searchMeta: { index, count: { type: 'total' }, facet: { operator, facets } } }],
+      AGG_OPTS
+    )
+    .toArray()) as Array<{
+    count?: { total?: unknown }
+    facet?: Record<string, { buckets?: RawBucket[] }>
+  }>
+
+  const row = rows[0]
+  const buckets: Record<string, FacetBucket[]> = {}
+  for (const name of Object.keys(facets)) {
+    buckets[name] = (row?.facet?.[name]?.buckets ?? [])
+      .map((b) => ({
+        // A string facet's id is the token; a DATE facet's is the bucket's
+        // lower boundary, as a Date. Both are kept, so one call can carry a
+        // daily series and a top-sources list without a second round trip.
+        value: typeof b._id === 'string' ? b._id.trim() : '',
+        at: b._id instanceof Date && !Number.isNaN(b._id.getTime()) ? b._id : null,
+        count: Math.max(0, Math.trunc(Number(b.count ?? 0))),
+      }))
+      .filter((b) => b.count > 0 && (b.value.length > 0 || b.at !== null))
+      .sort((a, b) => b.count - a.count)
+  }
+
+  return { total: Math.max(0, Math.trunc(Number(row?.count?.total ?? 0))), buckets }
+}
+
+/**
  * Everything in the corpus, as a Search operator.
  *
  * `exists` on a field every article carries is the Search equivalent of "match
@@ -99,6 +179,8 @@ export interface VolumePoint {
 }
 
 export interface PublishingVolume {
+  /** Did the read succeed? Zero is a number; a failure is not. */
+  ok: boolean
   days: number
   /** Inclusive UTC day range covered by the series. */
   from: string
@@ -115,6 +197,7 @@ const EMPTY_VOLUME = (days: number): PublishingVolume => {
   const to = new Date()
   const from = new Date(to.getTime() - (days - 1) * 86_400_000)
   return {
+    ok: false,
     days,
     from: isoDay(from),
     to: isoDay(to),
@@ -124,10 +207,26 @@ const EMPTY_VOLUME = (days: number): PublishingVolume => {
   }
 }
 
+/** Midnight UTC, `back` days before today, inclusive of today. */
+function windowStart(back: number): Date {
+  const now = new Date()
+  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
+  start.setUTCDate(start.getUTCDate() - (back - 1))
+  return start
+}
+
 /**
  * Articles published per UTC day over the last `days` (default 30), plus the
  * top sources contributing to that window. The daily series is zero-filled so
  * the chart has a point for every day even when nothing was published.
+ *
+ * A `$searchMeta` DATE facet, not a `$group` on `$dateToString`. The boundaries
+ * are the window's own day edges, so Atlas Search counts each day in the
+ * inverted index and the result is exact — the `$group` this replaced opened
+ * with `BASE_MATCH`, whose `$ne` pair no index can serve, and so read all
+ * 65,203 documents (27.5s measured). The top-source names come from a single
+ * `find` on `feedSources` rather than a `$lookup`, because a lookup would have
+ * dragged the whole pipeline back onto the collection it was just lifted off.
  */
 export async function getPublishingVolume({
   days = 30,
@@ -135,66 +234,120 @@ export async function getPublishingVolume({
   const window = clampInt(days, 1, 365, 30)
   try {
     const db = await getDb()
-    const now = new Date()
-    // Start of the window: midnight UTC, `window - 1` days back (inclusive of today).
-    const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
-    start.setUTCDate(start.getUTCDate() - (window - 1))
+    const start = windowStart(window)
 
-    const match = { ...BASE_MATCH, datePublished: { $gte: start } }
-    const col = db.collection('articles')
+    // One boundary per day edge, plus the closing edge — N days needs N+1.
+    const boundaries: Date[] = []
+    for (let i = 0; i <= window; i++) boundaries.push(new Date(start.getTime() + i * 86_400_000))
 
-    const [dayRows, sourceRows] = await Promise.all([
-      col
-        .aggregate<{ _id: string; count: number }>([
-          { $match: match },
-          {
-            $group: {
-              _id: { $dateToString: { format: '%Y-%m-%d', date: '$datePublished', timezone: 'UTC' } },
-              count: { $sum: 1 },
-            },
-          },
-        ], AGG_OPTS)
-        .toArray(),
-      col
-        .aggregate<{ _id: string; count: number; name?: string }>([
-          { $match: match },
-          { $group: { _id: '$feedSourceId', count: { $sum: 1 } } },
-          { $sort: { count: -1 } },
-          { $limit: 8 },
-          { $lookup: { from: 'feedSources', localField: '_id', foreignField: '_id', as: 'source' } },
-          { $addFields: { name: { $ifNull: [{ $arrayElemAt: ['$source.name', 0] }, '$_id'] } } },
-          { $project: { count: 1, name: 1 } },
-        ], AGG_OPTS)
-        .toArray(),
-    ])
+    const { total, buckets } = await searchFacets(
+      db,
+      SEARCH_INDEX,
+      { range: { path: 'datePublished', gte: start, lt: boundaries[boundaries.length - 1] } },
+      {
+        day: { type: 'date', path: 'datePublished', boundaries },
+        source: { type: 'string', path: 'feedSourceId', numBuckets: 8 },
+      }
+    )
 
-    const counts = new Map(dayRows.map((r) => [r._id, r.count]))
-    const series: VolumePoint[] = []
-    let total = 0
-    for (let i = 0; i < window; i++) {
-      const d = new Date(start.getTime() + i * 86_400_000)
-      const key = isoDay(d)
-      const count = counts.get(key) ?? 0
-      total += count
-      series.push({ date: key, count })
+    // A date facet's bucket id is its lower boundary, which is the UTC day.
+    const counts = new Map<string, number>()
+    for (const b of buckets.day) {
+      if (b.at) counts.set(isoDay(b.at), b.count)
     }
 
+    const series: VolumePoint[] = []
+    for (let i = 0; i < window; i++) {
+      const key = isoDay(new Date(start.getTime() + i * 86_400_000))
+      series.push({ date: key, count: counts.get(key) ?? 0 })
+    }
+
+    const sourceNames = await sourceDisplayNames(
+      db,
+      buckets.source.map((b) => b.value)
+    )
+
     return {
+      ok: true,
       days: window,
       from: series[0]?.date ?? isoDay(start),
-      to: series[series.length - 1]?.date ?? isoDay(now),
+      to: series[series.length - 1]?.date ?? isoDay(new Date()),
       total,
       series,
-      topSources: sourceRows.map((r) => ({
-        sourceId: r._id,
-        name: r.name || r._id,
-        count: r.count,
+      topSources: buckets.source.map((b) => ({
+        sourceId: b.value,
+        name: sourceNames.get(b.value)?.name ?? b.value,
+        count: b.count,
       })),
     }
   } catch (error) {
     console.error('[insights.getPublishingVolume]', error)
     return EMPTY_VOLUME(window)
   }
+}
+
+/**
+ * Resolve feed-source ids to their display name, organisation and country.
+ *
+ * `feedSources` is 587 rows and `newsMediaOrganizations` 537 — two indexed
+ * `find`s on small collections, which is why every panel above can afford to
+ * name its sources without a `$lookup` back onto the 1.5 GB article
+ * collection. Fail-soft: an unresolvable id keeps the id as its name, because
+ * a source we cannot name still published the articles.
+ */
+async function sourceDisplayNames(
+  db: Awaited<ReturnType<typeof getDb>>,
+  ids: string[]
+): Promise<Map<string, { name: string; organization?: string; verified: boolean; country?: string }>> {
+  const out = new Map<
+    string,
+    { name: string; organization?: string; verified: boolean; country?: string }
+  >()
+  if (ids.length === 0) return out
+
+  const sources = (await db
+    .collection('feedSources')
+    .find(
+      // `_id` on these collections is a slug string (`src-herald-zw`), not an
+      // ObjectId — the driver's default typing assumes otherwise.
+      { _id: { $in: ids } } as unknown as Record<string, unknown>,
+      { projection: { name: 1, mediaOrganizationId: 1, countryCode: 1 } }
+    )
+    .maxTimeMS(AGGREGATE_TIMEOUT_MS)
+    .toArray()) as Array<Record<string, unknown>>
+
+  const orgIds = sources
+    .map((s) => s.mediaOrganizationId)
+    .filter((id): id is string => typeof id === 'string' && id.length > 0)
+
+  const orgs = orgIds.length
+    ? ((await db
+        .collection('newsMediaOrganizations')
+        .find(
+          { _id: { $in: orgIds } } as unknown as Record<string, unknown>,
+          { projection: { name: 1, verified: 1, isVerified: 1, verificationStatus: 1 } }
+        )
+        .maxTimeMS(AGGREGATE_TIMEOUT_MS)
+        .toArray()) as Array<Record<string, unknown>>)
+    : []
+
+  const orgById = new Map(orgs.map((o) => [String(o._id), o]))
+
+  for (const source of sources) {
+    const org = typeof source.mediaOrganizationId === 'string'
+      ? orgById.get(source.mediaOrganizationId)
+      : undefined
+    out.set(String(source._id), {
+      name: typeof source.name === 'string' && source.name ? source.name : String(source._id),
+      organization: typeof org?.name === 'string' ? org.name : undefined,
+      verified: Boolean(
+        org?.verified ?? org?.isVerified ?? org?.verificationStatus === 'verified'
+      ),
+      country: typeof source.countryCode === 'string' ? source.countryCode : undefined,
+    })
+  }
+
+  return out
 }
 
 // ---------------------------------------------------------------------------
@@ -208,19 +361,46 @@ export interface SourceLeaderboardRow {
   organization?: string
   verified: boolean
   articleCount: number
-  /** Average qualityScore (0..1) over articles that carry one. */
-  avgQualityScore: number
-  avgWordCount: number
-  /** Distinct country codes seen across this source's articles. */
+  /**
+   * Average `qualityScore` / `wordCount` over this source's articles, or
+   * **null when they could not be computed** — which is currently always.
+   *
+   * An Atlas Search facet counts documents per value; it cannot average a
+   * field across them. Averaging means reading every one of this source's
+   * articles, and the only pipeline that can do that is the collection scan
+   * this function was rewritten to escape (27.5s for the corpus, measured).
+   * `0` would render as "this newsroom scores zero on quality" and "articles
+   * of zero words", which are claims about a real publisher.
+   */
+  avgQualityScore: number | null
+  avgWordCount: number | null
+  /**
+   * The source's own country, from `feedSources`.
+   *
+   * This used to be `$addToSet` over every article's `countryCode` — the
+   * distinct set the source had actually filed under. That needs the documents.
+   * The source's registered country is the same answer for all but a handful of
+   * wire sources, it is a single indexed read on a 587-row collection, and the
+   * old code already fell back to it when article codes were absent.
+   */
   countries: string[]
+  /** Most recent publication, or null — see `avgQualityScore` for why. */
   lastPublished: string | null
 }
 
 /**
- * Per-source analytics: article count, average quality/length, countries
- * covered and last-published time, joined to feedSources (display name) and
- * newsMediaOrganizations (publisher + verification). This is the "media
- * organizations" analytics surface.
+ * Per-source analytics: article count, publisher and verification, ranked by
+ * volume. This is the "media organizations" analytics surface.
+ *
+ * Rebuilt 2026-09-11 onto a `$searchMeta` facet over `feedSourceId` plus two
+ * small-collection reads. The `$group` it replaced opened with `BASE_MATCH`
+ * and averaged four fields across all 65,203 documents; on this M20 that is a
+ * COLLSCAN measured at 27.5 SECONDS, so the panel never rendered at all.
+ *
+ * What a facet cannot do is average, so the three per-article aggregates are
+ * honestly `null` rather than `0`. A thinner panel that is true beats a fuller
+ * one that is invented — and an empty panel, which is what shipped, tells the
+ * reader nothing at all.
  */
 export async function getSourceLeaderboard({
   limit = 20,
@@ -228,64 +408,28 @@ export async function getSourceLeaderboard({
   const max = clampInt(limit, 1, 100, 20)
   try {
     const db = await getDb()
-    const rows = await db
-      .collection('articles')
-      .aggregate<{
-        _id: string
-        articleCount: number
-        avgQualityScore: number | null
-        avgWordCount: number | null
-        countries: (string | null)[]
-        lastPublished: Date | null
-        source: Array<{ name?: string; mediaOrganizationId?: string; countryCode?: string }>
-        org: Array<{ name?: string; verified?: boolean; isVerified?: boolean; verificationStatus?: string }>
-      }>([
-        { $match: BASE_MATCH },
-        {
-          $group: {
-            _id: '$feedSourceId',
-            articleCount: { $sum: 1 },
-            avgQualityScore: { $avg: '$qualityScore' },
-            avgWordCount: { $avg: '$wordCount' },
-            countries: { $addToSet: '$countryCode' },
-            lastPublished: { $max: '$datePublished' },
-          },
-        },
-        { $sort: { articleCount: -1 } },
-        { $limit: max },
-        { $lookup: { from: 'feedSources', localField: '_id', foreignField: '_id', as: 'source' } },
-        {
-          $lookup: {
-            from: 'newsMediaOrganizations',
-            localField: 'source.mediaOrganizationId',
-            foreignField: '_id',
-            as: 'org',
-          },
-        },
-      ], AGG_OPTS)
-      .toArray()
+    const { buckets } = await searchFacets(db, SEARCH_INDEX, MATCH_ALL, {
+      source: { type: 'string', path: 'feedSourceId', numBuckets: max },
+    })
 
-    return rows.map((r) => {
-      const source = r.source?.[0]
-      const org = r.org?.[0]
-      const verified = Boolean(
-        org?.verified ?? org?.isVerified ?? org?.verificationStatus === 'verified'
-      )
-      const countries = (r.countries ?? [])
-        .filter((c): c is string => typeof c === 'string' && c.trim().length > 0)
-        .sort()
-      // Fall back to the source's own country when article-level codes are absent.
-      if (countries.length === 0 && source?.countryCode) countries.push(source.countryCode)
+    const ranked = buckets.source.slice(0, max)
+    const sources = await sourceDisplayNames(
+      db,
+      ranked.map((b) => b.value)
+    )
+
+    return ranked.map((b) => {
+      const source = sources.get(b.value)
       return {
-        sourceId: r._id,
-        name: source?.name || r._id,
-        organization: org?.name || undefined,
-        verified,
-        articleCount: r.articleCount,
-        avgQualityScore: round(r.avgQualityScore, 3),
-        avgWordCount: Math.round(r.avgWordCount ?? 0),
-        countries,
-        lastPublished: r.lastPublished ? new Date(r.lastPublished).toISOString() : null,
+        sourceId: b.value,
+        name: source?.name ?? b.value,
+        organization: source?.organization,
+        verified: source?.verified ?? false,
+        articleCount: b.count,
+        avgQualityScore: null,
+        avgWordCount: null,
+        countries: source?.country ? [source.country] : [],
+        lastPublished: null,
       }
     })
   } catch (error) {
@@ -299,6 +443,8 @@ export async function getSourceLeaderboard({
 // ---------------------------------------------------------------------------
 
 export interface CategoryDistribution {
+  /** Did the read succeed? Zero is a number; a failure is not. */
+  ok: boolean
   /** Total category assignments across the corpus (an article may carry several). */
   totalAssignments: number
   /** Share of all assignments the returned (top) slugs account for. */
@@ -306,54 +452,60 @@ export interface CategoryDistribution {
   categories: Array<{ slug: string; count: number; share: number }>
 }
 
-const EMPTY_CATEGORY: CategoryDistribution = { totalAssignments: 0, coverage: 0, categories: [] }
+const EMPTY_CATEGORY: CategoryDistribution = {
+  ok: false,
+  totalAssignments: 0,
+  coverage: 0,
+  categories: [],
+}
 
 /**
- * Article counts per `engagement.interest_categories` slug (top 15). Share is
- * expressed against total category *assignments* (articles can hold several),
- * and `coverage` reports how much of the corpus the returned slugs cover.
+ * Article counts per `engagement.interest_categories` slug. Share is expressed
+ * against total category *assignments* (articles can hold several), and
+ * `coverage` reports how much of those the returned slugs account for.
+ *
+ * A `$searchMeta` facet on `articles_insights`, which exists precisely because
+ * this field is not in the search index: the `$unwind` + `$group` it replaced
+ * opened with `BASE_MATCH` and read all 65,203 documents (27.5s measured), so
+ * the panel never rendered.
+ *
+ * `numBuckets` is 200, and the headroom is not arbitrary: **measured on the
+ * live corpus 2026-09-11 the field carries 52 distinct values, not the 40 the
+ * platform's interest-category set defines.** It holds a mix of that set
+ * (`fintech-mobile-money`, `ai-machine-learning`, `african-identity`) and the
+ * 17-slug vocabulary the pipeline invented before it (`politics`,
+ * `international`, `economy`, `crime`) — history the enrichment rebuild left
+ * behind. A first cut of this function used 50 on the assumption that 40 was
+ * closed, which silently truncated the two smallest values AND made
+ * `totalAssignments` the sum of a head rather than the true total. 200 leaves
+ * room for that history to be cleaned up without this quietly under-counting
+ * again; the whole tail costs nothing, since the 52nd value has ONE article.
  */
 export async function getCategoryDistribution(): Promise<CategoryDistribution> {
   try {
     const db = await getDb()
-    const rows = await db
-      .collection('articles')
-      .aggregate<{ _id: string; count: number }>([
-        { $match: BASE_MATCH },
-        { $unwind: '$engagement.interest_categories' },
-        { $group: { _id: '$engagement.interest_categories', count: { $sum: 1 } } },
-        { $match: { _id: { $type: 'string', $ne: '' } } },
-        { $sort: { count: -1 } },
-        // Compute the grand total, then slice the top 15 in JS from a facet.
-        {
-          $facet: {
-            top: [{ $limit: 15 }],
-            totals: [{ $group: { _id: null, total: { $sum: '$count' } } }],
-          },
-        },
-      ], AGG_OPTS)
-      .toArray()
+    const { buckets } = await searchFacets(db, INSIGHTS_INDEX, MATCH_ALL, {
+      category: { type: 'string', path: 'engagement.interest_categories', numBuckets: 200 },
+    })
 
-    const facet = rows[0] as unknown as
-      | { top: Array<{ _id: string; count: number }>; totals: Array<{ total: number }> }
-      | undefined
-    const top = facet?.top ?? []
-    const totalAssignments = facet?.totals?.[0]?.total ?? 0
-    if (totalAssignments === 0) return EMPTY_CATEGORY
+    const all = buckets.category
+    const totalAssignments = all.reduce((sum, b) => sum + b.count, 0)
+    if (totalAssignments === 0) return { ...EMPTY_CATEGORY, ok: true }
 
-    const categories = top.map((r) => ({
-      slug: String(r._id).trim(),
-      count: r.count,
-      share: round((r.count / totalAssignments) * 100, 1),
-    }))
-    const coverage = round(
-      (categories.reduce((s, c) => s + c.count, 0) / totalAssignments) * 100,
-      1
-    )
-    return { totalAssignments, coverage, categories }
+    const top = all.slice(0, 15)
+    return {
+      ok: true,
+      totalAssignments,
+      coverage: round((top.reduce((s, c) => s + c.count, 0) / totalAssignments) * 100, 1),
+      categories: top.map((b) => ({
+        slug: b.value,
+        count: b.count,
+        share: round((b.count / totalAssignments) * 100, 1),
+      })),
+    }
   } catch (error) {
     console.error('[insights.getCategoryDistribution]', error)
-    return EMPTY_CATEGORY
+    return { ...EMPTY_CATEGORY }
   }
 }
 
@@ -437,6 +589,8 @@ export async function getCountryCoverage(): Promise<CountryCoverage> {
 // ---------------------------------------------------------------------------
 
 export interface SentimentBreakdown {
+  /** Did the read succeed? Zero is a number; a failure is not. */
+  ok: boolean
   /** Articles carrying a sentiment label (the enriched subset). */
   total: number
   /** Share of the whole corpus that has been AI-enriched with a sentiment. */
@@ -444,37 +598,40 @@ export interface SentimentBreakdown {
   breakdown: Array<{ sentiment: string; count: number; share: number }>
 }
 
-const EMPTY_SENTIMENT: SentimentBreakdown = { total: 0, coverage: 0, breakdown: [] }
+const EMPTY_SENTIMENT: SentimentBreakdown = { ok: false, total: 0, coverage: 0, breakdown: [] }
 
 /**
- * Counts per `aiSentiment` value over `aiProcessed=true` articles only, with a
- * `coverage` figure (enriched-with-sentiment / whole corpus) so the thin-data
- * caveat can be shown in the UI.
+ * Counts per `aiSentiment` value, with a `coverage` figure (labelled / whole
+ * corpus) so the thin-data caveat can be shown in the UI.
+ *
+ * One `$searchMeta` call on `articles_insights`: the facet gives the per-label
+ * counts and `count: {type:'total'}` gives the corpus denominator, so coverage
+ * comes out of the same round trip rather than a second `countDocuments` that
+ * would itself have been a full scan.
+ *
+ * `numBuckets` is 10 against a label set of three or four values — enough that
+ * an unexpected label from the enrichment model shows up in the breakdown
+ * rather than being silently folded into the tail.
  */
 export async function getSentimentBreakdown(): Promise<SentimentBreakdown> {
   try {
     const db = await getDb()
-    const col = db.collection('articles')
-    const [rows, corpusTotal] = await Promise.all([
-      col
-        .aggregate<{ _id: string; count: number }>([
-          { $match: { ...BASE_MATCH, aiProcessed: true, aiSentiment: { $type: 'string', $ne: '' } } },
-          { $group: { _id: '$aiSentiment', count: { $sum: 1 } } },
-          { $sort: { count: -1 } },
-        ], AGG_OPTS)
-        .toArray(),
-      col.countDocuments(BASE_MATCH),
-    ])
+    const { total: corpusTotal, buckets } = await searchFacets(db, INSIGHTS_INDEX, MATCH_ALL, {
+      sentiment: { type: 'string', path: 'aiSentiment', numBuckets: 10 },
+    })
 
-    const total = rows.reduce((s, r) => s + r.count, 0)
-    if (total === 0) return { ...EMPTY_SENTIMENT }
+    const labelled = buckets.sentiment
+    const total = labelled.reduce((sum, b) => sum + b.count, 0)
+    if (total === 0) return { ...EMPTY_SENTIMENT, ok: true }
+
     return {
+      ok: true,
       total,
       coverage: corpusTotal > 0 ? round((total / corpusTotal) * 100, 1) : 0,
-      breakdown: rows.map((r) => ({
-        sentiment: String(r._id).trim().toLowerCase(),
-        count: r.count,
-        share: round((r.count / total) * 100, 1),
+      breakdown: labelled.map((b) => ({
+        sentiment: b.value.toLowerCase(),
+        count: b.count,
+        share: round((b.count / total) * 100, 1),
       })),
     }
   } catch (error) {
@@ -676,31 +833,30 @@ export async function getTopTopics({
   try {
     const db = await getDb()
     const since = new Date(Date.now() - 7 * 86_400_000)
-    const rows = await db
-      .collection('articles')
-      .aggregate<{ _id: string; count: number }>([
-        {
-          $match: {
-            ...BASE_MATCH,
-            datePublished: { $gte: since },
-            aiKeywords: { $type: 'array' },
-          },
-        },
-        { $unwind: '$aiKeywords' },
-        { $group: { _id: '$aiKeywords', count: { $sum: 1 } } },
-        { $match: { _id: { $type: 'string', $ne: '' } } },
-        { $sort: { count: -1 } },
-        // Over-fetch so the stopword filter cannot leave the list short.
-        { $limit: max * 4 },
-      ], AGG_OPTS)
-      .toArray()
 
-    return rows
-      .filter((r) => isMeaningfulTopic(String(r._id)))
+    // A `$searchMeta` facet on `articles_insights`. The `$unwind` + `$group`
+    // this replaced opened with `BASE_MATCH`, whose `$ne` pair no index can
+    // serve, so it read every document in the window — 27.5s for the corpus on
+    // this M20, measured, which is longer than the request lives.
+    //
+    // The facet is over-fetched (`max * 6`, floored at 60) because the stopword
+    // filter runs AFTER the counts come back: "news", "featured" and the rest
+    // are frequent enough to fill a tight bucket list on their own and leave
+    // the panel short of real subjects.
+    const { buckets } = await searchFacets(
+      db,
+      INSIGHTS_INDEX,
+      { range: { path: 'datePublished', gte: since } },
+      { topic: { type: 'string', path: 'aiKeywords', numBuckets: Math.max(60, max * 6) } }
+    )
+
+    return buckets.topic
+      .filter((b) => isMeaningfulTopic(b.value))
       .slice(0, max)
-      .map((r) => ({ tag: String(r._id).trim(), count: r.count }))
+      .map((b) => ({ tag: b.value, count: b.count }))
   } catch (error) {
     console.error('[insights.getTopTopics]', error)
     return []
   }
 }
+
