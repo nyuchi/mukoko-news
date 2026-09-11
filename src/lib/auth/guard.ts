@@ -1,5 +1,7 @@
 import { withAuth } from '@workos-inc/authkit-nextjs'
 
+import { canAccess, planFor, type Feature } from '@/lib/access'
+
 /**
  * Access guards for the non-admin private surfaces.
  *
@@ -29,6 +31,19 @@ export class UnauthorizedError extends Error {
 export async function isViewerSignedIn(): Promise<boolean> {
   const { user } = await withAuth()
   return !!user
+}
+
+/**
+ * The server-side half of `canAccess`.
+ *
+ * The plan map lives in `@/lib/access` so the client components that gate on
+ * it and the server surfaces that enforce it read the SAME table. A page that
+ * decided its own answer would drift from the card the reader saw, and the
+ * drift would always resolve in one of two bad directions: a locked card over
+ * an open endpoint, or a reader who signed in and still cannot get through.
+ */
+export async function viewerCanAccess(feature: Feature): Promise<boolean> {
+  return canAccess(feature, planFor(await isViewerSignedIn()))
 }
 
 /**

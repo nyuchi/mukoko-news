@@ -288,6 +288,28 @@ FLY_TRIGGER_TOKEN=...                              # must match the fly secret
 
 **Entity capabilities are not platform tiers** (owner decision 2026-09-02) — `src/lib/auth/entity-access.ts` is the *only* consumer of memberships, and it turns one into `EntityCapability`s (`entity:read` / `entity:manage` / `entity:members`) that apply to **that one entity**. It cannot produce a `Tier`: it imports nothing from `roles.ts`, `roles.ts` reads no database, and `/admin` takes no membership input — three assertions the `entity-access` test suite enforces structurally, so a future edit that wires them together fails CI rather than silently widening access. Capabilities come from `membershipRole` through a **closed** map (an unknown role grants nothing); the row's own `permissions` array is never consulted for a decision, and `sanitizeEntityPermissions` strips the reserved namespaces (`platform:`, `mukoko:`, `nyuchi:`, `admin:`, `news:`, plus bare `admin`/`superadmin`/`moderator`/`support`/`staff`) on read. That is not theoretical: an active membership on the live cluster carries `permissions: ["platform:admin"]`, on an entity with **no** `workosOrgId` to reconcile against, and several other active memberships are of `entityType: "family"` entities — founding your own household is not staff access. Since `entity` is written by the gateway's WorkOS webhook and MongoDB's validators accept unknown fields, honouring a slug from there would make every writer to `entity` an authority on who administers this app. Every decision grants on the **presence** of a membership, so the fail-soft empty read denies rather than opens. `src/lib/actions/entity-access.ts` is the Server-Action door; `src/components/profile/profile-organizations.tsx` shows the caller their own memberships on `/profile`.
 
+### Reader access tiers (`src/lib/access.ts`) — NOT staff RBAC
+
+**One map, consulted everywhere** (owner decision 2026-09-11 — *"I need to start making money from this some how"*). `canAccess(feature, plan)` answers whether a READER may reach a gated capability; `planFor(signedIn)` produces the plan. Plans rank `anonymous` < `free` < `subscriber`, and both the map and the rank **fail closed**: an unknown feature or an unknown plan grants nothing, the same rule `entity-access.ts` applies to membership roles.
+
+⚠️ **Nothing returns `subscriber` yet.** There is no billing — no plan field, no webhook, no checkout — so `planFor` can only answer `anonymous` or `free`, and a test asserts it. The tier exists so features can be *declared* against it now and moved in one edit later. The plan must never be read from a field another domain writes: `identity`/`entity` are written by the gateway's WorkOS webhook and Mongo's validators accept unknown keys, so honouring a `plan` from there would make every writer to those databases an authority on who has paid.
+
+**This is not `roles.ts`.** That answers "is this person platform staff" from the WorkOS org claims and gates `/admin`. This answers "has this reader paid". An admin is not a subscriber and a subscriber is not an admin; `access.test.ts` asserts structurally that neither module imports the other, so an edit that wires them together fails CI rather than quietly turning a paywall into a privilege escalation.
+
+| gated | plan | enforced where |
+| --- | --- | --- |
+| `ai-summary` | `free` | `article-summary.tsx`, client-side |
+| `analytics-console` | `free` | `/analytics` page redirect **+** `requireViewer()` in every action |
+| `analytics-export` | `free` | the export route |
+| `saved-articles` | `free` | account-scoped by the engagement subject |
+| `publisher-dashboard` | `free` | ownership-gated |
+
+**What is deliberately public, and why it must stay so.** Article bodies, the home feed, `/search`, `/discover`, `/categories`, `/sources`, `/topic`, `/author` — these are what search engines index, and for an aggregator that traffic *is* the asset; gating them hides the product from the people who would pay for it. And **`/insights` stays open**: it is the published open-data dashboard this project is partly known for, with a public export endpoint, and a login on it contradicts the claim. `access.test.ts` asserts no gate exists for any of them, so adding one is a deliberate act with a failing test in front of it.
+
+⚠️ **The AI-summary gate is a CONVERSION gate, not a confidentiality one.** It is enforced client-side from `useAuth()`, and the summary text still travels in the article payload — a determined reader can find it in the network tab. That is the deliberate trade: enforcing it server-side means making `getArticleAction` session-aware, which makes the article route dynamic and gives up ISR on the most-visited surface in the app. If the text must genuinely not leave the server, the fix is a separate session-gated action for the summary alone, not dynamic rendering of the whole article.
+
+**The gate teases, it does not vanish.** An anonymous reader sees the card, its heading, and the first sentence faded out under a "Sign in to read the summary" link that returns them to the article. A component that simply disappears converts nobody, because they never learn the feature exists. It stays locked while the session is resolving — the other way round would flash the gated text to every anonymous reader on every load.
+
 **RBAC tiers** (`src/lib/auth/roles.ts`) — `resolveTier(claims)` → `'none' | 'moderator' | 'admin' | 'superadmin'`:
 
 - `superadmin` — WorkOS role `admin` within the platform-team org
