@@ -335,44 +335,13 @@ function Section({
  * Names what is behind the gate rather than teasing vaguely — a reader deciding
  * whether to sign in should know what they get for it.
  */
-function SignInToSeeMore() {
-  return (
-    <div className="mt-8 rounded-2xl border border-outline bg-surface p-8 text-center">
-      <div className="w-14 h-14 bg-container-tanzanite rounded-full flex items-center justify-center mx-auto mb-4">
-        <Lock className="w-7 h-7 text-on-container-tanzanite" aria-hidden="true" />
-      </div>
-      <h2 className="font-serif text-2xl font-bold mb-2">Sign in for the full picture</h2>
-      <p className="text-text-secondary max-w-lg mx-auto mb-6">
-        The corpus figures above are open. Publishing volume over time, the source
-        leaderboard, category and country coverage, sentiment and trending topics — plus
-        the data export and the query console — are available to signed-in accounts.
-      </p>
-      <div className="flex items-center justify-center gap-3">
-        <Link
-          href="/sign-in?returnTo=%2Finsights"
-          className="inline-flex items-center gap-2 px-5 py-2.5 bg-primary text-on-primary font-medium rounded-xl hover:opacity-90 transition-opacity"
-        >
-          Sign in
-        </Link>
-        <Link
-          href="/"
-          className="px-5 py-2.5 bg-surface border border-outline text-foreground font-medium rounded-xl hover:bg-elevated transition-colors"
-        >
-          Back to news
-        </Link>
-      </div>
-    </div>
-  )
-}
 
 export default function InsightsClient({
   summary,
   detail,
-  signedIn,
 }: {
   summary: CorpusSummary
   detail: InsightsBundle | null
-  signedIn: boolean
 }) {
   const volume = detail?.volume
   const leaderboard = detail?.leaderboard ?? []
@@ -513,9 +482,6 @@ export default function InsightsClient({
               />
               <StatTile icon={CalendarRange} label="Latest" value={formatDay(summary.latest)} />
             </div>
-
-            {/* Everything below the summary is signed-in only. */}
-            {!signedIn && <SignInToSeeMore />}
 
             {/* Publishing volume */}
             {volume && volume.total > 0 && (

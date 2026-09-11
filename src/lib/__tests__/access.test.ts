@@ -109,6 +109,52 @@ describe('what is deliberately NOT gated', () => {
   ])('has no gate for %s', (_label, name) => {
     expect(ACCESS).not.toMatch(new RegExp(`['"]${name}['"]\\s*:`))
   })
+
+  /**
+   * The check above is necessary and was NOT sufficient, and the gap cost ten
+   * days of the wrong product.
+   *
+   * `/insights` was gated from 2026-09-01 to 2026-09-11 — anonymous visitors got
+   * the corpus summary and a "Sign in for the full picture" card, and the export
+   * 401'd — while this suite went on passing, because the gate was never in
+   * `access.ts`. It was a direct `isViewerSignedIn()` in the page and a
+   * `requireViewer()` in every action. A test that only reads the access map
+   * cannot see a gate written any other way, so it certified as open a surface
+   * that was closed.
+   *
+   * The owner's reversal — *"open data behind a login is not correct... that is
+   * not to gate free data, but those should not be able to be mined by bots —
+   * have a security layer, it's public data"* — is enforced here at the
+   * surfaces themselves. Abuse is handled by the edge cache and the export's
+   * rate limit; see `app/api/insights/export/route.ts`.
+   */
+  describe('the open-data surfaces, by any mechanism', () => {
+    const SURFACES = [
+      'src/app/insights/page.tsx',
+      'src/app/insights/insights-client.tsx',
+      'src/lib/actions/insights.ts',
+      'src/app/api/insights/export/route.ts',
+    ]
+
+    /** Comments stripped: these files EXPLAIN the withdrawn gate at length. */
+    function code(rel: string): string {
+      return readFileSync(join(process.cwd(), rel), 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, ' ')
+        .replace(/\/\/[^\n]*/g, ' ')
+    }
+
+    it('strips comments but still sees code', () => {
+      const page = code('src/app/insights/page.tsx')
+      expect(page).not.toMatch(/owner/i) // prose, gone
+      expect(page).toMatch(/InsightsPage/) // code, kept
+    })
+
+    it.each(SURFACES)('%s reads no session', (rel) => {
+      expect(code(rel)).not.toMatch(
+        /isViewerSignedIn|requireViewer|withAuth\(|useAuth\(|planFor|canAccess/
+      )
+    })
+  })
 })
 
 /**

@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import InsightsPage from '../page'
@@ -17,15 +20,8 @@ vi.mock('@/components/ui/error-boundary', () => ({
 
 // Pages read via Server Actions — mock the insights action module (Rule 4).
 const mockBundle = vi.fn()
-const mockPublic = vi.fn()
 vi.mock('@/lib/actions/insights', () => ({
   getInsightsBundleAction: () => mockBundle(),
-  getPublicInsightsAction: () => mockPublic(),
-}))
-
-const mockSignedIn = vi.fn()
-vi.mock('@/lib/auth/guard', () => ({
-  isViewerSignedIn: () => mockSignedIn(),
 }))
 
 const bundle: InsightsBundle = {
@@ -51,8 +47,7 @@ const bundle: InsightsBundle = {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  mockSignedIn.mockResolvedValue(true)
-  mockPublic.mockResolvedValue({ summary: bundle.summary, generatedAt: bundle.generatedAt })
+  mockBundle.mockResolvedValue(bundle)
 })
 
 describe('InsightsPage (server component)', () => {
@@ -64,32 +59,35 @@ describe('InsightsPage (server component)', () => {
     expect(mockBundle).toHaveBeenCalledOnce()
   })
 
-  it('renders per request so the response can vary by session', async () => {
-    // Regression guard: this page used ISR (`revalidate = 600`). Now that the
-    // breakdowns are gated, a cached HTML page would serve one visitor's access
-    // level to the next. The 10-minute window moved onto the DATA instead.
-    const mod = await import('../page')
-    expect(mod.dynamic).toBe('force-dynamic')
-    expect((mod as Record<string, unknown>).revalidate).toBeUndefined()
+  /**
+   * The dashboard is OPEN DATA and takes no session input at all (owner
+   * decision 2026-09-11 — *"open data behind a login is not correct"*). It was
+   * split by session between 2026-09-01 and then, with anonymous visitors shown
+   * only the corpus summary under a "Sign in for the full picture" card.
+   *
+   * Asserted structurally rather than by rendering an anonymous visitor,
+   * because the gate that existed was not in `access.ts` — it was a direct
+   * `isViewerSignedIn()` call, which is exactly why `access.test.ts` went on
+   * asserting "no gate for insights" throughout the ten days there was one.
+   */
+  it('reads no session', async () => {
+    const src = readFileSync(join(process.cwd(), 'src/app/insights/page.tsx'), 'utf8')
+    expect(src).not.toMatch(/isViewerSignedIn|requireViewer|withAuth|useAuth/)
   })
 
-  describe('anonymous visitor', () => {
-    beforeEach(() => mockSignedIn.mockResolvedValue(false))
+  it('serves one cached copy to everybody rather than rendering per request', async () => {
+    // The cache IS the anti-mining control: a scraper is answered by the CDN and
+    // never reaches MongoDB. It is only safe while nothing varies by session —
+    // hence the assertion above, which must fail first if that ever changes.
+    const mod = await import('../page')
+    expect(mod.revalidate).toBe(600)
+    expect((mod as Record<string, unknown>).dynamic).toBeUndefined()
+  })
 
-    it('never fetches the gated bundle', async () => {
-      render(await InsightsPage())
-      expect(mockBundle).not.toHaveBeenCalled()
-      expect(mockPublic).toHaveBeenCalledOnce()
-    })
-
-    it('still shows the public corpus summary', async () => {
-      render(await InsightsPage())
-      expect(screen.getByText('1,234')).toBeInTheDocument()
-    })
-
-    it('prompts for sign-in instead of the breakdowns', async () => {
-      render(await InsightsPage())
-      expect(screen.getByText(/Sign in for the full picture/i)).toBeInTheDocument()
-    })
+  it('renders the breakdowns to a visitor with no session', async () => {
+    render(await InsightsPage())
+    expect(screen.getByText('1,234')).toBeInTheDocument()
+    expect(screen.queryByText(/Sign in for the full picture/i)).not.toBeInTheDocument()
+    expect(mockBundle).toHaveBeenCalledOnce()
   })
 })

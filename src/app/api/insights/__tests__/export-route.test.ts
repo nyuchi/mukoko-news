@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { NextRequest } from 'next/server'
 import { GET } from '@/app/api/insights/export/route'
@@ -80,27 +83,65 @@ describe('GET /api/insights/export', () => {
     expect(body).toEqual(bundle)
   })
 
-  it('401s an anonymous caller instead of exporting', async () => {
-    mockSignedIn.mockResolvedValue(false)
+  /**
+   * Open data, served without a session (owner decision 2026-09-11 — *"open
+   * data behind a login is not correct... that is not to gate free data, but
+   * those should not be able to be mined by bots"*).
+   *
+   * The 401 that stood here from 2026-09-01 stopped researchers and answer
+   * engines and did not stop a miner, who can simply sign up.
+   */
+  it('exports to a caller with no session', async () => {
     const res = await GET(makeRequest(nextIp()))
-    expect(res.status).toBe(401)
-    expect(getInsightsBundleAction).not.toHaveBeenCalled()
+    expect(res.status).toBe(200)
+    expect(getInsightsBundleAction).toHaveBeenCalled()
   })
 
-  it('is never stored in a shared cache', async () => {
-    // Regression guard, and the most dangerous line in this change. The route
-    // used to send `public, s-maxage=600`. Now that the response is
-    // session-dependent, a shared cache would let the CDN store a signed-in
-    // caller's payload and serve it to the next ANONYMOUS one — a gate that
-    // leaks is worse than no gate, because it looks closed.
-    for (const signedIn of [true, false]) {
-      mockSignedIn.mockResolvedValue(signedIn)
-      const res = await GET(makeRequest(nextIp()))
-      const cc = res.headers.get('cache-control') ?? ''
-      expect(cc).not.toContain('s-maxage')
-      expect(cc).not.toContain('public')
-      expect(cc).toContain('private')
+  it('reads no session at all', () => {
+    const src = readFileSync(
+      join(process.cwd(), 'src/app/api/insights/export/route.ts'),
+      'utf8'
+    ).replace(/\/\*[\s\S]*?\*\//g, ' ')
+    expect(src).not.toMatch(/isViewerSignedIn|requireViewer|withAuth/)
+  })
+
+  /**
+   * The shared cache IS the anti-mining control: a thousand scraped requests in
+   * ten minutes are answered by the CDN and reach this function at most once, so
+   * bulk extraction costs the platform nothing.
+   *
+   * It is only safe while the response does not vary by session, which is why
+   * the assertion above sits directly before it — a future per-caller field must
+   * fail THAT test first, and take this cache off in the same commit.
+   */
+  it('is shared-cacheable, because there is one payload for every caller', async () => {
+    const res = await GET(makeRequest(nextIp()))
+    const cc = res.headers.get('cache-control') ?? ''
+    expect(cc).toContain('public')
+    expect(cc).toContain('s-maxage=600')
+    expect(cc).toContain('stale-while-revalidate')
+  })
+
+  /**
+   * A 429 is about ONE caller. Stored in a shared cache it would hand a single
+   * abuser's rejection to every reader behind the same CDN node — turning a
+   * rate limit into an outage.
+   */
+  it('never shares a rate-limit rejection', async () => {
+    const ip = nextIp()
+    let rejected: Response | undefined
+    for (let i = 0; i < 40; i++) {
+      const res = await GET(makeRequest(ip))
+      if (res.status === 429) {
+        rejected = res
+        break
+      }
     }
+    expect(rejected).toBeDefined()
+    const cc = rejected!.headers.get('cache-control') ?? ''
+    expect(cc).toContain('no-store')
+    expect(cc).not.toContain('s-maxage')
+    expect(rejected!.headers.get('retry-after')).toBe('60')
   })
 
   it('returns CSV with the three labelled tables when format=csv', async () => {
