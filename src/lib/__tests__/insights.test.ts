@@ -68,16 +68,44 @@ beforeEach(() => {
   vi.mocked(getDb).mockReset()
 })
 
+/**
+ * A `$searchMeta` reply: `count.total` plus one `facet.<name>.buckets` array.
+ * Every panel below now reads this shape rather than a `$group` result, because
+ * the `$group`s all opened with `BASE_MATCH` — whose `$ne` pair no index can
+ * serve — and so read all 65,203 documents. Measured on the live cluster:
+ * 27,529 ms, zero index keys. The panels never rendered.
+ */
+function metaCursor(total: number, facets: Record<string, Array<[string | Date, number]>>) {
+  return cursor([
+    {
+      count: { total },
+      facet: Object.fromEntries(
+        Object.entries(facets).map(([name, buckets]) => [
+          name,
+          { buckets: buckets.map(([_id, count]) => ({ _id, count })) },
+        ])
+      ),
+    },
+  ])
+}
+
 describe('getPublishingVolume', () => {
   it('zero-fills a daily series across the window and sums the total', async () => {
+    const today = new Date()
+    const midnight = new Date(
+      Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate())
+    )
     const articles = coll()
-    articles.aggregate
-      .mockReturnValueOnce(cursor([{ _id: todayKey, count: 5 }])) // day grouping
-      .mockReturnValueOnce(cursor([{ _id: 'src-1', count: 5, name: 'The Herald' }])) // top sources
-    useDb({ articles })
+    articles.aggregate.mockReturnValue(
+      metaCursor(5, { day: [[midnight, 5]], source: [['src-1', 5]] })
+    )
+    const feedSources = coll()
+    feedSources.find.mockReturnValue(findCursor([[{ _id: 'src-1', name: 'The Herald' }]]))
+    useDb({ articles, feedSources })
 
     const result = await getPublishingVolume({ days: 7 })
 
+    expect(result.ok).toBe(true)
     expect(result.days).toBe(7)
     expect(result.series).toHaveLength(7)
     expect(result.total).toBe(5)
@@ -85,20 +113,40 @@ describe('getPublishingVolume', () => {
     expect(result.series[result.series.length - 1]).toEqual({ date: todayKey, count: 5 })
     expect(result.series[0].count).toBe(0)
     expect(result.topSources).toEqual([{ sourceId: 'src-1', name: 'The Herald', count: 5 }])
+    // ONE round trip. A date facet's bucket id is its lower boundary and a
+    // string facet's is the token, so one call carries the daily series and
+    // the top-sources list together.
+    expect(articles.aggregate).toHaveBeenCalledTimes(1)
+  })
+
+  it('counts days with a DATE FACET, not a $group over every document', async () => {
+    const articles = coll()
+    articles.aggregate.mockReturnValue(metaCursor(0, { day: [], source: [] }))
+    useDb({ articles })
+
+    await getPublishingVolume({ days: 7 })
+    const pipeline = articles.aggregate.mock.calls[0][0] as Array<Record<string, unknown>>
+    const meta = pipeline[0].$searchMeta as Record<string, unknown>
+    expect(meta).toBeDefined()
+    expect(JSON.stringify(pipeline)).not.toContain('$ne')
+    // N days needs N+1 boundaries, or the last day is silently dropped.
+    const facets = (meta.facet as { facets: Record<string, { boundaries: unknown[] }> }).facets
+    expect(facets.day.boundaries).toHaveLength(8)
   })
 
   it('clamps an absurd day count and never throws', async () => {
     const articles = coll()
-    articles.aggregate.mockReturnValue(cursor([]))
+    articles.aggregate.mockReturnValue(metaCursor(0, { day: [], source: [] }))
     useDb({ articles })
     const result = await getPublishingVolume({ days: 99999 })
     expect(result.days).toBe(365)
     expect(result.series).toHaveLength(365)
   })
 
-  it('returns an empty-but-typed result when the DB throws', async () => {
+  it('marks a failed read as NOT ok rather than an empty window', async () => {
     vi.mocked(getDb).mockRejectedValue(new Error('atlas down'))
     const result = await getPublishingVolume({ days: 30 })
+    expect(result.ok).toBe(false)
     expect(result.total).toBe(0)
     expect(result.series).toEqual([])
     expect(result.topSources).toEqual([])
@@ -106,33 +154,25 @@ describe('getPublishingVolume', () => {
 })
 
 describe('getSourceLeaderboard', () => {
-  it('maps grouped rows, joins names/orgs and resolves verification', async () => {
+  it('ranks by facet count and names sources from the small collections', async () => {
     const articles = coll()
     articles.aggregate.mockReturnValue(
-      cursor([
-        {
-          _id: 'src-1',
-          articleCount: 120,
-          avgQualityScore: 0.8123,
-          avgWordCount: 640.6,
-          countries: ['ZW', 'ZA', null, ''],
-          lastPublished: new Date('2026-06-01T00:00:00Z'),
-          source: [{ name: 'The Herald', mediaOrganizationId: 'org-1', countryCode: 'ZW' }],
-          org: [{ name: 'Zimpapers', verified: true }],
-        },
-        {
-          _id: 'src-2',
-          articleCount: 40,
-          avgQualityScore: null,
-          avgWordCount: null,
-          countries: [],
-          lastPublished: null,
-          source: [{ name: 'Nameless', countryCode: 'KE' }],
-          org: [],
-        },
+      metaCursor(160, { source: [['src-1', 120], ['src-2', 40]] })
+    )
+    const feedSources = coll()
+    feedSources.find.mockReturnValue(
+      findCursor([
+        [
+          { _id: 'src-1', name: 'The Herald', mediaOrganizationId: 'org-1', countryCode: 'ZW' },
+          { _id: 'src-2', name: 'Nameless', countryCode: 'KE' },
+        ],
       ])
     )
-    useDb({ articles })
+    const newsMediaOrganizations = coll()
+    newsMediaOrganizations.find.mockReturnValue(
+      findCursor([[{ _id: 'org-1', name: 'Zimpapers', verified: true }]])
+    )
+    useDb({ articles, feedSources, newsMediaOrganizations })
 
     const rows = await getSourceLeaderboard({ limit: 10 })
 
@@ -142,20 +182,34 @@ describe('getSourceLeaderboard', () => {
       organization: 'Zimpapers',
       verified: true,
       articleCount: 120,
-      avgQualityScore: 0.812,
-      avgWordCount: 641,
-      countries: ['ZA', 'ZW'],
-      lastPublished: '2026-06-01T00:00:00.000Z',
+      countries: ['ZW'],
     })
-    // Falls back to the source country code when article-level codes are absent.
-    expect(rows[1]).toMatchObject({
-      name: 'Nameless',
-      verified: false,
-      avgQualityScore: 0,
-      avgWordCount: 0,
-      countries: ['KE'],
-      lastPublished: null,
-    })
+    expect(rows[1]).toMatchObject({ name: 'Nameless', verified: false, countries: ['KE'] })
+  })
+
+  it('does not claim averages a facet cannot compute', async () => {
+    // A facet counts documents per value; it cannot average a field across
+    // them, and averaging means the collection scan this panel was rewritten
+    // to escape. `0` would render as "this newsroom scores zero on quality"
+    // and "articles of zero words" — claims about a real publisher.
+    const articles = coll()
+    articles.aggregate.mockReturnValue(metaCursor(120, { source: [['src-1', 120]] }))
+    useDb({ articles })
+
+    const rows = await getSourceLeaderboard({ limit: 5 })
+    expect(rows[0].avgQualityScore).toBeNull()
+    expect(rows[0].avgWordCount).toBeNull()
+    expect(rows[0].lastPublished).toBeNull()
+  })
+
+  it('still names a source it cannot resolve', async () => {
+    // A source missing from `feedSources` still published the articles; the id
+    // is a worse label than a name and a better one than nothing.
+    const articles = coll()
+    articles.aggregate.mockReturnValue(metaCursor(3, { source: [['src-orphan', 3]] }))
+    useDb({ articles })
+    const rows = await getSourceLeaderboard({ limit: 5 })
+    expect(rows[0]).toMatchObject({ sourceId: 'src-orphan', name: 'src-orphan', articleCount: 3 })
   })
 
   it('returns [] when the DB throws', async () => {
@@ -168,34 +222,55 @@ describe('getCategoryDistribution', () => {
   it('computes per-slug counts, shares and top-N coverage', async () => {
     const articles = coll()
     articles.aggregate.mockReturnValue(
-      cursor([
-        {
-          top: [
-            { _id: 'politics', count: 60 },
-            { _id: 'business', count: 40 },
-          ],
-          totals: [{ total: 200 }],
-        },
-      ])
+      metaCursor(150, {
+        category: [['politics', 60], ['business', 40], ['sport', 100]],
+      })
     )
     useDb({ articles })
 
     const result = await getCategoryDistribution()
+    expect(result.ok).toBe(true)
+    // Every bucket comes back, so this is the true total rather than the sum
+    // of a truncated head. Measured on the live corpus the field carries 52
+    // distinct values — the platform's 40 interest categories mixed with the
+    // 17-slug vocabulary the pipeline used before them — which is why the
+    // request asks for 200 rather than the 50 a "closed set of 40" implies.
     expect(result.totalAssignments).toBe(200)
-    expect(result.categories).toEqual([
-      { slug: 'politics', count: 60, share: 30 },
-      { slug: 'business', count: 40, share: 20 },
-    ])
-    // Top slugs cover (60+40)/200 = 50%.
-    expect(result.coverage).toBe(50)
+    expect(result.categories[0]).toEqual({ slug: 'sport', count: 100, share: 50 })
+    expect(result.coverage).toBe(100)
   })
 
-  it('returns the empty shape when there are no assignments', async () => {
+  it('reads the interest categories, which only the insights index maps', async () => {
     const articles = coll()
-    articles.aggregate.mockReturnValue(cursor([{ top: [], totals: [] }]))
+    articles.aggregate.mockReturnValue(metaCursor(0, { category: [] }))
     useDb({ articles })
-    const result = await getCategoryDistribution()
-    expect(result).toEqual({ totalAssignments: 0, coverage: 0, categories: [] })
+
+    await getCategoryDistribution()
+    const meta = (articles.aggregate.mock.calls[0][0] as Array<Record<string, unknown>>)[0]
+      .$searchMeta as Record<string, unknown>
+    expect(meta.index).toBe('articles_insights')
+    const facets = (meta.facet as {
+      facets: Record<string, { path: string; numBuckets: number }>
+    }).facets
+    expect(facets.category.path).toBe('engagement.interest_categories')
+    // 52 distinct values live; a tight bucket list truncates the tail AND
+    // understates the total every share is computed against.
+    expect(facets.category.numBuckets).toBeGreaterThanOrEqual(60)
+  })
+
+  it('distinguishes an empty corpus from a failed read', async () => {
+    const articles = coll()
+    articles.aggregate.mockReturnValue(metaCursor(0, { category: [] }))
+    useDb({ articles })
+    expect(await getCategoryDistribution()).toEqual({
+      ok: true,
+      totalAssignments: 0,
+      coverage: 0,
+      categories: [],
+    })
+
+    vi.mocked(getDb).mockRejectedValue(new Error('down'))
+    expect((await getCategoryDistribution()).ok).toBe(false)
   })
 })
 
@@ -258,32 +333,39 @@ describe('getCountryCoverage', () => {
 })
 
 describe('getSentimentBreakdown', () => {
-  it('reports per-sentiment counts and corpus coverage', async () => {
+  it('reports per-sentiment counts and corpus coverage from ONE round trip', async () => {
+    // The facet gives the labels and `count: {type:'total'}` gives the
+    // denominator, so coverage does not cost a second `countDocuments` — which
+    // on this corpus was itself a full scan.
     const articles = coll()
     articles.aggregate.mockReturnValue(
-      cursor([
-        { _id: 'positive', count: 30 },
-        { _id: 'neutral', count: 50 },
-        { _id: 'negative', count: 20 },
-      ])
+      metaCursor(400, {
+        sentiment: [['positive', 30], ['neutral', 50], ['negative', 20]],
+      })
     )
-    articles.countDocuments.mockResolvedValue(400) // whole corpus
     useDb({ articles })
 
     const result = await getSentimentBreakdown()
+    expect(result.ok).toBe(true)
     expect(result.total).toBe(100)
-    // 100 enriched-with-sentiment out of 400 total = 25% coverage.
+    // 100 labelled out of 400 in the corpus = 25% coverage.
     expect(result.coverage).toBe(25)
-    expect(result.breakdown[0]).toEqual({ sentiment: 'positive', count: 30, share: 30 })
+    expect(result.breakdown[0]).toEqual({ sentiment: 'neutral', count: 50, share: 50 })
   })
 
-  it('returns the empty shape when nothing is enriched', async () => {
+  it('distinguishes an unlabelled corpus from a failed read', async () => {
     const articles = coll()
-    articles.aggregate.mockReturnValue(cursor([]))
-    articles.countDocuments.mockResolvedValue(400)
+    articles.aggregate.mockReturnValue(metaCursor(400, { sentiment: [] }))
     useDb({ articles })
-    const result = await getSentimentBreakdown()
-    expect(result).toEqual({ total: 0, coverage: 0, breakdown: [] })
+    expect(await getSentimentBreakdown()).toEqual({
+      ok: true,
+      total: 0,
+      coverage: 0,
+      breakdown: [],
+    })
+
+    vi.mocked(getDb).mockRejectedValue(new Error('down'))
+    expect((await getSentimentBreakdown()).ok).toBe(false)
   })
 })
 
@@ -382,10 +464,7 @@ describe('getTopTopics', () => {
   it('returns tag counts and clamps the limit', async () => {
     const articles = coll()
     articles.aggregate.mockReturnValue(
-      cursor([
-        { _id: 'elections', count: 12 },
-        { _id: 'load-shedding', count: 8 },
-      ])
+      metaCursor(20, { topic: [['elections', 12], ['load-shedding', 8]] })
     )
     useDb({ articles })
     const result = await getTopTopics({ limit: 5 })
@@ -393,6 +472,29 @@ describe('getTopTopics', () => {
       { tag: 'elections', count: 12 },
       { tag: 'load-shedding', count: 8 },
     ])
+  })
+
+  it('OVER-fetches, because the stopword filter runs after the counts', async () => {
+    // "news", "featured" and the rest are frequent enough to fill a tight
+    // bucket list on their own and leave the panel short of real subjects.
+    const articles = coll()
+    articles.aggregate.mockReturnValue(metaCursor(0, { topic: [] }))
+    useDb({ articles })
+
+    await getTopTopics({ limit: 10 })
+    const meta = (articles.aggregate.mock.calls[0][0] as Array<Record<string, unknown>>)[0]
+      .$searchMeta as Record<string, unknown>
+    const facets = (meta.facet as { facets: Record<string, { numBuckets: number }> }).facets
+    expect(facets.topic.numBuckets).toBeGreaterThanOrEqual(60)
+  })
+
+  it('drops the boilerplate that would otherwise top the list', async () => {
+    const articles = coll()
+    articles.aggregate.mockReturnValue(
+      metaCursor(100, { topic: [['news', 90], ['featured', 80], ['elections', 12]] })
+    )
+    useDb({ articles })
+    expect(await getTopTopics({ limit: 5 })).toEqual([{ tag: 'elections', count: 12 }])
   })
 
   it('returns [] when the DB throws', async () => {

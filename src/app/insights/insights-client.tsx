@@ -180,7 +180,11 @@ function VolumeChart({ series }: { series: InsightsBundle['volume']['series'] })
 // ---------------------------------------------------------------------------
 
 type LeaderRow = InsightsBundle['leaderboard'][number]
-type SortKey = 'name' | 'articleCount' | 'avgQualityScore' | 'avgWordCount' | 'countries' | 'lastPublished'
+// Only the three columns the table renders. The removed keys sorted on
+// `avgQualityScore` / `avgWordCount` / `lastPublished`, which are now null for
+// every row — a sort control over a column of nulls is a button that does
+// nothing, which is the same defect as a setting that says Off and is not off.
+type SortKey = 'name' | 'articleCount' | 'countries'
 
 function SourceLeaderboard({ rows }: { rows: LeaderRow[] }) {
   const [sortKey, setSortKey] = useState<SortKey>('articleCount')
@@ -195,13 +199,10 @@ function SourceLeaderboard({ rows }: { rows: LeaderRow[] }) {
           cmp = a.name.localeCompare(b.name)
           break
         case 'countries':
-          cmp = a.countries.length - b.countries.length
-          break
-        case 'lastPublished':
-          cmp = (a.lastPublished ?? '').localeCompare(b.lastPublished ?? '')
+          cmp = (a.countries[0] ?? '').localeCompare(b.countries[0] ?? '')
           break
         default:
-          cmp = (a[sortKey] as number) - (b[sortKey] as number)
+          cmp = a.articleCount - b.articleCount
       }
       return asc ? cmp : -cmp
     })
@@ -238,12 +239,17 @@ function SourceLeaderboard({ rows }: { rows: LeaderRow[] }) {
       <table className="w-full text-sm border-collapse">
         <thead className="bg-elevated/40">
           <tr>
+            {/* Avg quality, avg words and last-published are GONE rather than
+                rendered as a permanent "—". An Atlas Search facet counts
+                documents per value; it cannot average a field across them, and
+                averaging means the collection scan this panel was rewritten to
+                escape. A column that can never hold a value is noise, and a
+                dash in every row of it reads as missing data rather than as a
+                capability we do not have. They come back when `qualityScore`
+                and `wordCount` are rolled up upstream. */}
             {header('name', 'Source')}
             {header('articleCount', 'Articles', 'text-right')}
-            {header('avgQualityScore', 'Avg quality', 'text-right')}
-            {header('avgWordCount', 'Avg words', 'text-right')}
-            {header('countries', 'Countries', 'text-right')}
-            {header('lastPublished', 'Last published', 'text-right')}
+            {header('countries', 'Country', 'text-right')}
           </tr>
         </thead>
         <tbody>
@@ -271,16 +277,7 @@ function SourceLeaderboard({ rows }: { rows: LeaderRow[] }) {
                 {formatNumber(r.articleCount)}
               </td>
               <td className="px-3 py-2 text-right font-mono text-text-secondary">
-                {r.avgQualityScore > 0 ? r.avgQualityScore.toFixed(2) : '—'}
-              </td>
-              <td className="px-3 py-2 text-right font-mono text-text-secondary">
-                {r.avgWordCount > 0 ? formatNumber(r.avgWordCount) : '—'}
-              </td>
-              <td className="px-3 py-2 text-right font-mono text-text-secondary">
                 {r.countries.length > 0 ? r.countries.join(', ') : '—'}
-              </td>
-              <td className="px-3 py-2 text-right text-text-secondary whitespace-nowrap">
-                {formatDay(r.lastPublished)}
               </td>
             </tr>
           ))}
