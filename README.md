@@ -4,11 +4,11 @@
 
 **Pan-African news, in one place.**
 
-"Mukoko" means *beehive* in Shona — where the community gathers and stores knowledge.
+"Mukoko" means _beehive_ in Shona — where the community gathers and stores knowledge.
 Mukoko News aggregates hundreds of African newsrooms into one feed, so a reader in Harare
 can follow Lagos, Nairobi and Dakar without opening twenty tabs.
 
-All **54** African Union member states are in scope. How many are *live* is a number the
+All **54** African Union member states are in scope. How many are _live_ is a number the
 app measures rather than asserts — see [Coverage](#coverage).
 
 [**Read the news →**](https://news.mukoko.com) &nbsp;·&nbsp;
@@ -45,11 +45,11 @@ app measures rather than asserts — see [Coverage](#coverage).
 
 This repository is the **Next.js 15 frontend** for Mukoko News, deployed on Vercel. It is one part of a three-repo platform:
 
-| Repo | Role |
-|---|---|
-| **`nyuchi/mukoko-news`** (this repo) | Web frontend — Next.js 15, Vercel |
-| `nyuchi/mukoko-news-gateway` | Public API + MCP server — Cloudflare Workers |
-| `nyuchi/mukoko-news-pipeline` | Data pipeline — Fly.io + Cloudflare |
+| Repo                                 | Role                                         |
+| ------------------------------------ | -------------------------------------------- |
+| **`nyuchi/mukoko-news`** (this repo) | Web frontend — Next.js 15, Vercel            |
+| `nyuchi/mukoko-news-gateway`         | Public API + MCP server — Cloudflare Workers |
+| `nyuchi/mukoko-news-pipeline`        | Data pipeline — Fly.io + Cloudflare          |
 
 The frontend reads news data directly from MongoDB Atlas via Next.js Server Actions.
 
@@ -72,7 +72,7 @@ The frontend reads news data directly from MongoDB Atlas via Next.js Server Acti
 
 ## Coverage
 
-**All 54 African Union member states are in scope. The number that is *live* is a query, not a constant.**
+**All 54 African Union member states are in scope. The number that is _live_ is a query, not a constant.**
 
 `getLiveCoverageAction()` counts the countries that actually cleared the publishing bar in
 the last 30 days, and `coverageFragment(n)` / `coverageClaim(n)` in `src/lib/constants.ts`
@@ -131,17 +131,17 @@ pnpm test:coverage    # with coverage report
 
 ## Tech stack
 
-| Layer | Technology |
-|---|---|
-| Framework | Next.js 15, App Router, React 19 |
-| Styling | Tailwind CSS 4, CSS variables |
+| Layer      | Technology                       |
+| ---------- | -------------------------------- |
+| Framework  | Next.js 15, App Router, React 19 |
+| Styling    | Tailwind CSS 4, CSS variables    |
 | Components | Radix UI (accessible primitives) |
-| Icons | Lucide React |
-| Theme | next-themes |
-| Auth | WorkOS AuthKit |
-| Data | MongoDB Atlas via Server Actions |
-| Tests | Vitest, React Testing Library |
-| Deploy | Vercel |
+| Icons      | Lucide React                     |
+| Theme      | next-themes                      |
+| Auth       | WorkOS AuthKit                   |
+| Data       | MongoDB Atlas via Server Actions |
+| Tests      | Vitest, React Testing Library    |
+| Deploy     | Vercel                           |
 
 ### Design system
 
@@ -153,12 +153,12 @@ shipping.
 
 Seven **African Minerals** carry the brand; these four are the ones you meet first:
 
-| Role | Light | Dark | Mineral |
-|---|---|---|---|
-| `--primary` | `#4B0082` | `#B388FF` | Tanzanite |
-| `--secondary` | `#0047AB` | `#00B0FF` | Cobalt |
-| `--success` | `#004D40` | `#64FFDA` | Malachite |
-| `--surface` | `#EEEEEC` | `#131211` | *(Mzizi `surface` — a background step, not a mineral)* |
+| Role          | Light     | Dark      | Mineral                                                |
+| ------------- | --------- | --------- | ------------------------------------------------------ |
+| `--primary`   | `#4B0082` | `#B388FF` | Tanzanite                                              |
+| `--secondary` | `#0047AB` | `#00B0FF` | Cobalt                                                 |
+| `--success`   | `#004D40` | `#64FFDA` | Malachite                                              |
+| `--surface`   | `#EEEEEC` | `#131211` | _(Mzizi `surface` — a background step, not a mineral)_ |
 
 Fonts: **Noto Serif** (display/headings), **Noto Sans** (UI/body), **JetBrains Mono**
 (data and labels) — self-hosted via `next/font`.
@@ -225,7 +225,7 @@ public/
 
 ## Security
 
-We take security seriously. Report vulnerabilities by email to **security@nyuchi.com** — please do not open a public GitHub issue. See [SECURITY.md](SECURITY.md) for details.
+We take security seriously. Report vulnerabilities by email to **<security@nyuchi.com>** — please do not open a public GitHub issue. See [SECURITY.md](SECURITY.md) for details.
 
 ---
 

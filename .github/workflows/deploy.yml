@@ -2,7 +2,7 @@ name: Test & Deploy Mukoko News
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   # No `branches:` filter on pull_request, deliberately. Filtering to `main`
   # meant a PR based on ANOTHER PR never ran test or build — measured on this
   # repo, three stacked PRs sat at two checks each (claude-review and a Vercel
@@ -44,92 +44,15 @@ permissions:
   actions: read
 
 jobs:
-  # ── Repo hygiene linters (file/format checks) ──────────────────────────────
-  # These five matrix entries are the branch-protection required checks
-  # (lint / actionlint, lint / JSON validity, lint / prettier, …). Keep their
-  # names stable so the org ruleset keeps matching them.
-  lint:
-    runs-on: ubuntu-latest
-    name: lint / ${{ matrix.check }}
-    strategy:
-      fail-fast: false
-      matrix:
-        check: [actionlint, "JSON validity", prettier, markdownlint, yamllint]
-
-    steps:
-    # Reports this check to Vercel as a named commit status.
-    #
-    # MUST be the first step. The action registers a `post` hook, and the hook is
-    # what actually reports the outcome: it scans this job's steps for a failure
-    # once they have all run. A step that is never reached never registers its
-    # post hook, so placing this at the end would report nothing in exactly the
-    # case that matters — a failing check.
-    #
-    # KNOWN LIMIT on `pull_request` runs: the action takes the commit from
-    # GITHUB_SHA, which on that event is the ephemeral merge commit
-    # (refs/pull/N/merge) rather than the PR head, so the status lands on a
-    # commit GitHub does not display. Measured twice — run 34425929192 wrote to
-    # 18e10b1 for head 92b65cf, run 34426047263 to 76b1e4b for head f5e08ad.
-    # It cannot be redirected: the action exposes no `sha` input, and GitHub
-    # documents that "you can't overwrite the value of the default environment
-    # variables named GITHUB_* and RUNNER_*", so setting GITHUB_SHA here is
-    # silently ignored (tried; it is why that second measurement exists).
-    # Push runs are unaffected — there GITHUB_SHA is the real commit.
-    - name: Notify Vercel
-      uses: vercel/repository-dispatch/actions/status@v1
-      with:
-        name: 'Vercel - mukoko-news: lint / ${{ matrix.check }}'
-
-    - uses: actions/checkout@v4
-
-    - name: Run actionlint
-      if: matrix.check == 'actionlint'
-      uses: raven-actions/actionlint@v2
-
-    - name: Validate JSON files
-      if: matrix.check == 'JSON validity'
-      run: |
-        # `-type f` is load-bearing, not tidiness. Next's App Router names a
-        # route directory after the path it serves, so serving
-        # /.well-known/mcp/server-card.json requires a DIRECTORY called
-        # `server-card.json`. Without -type f, `find` hands that directory to
-        # json.tool, which reports "Is a directory" and fails the whole check —
-        # a valid route breaking a lint job that has nothing to say about it.
-        find . \
-          -type f \
-          -name "*.json" \
-          -not -path "*/node_modules/*" \
-          -not -path "*/.git/*" \
-          -not -path "*/.next/*" \
-          -not -path "*/.wrangler/*" \
-          -not -path "*/.venv/*" \
-          -not -path "*/dist/*" \
-          | while read -r f; do
-              python3 -m json.tool "$f" > /dev/null || { echo "Invalid JSON: $f"; exit 1; }
-            done
-
-    - name: Setup Node.js
-      if: matrix.check == 'prettier'
-      uses: actions/setup-node@v4
-      with:
-        node-version: ${{ env.NODE_VERSION }}
-    - name: Run prettier
-      if: matrix.check == 'prettier'
-      run: |
-        npm install --no-save prettier@3
-        npx prettier --check "**/*.json"
-
-    - name: Run markdownlint
-      if: matrix.check == 'markdownlint'
-      uses: DavidAnson/markdownlint-cli2-action@v16
-      with:
-        globs: "**/*.md"
-
-    - name: Run yamllint
-      if: matrix.check == 'yamllint'
-      run: |
-        pip install yamllint
-        yamllint -c .yamllint.yml .
+  # ── Repo hygiene linters ───────────────────────────────────────────────────
+  # REMOVED. The five `lint / *` required checks were hand-rolled here as a
+  # matrix whose job name was forced to `lint / ${{ matrix.check }}`. They now
+  # come from .github/workflows/lint.yml, which calls the org reusable
+  # nyuchi/.github/.github/workflows/reusable-lint.yml — one definition for the
+  # whole org, with pinned tool versions. The context names are identical, so
+  # the org ruleset keeps matching; the checks behind them are strictly
+  # stronger (prettier covered only "**/*.json" here, and markdownlint used a
+  # floating action).
 
   # ── Frontend pipeline ──────────────────────────────────────────────────────
   # These four ran chained — ESLint -> Typecheck -> Test -> Build, each `needs:`

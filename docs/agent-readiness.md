@@ -7,15 +7,15 @@ for whoever manages the `mukoko.com` zone.
 
 ## Shipped in code (this repo)
 
-| Capability | Where | URL |
-| --- | --- | --- |
-| **MCP Server Card** (SEP-1649) | `public/.well-known/mcp/server-card.json` (static) | `/.well-known/mcp/server-card.json` |
+| Capability                                         | Where                                                     | URL                                       |
+| -------------------------------------------------- | --------------------------------------------------------- | ----------------------------------------- |
+| **MCP Server Card** (SEP-1649)                     | `public/.well-known/mcp/server-card.json` (static)        | `/.well-known/mcp/server-card.json`       |
 | **OAuth Authorization Server Metadata** (RFC 8414) | `src/app/.well-known/oauth-authorization-server/route.ts` | `/.well-known/oauth-authorization-server` |
-| **OAuth Protected Resource Metadata** (RFC 9728) | `src/app/.well-known/oauth-protected-resource/route.ts` | `/.well-known/oauth-protected-resource` |
-| **auth.md** (agent auth guide) | `src/app/auth.md/route.ts` | `/auth.md` |
-| **Markdown for Agents** (`Accept: text/markdown`) | `src/middleware.ts` + `src/app/api/agent-md/route.ts` | `/` and `/article/[id]` |
-| **WebMCP** (in-browser tools) | `src/components/agent/webmcp-provider.tsx` | any page (`navigator.modelContext`) |
-| Pointers | `public/llms.txt` | `/llms.txt` |
+| **OAuth Protected Resource Metadata** (RFC 9728)   | `src/app/.well-known/oauth-protected-resource/route.ts`   | `/.well-known/oauth-protected-resource`   |
+| **auth.md** (agent auth guide)                     | `src/app/auth.md/route.ts`                                | `/auth.md`                                |
+| **Markdown for Agents** (`Accept: text/markdown`)  | `src/middleware.ts` + `src/app/api/agent-md/route.ts`     | `/` and `/article/[id]`                   |
+| **WebMCP** (in-browser tools)                      | `src/components/agent/webmcp-provider.tsx`                | any page (`navigator.modelContext`)       |
+| Pointers                                           | `public/llms.txt`                                         | `/llms.txt`                               |
 
 Shared values (MCP endpoint, WorkOS issuer, client id) live in
 `src/lib/agent-discovery.ts` and mirror what the **gateway**
@@ -27,14 +27,14 @@ gateway's OAuth/MCP config changes.
 - **Markdown for Agents is implemented in middleware**, not via Cloudflare's
   automatic feature — `news.mukoko.com` is served by **Vercel**, so the
   Cloudflare "Markdown for Agents" toggle does not apply. The middleware rewrites
-  `GET` requests carrying `Accept: text/markdown` (and *not* `text/html`) to a
+  `GET` requests carrying `Accept: text/markdown` (and _not_ `text/html`) to a
   responder that returns `text/markdown` + `x-markdown-tokens`; browsers keep the
   HTML page (`Vary: Accept`).
 - **auth.md is honest about registration.** The platform does **not** run open
   Dynamic Client Registration, so we advertise the fixed **public MCP client id**
   with the authorization-code/PKCE flow rather than a `register_uri` that would 404.
 - **OIDC discovery**: we publish `oauth-authorization-server` (RFC 8414), which
-  the audit accepts in lieu of `openid-configuration`. We deliberately do *not*
+  the audit accepts in lieu of `openid-configuration`. We deliberately do _not_
   publish an `openid-configuration` we can't fully back (e.g. a guessed
   `userinfo_endpoint`).
 
@@ -69,12 +69,12 @@ so the chain of trust is completed by adding the **DS record at GoDaddy** — it
 
 Add at **GoDaddy → mukoko.com → DNSSEC**:
 
-| Field | Value |
-| --- | --- |
-| Key Tag | `2371` |
-| Algorithm | `13` (ECDSA P-256 SHA-256) |
-| Digest Type | `2` (SHA-256) |
-| Digest | `06DF6D2D55147420459DB2E0FEC64F911A8E43E9D0105C059FDD06D83FFC6867` |
+| Field       | Value                                                              |
+| ----------- | ------------------------------------------------------------------ |
+| Key Tag     | `2371`                                                             |
+| Algorithm   | `13` (ECDSA P-256 SHA-256)                                         |
+| Digest Type | `2` (SHA-256)                                                      |
+| Digest      | `06DF6D2D55147420459DB2E0FEC64F911A8E43E9D0105C059FDD06D83FFC6867` |
 
 Once GoDaddy publishes the DS, the `.com` parent gets it, RDAP
 `secureDNS.delegationSigned` flips to `true`, and Cloudflare's DNSSEC status goes

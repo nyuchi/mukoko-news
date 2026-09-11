@@ -16,14 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Mzizi density system adopted** (`globals.css`): the prime-scale **touch targets** (`--touch-*`: 47px primary / 43px inputs / 37px dense / 31px chips / 56px hero-only), the **icon scale** (`--icon-*`), and density scopes — `comfortable` is the default; `/admin` and `/dashboard` opt into `compact` via `data-density`, which cascades through `--density-touch` and the card/input radii with no per-component changes. Button sizes now ride the touch tokens.
 - **Durable rate limiting.** `checkRateLimit` is now async and enforces a **global** fixed window via the Upstash Redis REST API when `UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN` are set (no SDK dependency, 1.5s timeout, fails OPEN to the in-memory limiter). Without them, behaviour is unchanged (per-instance in-memory window).
 
+- **AuthKit initiate-login endpoint** `GET /auth/login` (`src/app/auth/login/route.ts`) — the WorkOS application's `initiateLoginUri` points here; redirects into a fresh hosted sign-in (used by IdP-initiated flows and hosted-page restarts). Previously 404'd.
+
 ### Changed
 
 - **Sign-in is the WorkOS-HOSTED AuthKit page (owner correction 2026-07-09 — supersedes the 2026-07-02 inline-form doctrine).** Every sign-in entry point (`/sign-in`, `/admin`, `/dashboard`, `/profile`, the publisher claim form) now funnels through `/sign-in` → `/auth/login` → the hosted page. The hosted page owns the whole flow — Magic Auth, passwords, passkeys, and the environment-required **MFA step-up** — and maintains the shared AuthKit session on the auth domain, giving **continuous sign-in across the Mukoko/Nyuchi apps** (all AuthKit applications in one WorkOS environment). See `auth.md`.
 - `/sign-in` renders a manual-retry error card when the OAuth callback fails (no auto-redirect loop); already-signed-in users still skip straight to `returnTo`.
-
-### Added
-
-- **AuthKit initiate-login endpoint** `GET /auth/login` (`src/app/auth/login/route.ts`) — the WorkOS application's `initiateLoginUri` points here; redirects into a fresh hosted sign-in (used by IdP-initiated flows and hosted-page restarts). Previously 404'd.
 
 ### Fixed
 
@@ -238,14 +236,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Version History
 
-| Version | Date | Summary |
-| --- | --- | --- |
-| [5.1.0] | 2026-06-21 | Three-repo split — frontend only |
+| Version | Date       | Summary                                     |
+| ------- | ---------- | ------------------------------------------- |
+| [5.1.0] | 2026-06-21 | Three-repo split — frontend only            |
 | [5.0.0] | 2026-06-15 | newsdata.io ingestion, MCP v2, Sources page |
-| [4.0.2] | 2026-01-24 | Schema.org SEO, mobile nav, XSS fixes |
-| [4.0.1] | 2025-12-31 | Keywords API, TikTok desktop layout |
-| [4.0.0] | 2025-12-31 | Next.js migration |
-| [0.1.0] | 2025-12-20 | Initial release (React Native Expo) |
+| [4.0.2] | 2026-01-24 | Schema.org SEO, mobile nav, XSS fixes       |
+| [4.0.1] | 2025-12-31 | Keywords API, TikTok desktop layout         |
+| [4.0.0] | 2025-12-31 | Next.js migration                           |
+| [0.1.0] | 2025-12-20 | Initial release (React Native Expo)         |
 
 ## Links
 

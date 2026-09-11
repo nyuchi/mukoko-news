@@ -39,12 +39,12 @@ Any new admin/privileged surface must perform its own server-side `withAuth()` +
 
 `resolveTier(claims)` → `'none' | 'moderator' | 'admin' | 'superadmin'`:
 
-| Tier | Condition |
-|---|---|
-| `superadmin` | WorkOS role `admin` **within** the platform-team org |
-| `admin` (staff) | any member of the platform-team org |
-| `moderator` | within platform-team org, role `moderator`/`support` **or** the `mukoko:news-moderator` permission |
-| `none` | everyone else |
+| Tier            | Condition                                                                                          |
+| --------------- | -------------------------------------------------------------------------------------------------- |
+| `superadmin`    | WorkOS role `admin` **within** the platform-team org                                               |
+| `admin` (staff) | any member of the platform-team org                                                                |
+| `moderator`     | within platform-team org, role `moderator`/`support` **or** the `mukoko:news-moderator` permission |
+| `none`          | everyone else                                                                                      |
 
 `canAccessAdmin(tier)` allows moderator and above.
 
@@ -54,10 +54,10 @@ Any new admin/privileged surface must perform its own server-side `withAuth()` +
 
 There are **two** authorization systems here and they must not meet.
 
-| | source of truth | grants | gate |
-|---|---|---|---|
-| **Platform tiers** | the verified WorkOS access token | `/admin`, moderation | `src/lib/auth/roles.ts` |
-| **Entity capabilities** | `entity.memberships` in MongoDB | actions on **one** entity | `src/lib/auth/entity-access.ts` |
+|                         | source of truth                  | grants                    | gate                            |
+| ----------------------- | -------------------------------- | ------------------------- | ------------------------------- |
+| **Platform tiers**      | the verified WorkOS access token | `/admin`, moderation      | `src/lib/auth/roles.ts`         |
+| **Entity capabilities** | `entity.memberships` in MongoDB  | actions on **one** entity | `src/lib/auth/entity-access.ts` |
 
 `getMyEntityAccess()` / `getEntityAccess(entityId)` / `requireEntityCapability(entityId, cap)` resolve a membership into `entity:read`, `entity:manage` or `entity:members`, scoped to the entity named in the call. `requireEntityCapability` throws `ForbiddenError`.
 
