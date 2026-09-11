@@ -821,26 +821,36 @@ textarea {
 }
 
 .minerals-stripe {
-  /* RIGHT edge, not left (owner direction 2026-09-11 — *"it needs to be on the
-     page border not the site border; right now it's left of the sidebar, it
-     will look better on the right"*).
+  /* LEFT edge, 3px (owner direction 2026-09-11, superseding the 8px right-hand
+     placement of an hour earlier).
      ------------------------------------------------------------------------
-     On the left it ran down the SHELL's edge, which is where the sidebar
-     lives: docked, the stripe sat outside the panel and the page it belongs
-     to was two columns away, so it read as a bar stuck to the browser rather
-     than as the page's own edge. The right-hand edge has no chrome on it at
-     any width, so the stripe is always the page's border — and it stays clear
-     of the sidebar toggle, the panel and the push transform.
+     Both directions are satisfiable together, and the earlier reading of them
+     was the mistake. The objection to the left edge was never the side: it was
+     that the stripe ran down the SHELL's edge, which is where the sidebar
+     lives, so docked it sat outside the panel with the page it belongs to two
+     columns away — *"it needs to be on the page border not the site border"*.
+     Moving it to the right dodged the sidebar rather than answering that.
 
-     8px rather than 4: at 4 the seven bands were a hairline nobody could
-     resolve into colours, which is the whole point of showing the palette. */
+     So it is back on the left and it tracks the PAGE's left edge: it rides
+     inside `.app-shell`, and docked it is offset by `--sidebar-width` through
+     the same `data-sidebar` rule the shell inset and the island use. Below
+     `lg` the shell translates and the stripe is carried with it, because a
+     `position: fixed` child of a transformed ancestor is contained by that
+     ancestor — the arrangement the island already relies on. Closed, the
+     transform is `none`, nothing contains it, and it sits on the viewport's
+     left edge, which is also the page's.
+
+     That containment is also what keeps it off the overlay sidebar: at
+     `z-index: 100` against the panel's 60 it would otherwise paint a stripe
+     straight across the open menu. */
   position: fixed;
-  right: 0;
+  left: 0;
   top: 0;
   bottom: 0;
-  width: 8px;
+  width: 3px;
   z-index: 100;
   background: linear-gradient(to bottom, var(--stripe-stops));
+  transition: left 200ms ease-out;
 }
 
 /* Horizontal version for mobile bottom or accents */
@@ -886,6 +896,14 @@ textarea {
      edge. Keyed off the same attribute as the shell inset, and for the same
      reason: a reload with the sidebar open must paint in the right place
      rather than jump there once React hydrates. */
+  /* The stripe marks the PAGE's left border, so when the sidebar takes that
+     edge the stripe moves to the content column's. Same mechanism and same
+     reason as the island rule below: the shell's inset is padding, and padding
+     on an ancestor does nothing to a `position: fixed` child. */
+  html[data-sidebar='open'] .minerals-stripe {
+    left: var(--sidebar-width);
+  }
+
   html[data-sidebar='open'] #bottom-island {
     left: calc(var(--sidebar-width) + 1rem);
   }
@@ -937,7 +955,8 @@ textarea {
 
 @media (prefers-reduced-motion: reduce) {
   .app-shell,
-  #bottom-island {
+  #bottom-island,
+  .minerals-stripe {
     transition: none;
   }
 }
