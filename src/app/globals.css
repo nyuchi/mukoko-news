@@ -484,6 +484,22 @@
   --width-form: 600px; /* a single form or auth card */
   --page-gutter: 1rem; /* 16px — the a11y floor at every width */
   --page-gutter-sm: 1.5rem; /* 24px from the `sm` breakpoint up */
+
+  /* ── Page vertical rhythm ───────────────────────────────────────────────
+     The widths and gutters were tokenised; the SPACE ABOVE AND BELOW a page
+     column was not, and 26 call sites had picked `py-6`, `py-8`, `py-12` and
+     `py-16` independently. Owner report 2026-09-11: *"not all pages follow
+     the same width layout, each page seems to run its own, no global
+     option."* The widths had in fact already converged — what a reader was
+     seeing move between pages was the top margin.
+
+     Two values, chosen by what the column HOLDS rather than per page, so
+     there is one decision instead of twenty-six:
+       · `--page-block`          index and chrome columns — a grid of cards
+       · `--page-block-reading`  one column of running text, which wants more
+                                 air above it before the first line */
+  --page-block: 2rem; /* 32px */
+  --page-block-reading: 3rem; /* 48px */
 }
 
 /* The widths step up with the viewport. Declared as overrides of the tokens
@@ -861,11 +877,24 @@ textarea {
 }
 
 .minerals-stripe {
+  /* RIGHT edge, not left (owner direction 2026-09-11 — *"it needs to be on the
+     page border not the site border; right now it's left of the sidebar, it
+     will look better on the right"*).
+     ------------------------------------------------------------------------
+     On the left it ran down the SHELL's edge, which is where the sidebar
+     lives: docked, the stripe sat outside the panel and the page it belongs
+     to was two columns away, so it read as a bar stuck to the browser rather
+     than as the page's own edge. The right-hand edge has no chrome on it at
+     any width, so the stripe is always the page's border — and it stays clear
+     of the sidebar toggle, the panel and the push transform.
+
+     8px rather than 4: at 4 the seven bands were a hairline nobody could
+     resolve into colours, which is the whole point of showing the palette. */
   position: fixed;
-  left: 0;
+  right: 0;
   top: 0;
   bottom: 0;
-  width: 4px;
+  width: 8px;
   z-index: 100;
   background: linear-gradient(to bottom, var(--stripe-stops));
 }

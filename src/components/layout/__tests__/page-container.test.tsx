@@ -141,3 +141,59 @@ describe('PageBleed', () => {
     expect(cls).toContain('sm:-mx-[var(--page-gutter-sm)]')
   })
 })
+
+/**
+ * The widths and gutters were tokenised and the vertical rhythm was not, so 26
+ * call sites picked `py-6`, `py-8`, `py-12` and `py-16` independently — which
+ * is what a reader actually saw moving between pages once the widths had
+ * converged. Owner report 2026-09-11: *"not all pages follow the same width
+ * layout, each page seems to run its own, no global option."*
+ */
+describe('the page column has ONE vertical rhythm', () => {
+  it('takes its block padding from a token, not a literal', () => {
+    const { container } = render(<PageContainer>x</PageContainer>)
+    expect(container.firstElementChild?.className).toContain('py-[var(--page-block)]')
+  })
+
+  it('gives a reading column more air than an index of cards', () => {
+    // Different air for different content is the ONE distinction worth making;
+    // per-page choices are not.
+    const { container } = render(<PageContainer width="reading">x</PageContainer>)
+    expect(container.firstElementChild?.className).toContain('py-[var(--page-block-reading)]')
+  })
+
+  it('can be switched off for chrome that owns its own padding', () => {
+    const { container } = render(<PageContainer pad={false}>x</PageContainer>)
+    expect(container.firstElementChild?.className).not.toContain('--page-block')
+  })
+})
+
+/**
+ * And no page may go back to hand-writing it.
+ */
+describe('no page column carries a hand-written vertical padding', () => {
+  function walk(dir: string, out: string[] = []): string[] {
+    for (const entry of readdirSync(dir)) {
+      const full = join(dir, entry)
+      if (statSync(full).isDirectory()) {
+        if (entry !== '__tests__' && entry !== 'node_modules') walk(full, out)
+      } else if (/\.tsx$/.test(entry) && !/\.test\.tsx$/.test(entry)) {
+        out.push(full)
+      }
+    }
+    return out
+  }
+
+  it('pairs every --width- column with a --page-block, never a py-N', () => {
+    const offenders: string[] = []
+    for (const file of walk(join(process.cwd(), 'src'))) {
+      const source = readFileSync(file, 'utf8')
+      for (const match of source.matchAll(/max-w-\[var\(--width-[a-z]+\)\][^"`]*/g)) {
+        if (/\bpy-\d/.test(match[0])) {
+          offenders.push(`${file.replace(`${process.cwd()}/`, '')}: ${match[0].slice(0, 70)}`)
+        }
+      }
+    }
+    expect(offenders).toEqual([])
+  })
+})

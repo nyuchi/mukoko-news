@@ -614,7 +614,7 @@ export default function AnalyticsClient({
     <ErrorBoundary
       fallback={<div className="p-8 text-center text-text-secondary">Failed to render analytics</div>}
     >
-      <div className="mx-auto w-full max-w-[var(--width-wide)] px-[var(--page-gutter)] py-8 sm:px-[var(--page-gutter-sm)]">
+      <div className="mx-auto w-full max-w-[var(--width-wide)] px-[var(--page-gutter)] py-[var(--page-block)] sm:px-[var(--page-gutter-sm)]">
         {/* Header */}
         <header className="mb-6">
           <div className="mb-2 flex items-center gap-3">

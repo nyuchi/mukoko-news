@@ -371,6 +371,27 @@ describe('the minerals stripe', () => {
     }
   })
 
+  it('runs down the RIGHT edge, where no chrome competes with it', () => {
+    // On the left it ran down the SHELL's edge, which is where the sidebar
+    // lives: docked, the stripe sat outside the panel and the page it belongs
+    // to was two columns away, so it read as a bar stuck to the browser rather
+    // than as the page's own border.
+    const rule = /\.minerals-stripe\s*\{([^}]*)\}/.exec(
+      CSS.slice(CSS.indexOf('.minerals-stripe-horizontal {'))
+    )
+    const vertical = /\n\.minerals-stripe \{([^}]*)\}/.exec(CSS)?.[1] ?? rule?.[1] ?? ''
+    expect(vertical).toMatch(/right:\s*0/)
+    expect(vertical).not.toMatch(/\bleft:\s*0/)
+  })
+
+  it('is thick enough to resolve into seven colours', () => {
+    // At 4px the bands were a hairline nobody could read as a palette, which
+    // is the only thing the stripe is for.
+    const vertical = /\n\.minerals-stripe \{([^}]*)\}/.exec(CSS)?.[1] ?? ''
+    const width = /width:\s*(\d+)px/.exec(vertical)?.[1]
+    expect(Number(width)).toBeGreaterThanOrEqual(6)
+  })
+
   it('draws both orientations from one list', () => {
     // Two copies drifted once already; a mineral added to one and not the
     // other is a stripe that disagrees with itself depending on which way

@@ -31,7 +31,7 @@ export function PublisherDashboard({ context }: { context: PublisherContext }) {
   if (!org) return null
 
   return (
-    <div className="mx-auto w-full max-w-[var(--width-wide)] px-[var(--page-gutter)] sm:px-[var(--page-gutter-sm)] py-8">
+    <div className="mx-auto w-full max-w-[var(--width-wide)] px-[var(--page-gutter)] sm:px-[var(--page-gutter-sm)] py-[var(--page-block)]">
       <header className="mb-8">
         <div className="flex items-center gap-2 mb-1">
           <h1 className="font-serif text-2xl font-bold">{org.name}</h1>

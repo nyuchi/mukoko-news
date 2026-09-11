@@ -12,7 +12,7 @@ export const metadata: Metadata = {
 
 export default function PublisherClaimPage() {
   return (
-    <div className="mx-auto w-full max-w-[var(--width-form)] px-[var(--page-gutter)] sm:px-[var(--page-gutter-sm)] py-12">
+    <div className="mx-auto w-full max-w-[var(--width-form)] px-[var(--page-gutter)] sm:px-[var(--page-gutter-sm)] py-[var(--page-block-reading)]">
       <div className="text-center mb-8">
         <div className="w-16 h-16 bg-container-sodalite rounded-full flex items-center justify-center mx-auto mb-4">
           <BadgeCheck className="w-8 h-8 text-on-container-sodalite" />

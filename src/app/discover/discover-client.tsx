@@ -211,7 +211,7 @@ export default function DiscoverClient({
         description={`Explore African news by category, country and trending topics. Browse sources and discover stories — ${coverage.fragment}.`}
         url={getFullUrl("/discover")}
       />
-      <div className="mx-auto w-full max-w-[var(--width-wide)] px-[var(--page-gutter)] sm:px-[var(--page-gutter-sm)] py-8">
+      <div className="mx-auto w-full max-w-[var(--width-wide)] px-[var(--page-gutter)] sm:px-[var(--page-gutter-sm)] py-[var(--page-block)]">
       {/* Header */}
       <div className="mb-10">
         <h1 className="text-3xl font-bold text-foreground mb-2">Discover</h1>

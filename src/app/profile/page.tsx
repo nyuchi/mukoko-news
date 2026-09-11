@@ -65,7 +65,7 @@ function ProfileContent() {
   // ── Signed-out: one entry point into the hosted AuthKit flow via /sign-in ──
   if (!isLoggedIn) {
     return (
-      <div className="mx-auto w-full max-w-[var(--width-form)] px-[var(--page-gutter)] sm:px-[var(--page-gutter-sm)] py-12">
+      <div className="mx-auto w-full max-w-[var(--width-form)] px-[var(--page-gutter)] sm:px-[var(--page-gutter-sm)] py-[var(--page-block-reading)]">
         <div className="text-center mb-10">
           <div className="w-20 h-20 bg-container-tanzanite rounded-full flex items-center justify-center mx-auto mb-6">
             <User className="w-10 h-10 text-on-container-tanzanite" />
@@ -95,7 +95,7 @@ function ProfileContent() {
 
   // ── Signed-in ──
   return (
-    <div className="mx-auto w-full max-w-[var(--width-form)] px-[var(--page-gutter)] sm:px-[var(--page-gutter-sm)] py-12">
+    <div className="mx-auto w-full max-w-[var(--width-form)] px-[var(--page-gutter)] sm:px-[var(--page-gutter-sm)] py-[var(--page-block-reading)]">
       {/* Name and picture come from identity.persons, falling back to the
           session claims until the record is populated. */}
       <ProfileIdentity
@@ -219,7 +219,7 @@ export default function ProfilePage() {
   return (
     <ErrorBoundary
       fallback={
-        <div className="mx-auto w-full max-w-[var(--width-form)] px-[var(--page-gutter)] sm:px-[var(--page-gutter-sm)] py-12 text-center">
+        <div className="mx-auto w-full max-w-[var(--width-form)] px-[var(--page-gutter)] sm:px-[var(--page-gutter-sm)] py-[var(--page-block-reading)] text-center">
           <div className="w-20 h-20 bg-surface rounded-full flex items-center justify-center mx-auto mb-6">
             <User className="w-10 h-10 text-text-tertiary" />
           </div>

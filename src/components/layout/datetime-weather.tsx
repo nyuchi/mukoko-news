@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Cloud,
   CloudDrizzle,
@@ -8,6 +8,7 @@ import {
   CloudLightning,
   CloudRain,
   CloudSnow,
+  MapPin,
   Moon,
   Sun,
   type LucideIcon,
@@ -16,7 +17,12 @@ import { formatLocalDateTime } from '@/lib/local-time';
 import {
   conditionIconKey,
   fetchCurrentWeather,
+  geolocationAvailability,
+  readStoredCoords,
+  requestCoords,
+  storeCoords,
   type ConditionIconKey,
+  type Coords,
   type WeatherSnapshot,
 } from '@/lib/weather';
 
@@ -32,12 +38,28 @@ import {
  *    row is already exactly its final size before the real time replaces it.
  *
  *  • The WEATHER is fetched from the reader's own browser (see `lib/weather`
- *    for why it cannot be fetched server-side) and is null until it lands —
+ *    for why it cannot be fetched server-side), from the reader's own POSITION
+ *    where they have granted it, and is null until it lands —
  *    and stays null forever if the endpoint is slow, blocked, erroring, or
  *    returns a payload with nothing in it. Null renders nothing at all. The
  *    row's `min-h` is set by the clock side, so weather arriving late (or
  *    never) changes no height, and because it is the flex row's END item its
  *    appearance cannot move the date either.
+ *
+ * ## Location
+ *
+ * The endpoint's IP lookup is a guess, and on a mobile network it is regularly
+ * a bad one — measured on a Zimbabwean handset, this strip read *"Opposite
+ * Carrier Singapore"*, which is a carrier-NAT egress. So the reading is taken
+ * at the reader's real coordinates when, and only when, they have granted the
+ * browser's Geolocation permission.
+ *
+ * **Nothing prompts on load.** On mount the strip asks
+ * `navigator.permissions` what would happen IF it asked, and takes a fix
+ * silently only when the answer is already `granted`. Otherwise it renders a
+ * "Use my location" control and waits to be pressed. A news site that springs
+ * a location dialog on a first-time reader has spent trust it had not earned,
+ * and the IP reading — wrong city and all — is still a reading.
  *
  * There is no animation anywhere in here — nothing to reduce under
  * `prefers-reduced-motion`, and no ticker/marquee by design.
@@ -117,6 +139,19 @@ function WeatherReading({ weather }: { weather: WeatherSnapshot }) {
 export function DateTimeWeather() {
   const [now, setNow] = useState<Date | null>(null);
   const [weather, setWeather] = useState<WeatherSnapshot | null>(null);
+  const [coords, setCoords] = useState<Coords | null>(null);
+  // `null` while unknown. Only 'prompt' renders the control: 'granted' is
+  // already being used, 'denied' would render a button the browser refuses to
+  // honour, and 'unsupported' has nothing to ask.
+  const [canAsk, setCanAsk] = useState(false);
+  const [asking, setAsking] = useState(false);
+
+  // The refresh interval must read the CURRENT coordinates, not the ones that
+  // existed when it was armed — otherwise granting permission gives one
+  // correct reading and then ten minutes later silently reverts to the IP
+  // guess. Same stable-handler-via-ref pattern the pull-to-refresh uses.
+  const coordsRef = useRef<Coords | null>(null);
+  coordsRef.current = coords;
 
   // Clock: starts only after mount, so the server never renders a time.
   useEffect(() => {
@@ -125,13 +160,41 @@ export function DateTimeWeather() {
     return () => clearInterval(id);
   }, []);
 
+  // Position: a remembered fix first (so a returning reader is right before any
+  // permission round-trip), then a silent re-read when permission is already
+  // granted. Never a prompt — see the docblock.
+  useEffect(() => {
+    let active = true;
+
+    const stored = readStoredCoords();
+    if (stored) setCoords(stored);
+
+    geolocationAvailability().then((state) => {
+      if (!active) return;
+      if (state === 'granted') {
+        requestCoords().then((fresh) => {
+          if (!active || !fresh) return;
+          storeCoords(fresh);
+          setCoords(fresh);
+        });
+        return;
+      }
+      // Offer the control only where pressing it could actually work.
+      setCanAsk(state === 'prompt' && !stored);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
   // Weather: browser-side, fail-soft, and cancelled on unmount so a late
   // response cannot set state on a component that is gone.
   useEffect(() => {
     let active = true;
 
     const load = () => {
-      fetchCurrentWeather()
+      fetchCurrentWeather(coordsRef.current)
         .then((snapshot) => {
           if (active) setWeather(snapshot);
         })
@@ -149,6 +212,22 @@ export function DateTimeWeather() {
       active = false;
       clearInterval(id);
     };
+    // `coords` is a dependency so a newly granted fix refetches immediately
+    // rather than at the next ten-minute tick; the ref is what keeps the
+    // INTERVAL current, since it outlives any one render.
+  }, [coords]);
+
+  const askForLocation = useCallback(() => {
+    setAsking(true);
+    requestCoords()
+      .then((fresh) => {
+        if (fresh) {
+          storeCoords(fresh);
+          setCoords(fresh);
+          setCanAsk(false);
+        }
+      })
+      .finally(() => setAsking(false));
   }, []);
 
   const local = now ? formatLocalDateTime(now) : null;
@@ -170,7 +249,28 @@ export function DateTimeWeather() {
         )}
       </p>
 
-      {weather ? <WeatherReading weather={weather} /> : null}
+      <span className="flex min-w-0 items-center gap-1">
+        {weather ? <WeatherReading weather={weather} /> : null}
+        {canAsk && (
+          <button
+            type="button"
+            onClick={askForLocation}
+            disabled={asking}
+            // The label says what it does, not what it is: "Use my location"
+            // is the outcome, and it is the only place in the app that can
+            // trigger a permission dialog.
+            aria-label="Use my location for local weather"
+            title="Use my location for local weather"
+            className="flex min-h-[var(--touch-chip)] shrink-0 items-center gap-1 rounded-full px-2 text-text-tertiary transition-colors hover:bg-elevated hover:text-foreground focus-visible:bg-elevated focus-visible:text-foreground disabled:opacity-50"
+          >
+            <MapPin
+              aria-hidden="true"
+              className="h-[var(--icon-sm)] w-[var(--icon-sm)] shrink-0"
+            />
+            <span className="hidden sm:inline">Use my location</span>
+          </button>
+        )}
+      </span>
     </div>
   );
 }

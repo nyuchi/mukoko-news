@@ -25,6 +25,23 @@ import { getDb } from './client'
 import { clampInt, MAX_LIMIT } from '@/lib/safety'
 import { COUNTRIES } from '@/lib/constants'
 
+
+/**
+ * Every aggregation here is bounded.
+ *
+ * `news.articles` is 1.5 GB and the console's filters are arbitrary, so a query
+ * can legitimately ask for something no index serves. Unbounded, that does not
+ * fail — it HANGS, holding the serverless function until the platform kills the
+ * request, which the reader sees as a blank page instead of a slow one. With a
+ * ceiling the read lands in the fail-soft catch and the page can say so.
+ *
+ * Measured 2026-09-11: a two-branch `$facet` behind this module's `$ne`
+ * visibility filter examined all 65,203 documents in **27.5 seconds** — longer
+ * than the request it was serving was allowed to live.
+ */
+const ANALYTICS_TIMEOUT_MS = 8000
+const AGG_OPTS = { maxTimeMS: ANALYTICS_TIMEOUT_MS } as const
+
 // Mirrors the article read layer (articles.ts) and insights.ts: hide
 // rejected/removed documents so the console reflects the live catalogue.
 const BASE_MATCH = {
@@ -544,7 +561,7 @@ export async function runCorpusQuery(params: CorpusQueryParams): Promise<CorpusQ
             },
             { $match: match },
             { $facet: facets },
-          ])
+          ], AGG_OPTS)
           .toArray()
         usedSearchIndex = true
       } catch (searchError) {
@@ -555,11 +572,13 @@ export async function runCorpusQuery(params: CorpusQueryParams): Promise<CorpusQ
           .aggregate<FacetOutput>([
             { $match: { ...match, $or: [{ headline: re }, { description: re }] } },
             { $facet: facets },
-          ])
+          ], AGG_OPTS)
           .toArray()
       }
     } else {
-      rows = await col.aggregate<FacetOutput>([{ $match: match }, { $facet: facets }]).toArray()
+      rows = await col
+        .aggregate<FacetOutput>([{ $match: match }, { $facet: facets }], AGG_OPTS)
+        .toArray()
     }
 
     const f = rows[0] ?? {}
@@ -734,7 +753,7 @@ export async function getCoverageConcentration({
           },
         },
         { $sort: { articles: -1 } },
-      ])
+      ], AGG_OPTS)
       .toArray()
 
     const allSourceIds = [...new Set(rows.flatMap((r) => r.sources.map((s) => s.sourceId)))]
@@ -829,7 +848,7 @@ export async function getQueryFacets({
             ],
           },
         },
-      ])
+      ], AGG_OPTS)
       .toArray()
 
     if (!rows) return EMPTY_FACETS

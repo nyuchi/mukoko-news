@@ -30,6 +30,7 @@ vi.mock('@/lib/auth/guard', () => ({
 
 const bundle: InsightsBundle = {
   summary: {
+    ok: true,
     totalArticles: 1234,
     sources: 10,
     organizations: 8,

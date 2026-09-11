@@ -109,7 +109,7 @@ export function FeedPageSkeleton() {
 export function InsightsPageSkeleton() {
   return (
     <div
-      className="mx-auto w-full max-w-[var(--width-wide)] px-[var(--page-gutter)] sm:px-[var(--page-gutter-sm)] py-8"
+      className="mx-auto w-full max-w-[var(--width-wide)] px-[var(--page-gutter)] sm:px-[var(--page-gutter-sm)] py-[var(--page-block)]"
       aria-label="Loading insights"
       role="status"
       aria-live="polite"
@@ -156,7 +156,7 @@ export function InsightsPageSkeleton() {
  */
 export function ArticlePageSkeleton() {
   return (
-    <div className="mx-auto w-full max-w-[var(--width-reading)] px-[var(--page-gutter)] sm:px-[var(--page-gutter-sm)] py-8" aria-label="Loading article" role="status" aria-live="polite">
+    <div className="mx-auto w-full max-w-[var(--width-reading)] px-[var(--page-gutter)] sm:px-[var(--page-gutter-sm)] py-[var(--page-block-reading)]" aria-label="Loading article" role="status" aria-live="polite">
       {/* Back button */}
       <Skeleton className="h-10 w-24 mb-6" />
 

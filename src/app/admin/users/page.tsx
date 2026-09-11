@@ -8,7 +8,7 @@ export const metadata = { title: 'Users' }
 // in src/app/admin/layout.tsx and is unchanged.
 export default function AdminUsersPage() {
   return (
-    <div className="mx-auto w-full max-w-[var(--width-wide)] px-[var(--page-gutter)] sm:px-[var(--page-gutter-sm)] py-8">
+    <div className="mx-auto w-full max-w-[var(--width-wide)] px-[var(--page-gutter)] sm:px-[var(--page-gutter-sm)] py-[var(--page-block)]">
       {/* Header */}
       <div className="flex items-center gap-4 mb-8">
         <Link

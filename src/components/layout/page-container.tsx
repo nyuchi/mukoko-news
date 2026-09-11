@@ -62,20 +62,51 @@ export type PageWidth = keyof typeof WIDTH_CLASS
  */
 const GUTTER_CLASS = 'px-[var(--page-gutter)] sm:px-[var(--page-gutter-sm)]'
 
+/**
+ * The space above and below the column, chosen by what the column HOLDS.
+ *
+ * The widths and gutters were tokenised; the vertical rhythm was not, so 26
+ * call sites had picked `py-6`, `py-8`, `py-12` and `py-16` independently.
+ * Owner report 2026-09-11: *"not all pages follow the same width layout, each
+ * page seems to run its own, no global option."* The widths had in fact
+ * already converged on the tokens — what a reader saw moving between pages was
+ * the space above the first line.
+ *
+ * One decision per KIND of column rather than one per page: an index of cards
+ * and a column of running text want different air, and nothing else does.
+ */
+const BLOCK_CLASS = {
+  wide: 'py-[var(--page-block)]',
+  reading: 'py-[var(--page-block-reading)]',
+  form: 'py-[var(--page-block-reading)]',
+} as const
+
 export function PageContainer({
   width = 'wide',
+  pad = true,
   as: Tag = 'div',
   className = '',
   children,
 }: {
   width?: PageWidth
+  /**
+   * Vertical rhythm from the tokens. `false` for chrome that supplies its own
+   * — the header and the footer, whose padding belongs to the chrome rather
+   * than to the page.
+   */
+  pad?: boolean
   /** The element to render — `main`, `header`, `section`, … Defaults to `div`. */
   as?: 'div' | 'main' | 'header' | 'footer' | 'section' | 'article' | 'nav'
   className?: string
   children: ReactNode
 }) {
+  const block = pad ? BLOCK_CLASS[width] : ''
   return (
-    <Tag className={`mx-auto w-full ${WIDTH_CLASS[width]} ${GUTTER_CLASS} ${className}`.trim()}>
+    <Tag
+      className={`mx-auto w-full ${WIDTH_CLASS[width]} ${GUTTER_CLASS} ${block} ${className}`
+        .replace(/\s+/g, ' ')
+        .trim()}
+    >
       {children}
     </Tag>
   )

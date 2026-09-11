@@ -21,6 +21,24 @@ type Coll = {
   aggregate: ReturnType<typeof vi.fn>
   countDocuments: ReturnType<typeof vi.fn>
   distinct: ReturnType<typeof vi.fn>
+  find: ReturnType<typeof vi.fn>
+}
+
+/**
+ * A chainable `find` cursor. `getCorpusSummary` takes the oldest and newest
+ * article off each end of the `{datePublished:-1, status:1}` index rather than
+ * aggregating a min/max over every document, so the stub has to survive
+ * `.sort().limit().maxTimeMS().toArray()`.
+ */
+function findCursor(queue: unknown[][]) {
+  const chain: Record<string, unknown> = {}
+  const self = () => chain
+  chain.sort = self
+  chain.limit = self
+  chain.maxTimeMS = self
+  chain.project = self
+  chain.toArray = vi.fn(() => Promise.resolve(queue.length > 1 ? queue.shift() : (queue[0] ?? [])))
+  return chain
 }
 
 function coll(overrides: Partial<Coll> = {}): Coll {
@@ -28,6 +46,7 @@ function coll(overrides: Partial<Coll> = {}): Coll {
     aggregate: vi.fn(() => cursor([])),
     countDocuments: vi.fn().mockResolvedValue(0),
     distinct: vi.fn().mockResolvedValue([]),
+    find: vi.fn(() => findCursor([[]])),
     ...overrides,
   }
 }
@@ -181,22 +200,60 @@ describe('getCategoryDistribution', () => {
 })
 
 describe('getCountryCoverage', () => {
+  /** The shape `$searchMeta` returns for a string facet. */
+  const facetRows = (buckets: Array<{ _id: unknown; count: number }>) =>
+    cursor([{ facet: { country: { buckets } } }])
+
   it('maps country codes to names and computes shares', async () => {
     const articles = coll()
     articles.aggregate.mockReturnValue(
-      cursor([
+      facetRows([
         { _id: 'ZW', count: 75 },
         { _id: 'ZA', count: 25 },
-        { _id: 'XX', count: 0 },
+        { _id: 'XX', count: 3 },
       ])
     )
     useDb({ articles })
 
     const result = await getCountryCoverage()
-    expect(result.total).toBe(100)
-    expect(result.countries[0]).toEqual({ code: 'ZW', name: 'Zimbabwe', count: 75, share: 75 })
-    // Unknown code keeps the raw code as its display name.
-    expect(result.countries[2]).toEqual({ code: 'XX', name: 'XX', count: 0, share: 0 })
+    expect(result.total).toBe(103)
+    expect(result.countries[0]).toEqual({ code: 'ZW', name: 'Zimbabwe', count: 75, share: 72.8 })
+    // Unknown code keeps the raw code as its display name — a country missing
+    // from our table is a gap in the table, not an absence of journalism.
+    expect(result.countries[2]).toEqual({ code: 'XX', name: 'XX', count: 3, share: 2.9 })
+  })
+
+  it('asks Atlas Search, NOT a $group behind the $ne visibility filter', async () => {
+    // This is the measured fix, not a style preference. The `$group` this
+    // replaced opened with `{status:{$ne:'rejected'}}`, which no index can
+    // serve: explained on the live cluster it scanned all 65,203 documents and
+    // took 27.5 SECONDS — longer than the request it was serving was allowed
+    // to live, which is why the page rendered "No data available yet".
+    const articles = coll()
+    articles.aggregate.mockReturnValue(facetRows([{ _id: 'ZW', count: 1 }]))
+    useDb({ articles })
+
+    await getCountryCoverage()
+    const pipeline = articles.aggregate.mock.calls[0][0] as Array<Record<string, unknown>>
+    expect(pipeline[0]).toHaveProperty('$searchMeta')
+    expect(JSON.stringify(pipeline)).not.toContain('$ne')
+  })
+
+  it('bounds the read so a slow cluster degrades instead of hanging', async () => {
+    // Unbounded, a slow read does not fail — it holds the serverless function
+    // until the platform kills the whole request, which a reader sees as a
+    // blank page rather than a degraded one.
+    const articles = coll()
+    articles.aggregate.mockReturnValue(facetRows([]))
+    useDb({ articles })
+
+    await getCountryCoverage()
+    expect(articles.aggregate.mock.calls[0][1]).toMatchObject({ maxTimeMS: expect.any(Number) })
+  })
+
+  it('returns the empty shape when the read throws', async () => {
+    vi.mocked(getDb).mockRejectedValue(new Error('down'))
+    expect(await getCountryCoverage()).toEqual({ total: 0, countries: [] })
   })
 })
 
@@ -230,44 +287,92 @@ describe('getSentimentBreakdown', () => {
   })
 })
 
+/**
+ * Rebuilt 2026-09-11. The old implementation was one `$facet` behind the `$ne`
+ * visibility filter plus a `distinct('countryCode', BASE_MATCH)` — two full
+ * scans of a 1.5 GB collection. Measured on the live cluster: **27,529 ms** for
+ * the cheaper half alone, 65,203 documents examined, zero index keys. The
+ * Vercel function died first, the catch returned the empty summary, and the
+ * page told the reader the corpus was empty.
+ */
 describe('getCorpusSummary', () => {
-  it('aggregates totals, enrichment %, avg quality, date range and distinct countries', async () => {
+  function summaryDb({
+    total = 1000,
+    countries = ['ZW', 'ZA', 'KE', '', null],
+    enriched = 750,
+  }: { total?: number; countries?: unknown[]; enriched?: number } = {}) {
     const articles = coll()
-    articles.aggregate.mockReturnValue(
-      cursor([
-        {
-          totalArticles: [{ n: 1000 }],
-          aiEnriched: [{ n: 750 }],
-          quality: [{ avg: 0.7266 }],
-          range: [
-            { earliest: new Date('2025-01-01T00:00:00Z'), latest: new Date('2026-06-30T00:00:00Z') },
-          ],
-        },
-      ])
-    )
-    articles.distinct.mockResolvedValue(['ZW', 'ZA', 'KE', '', null])
+    // 1: the $searchMeta count. 2: the countryCode $group.
+    articles.aggregate
+      .mockReturnValueOnce(cursor([{ count: { total } }]))
+      .mockReturnValueOnce(cursor(countries.map((c) => ({ _id: c }))))
+    articles.countDocuments.mockResolvedValue(enriched)
+    articles.find
+      .mockReturnValueOnce(findCursor([[{ datePublished: new Date('2025-01-01T00:00:00Z') }]]))
+      .mockReturnValueOnce(findCursor([[{ datePublished: new Date('2026-06-30T00:00:00Z') }]]))
     const feedSources = coll()
     feedSources.countDocuments.mockResolvedValue(42)
     const newsMediaOrganizations = coll()
     newsMediaOrganizations.countDocuments.mockResolvedValue(30)
     useDb({ articles, feedSources, newsMediaOrganizations })
+    return { articles }
+  }
 
-    const result = await getCorpusSummary()
-    expect(result).toEqual({
+  it('reports totals, enrichment %, the date range and distinct countries', async () => {
+    summaryDb()
+    expect(await getCorpusSummary()).toEqual({
+      ok: true,
       totalArticles: 1000,
       sources: 42,
       organizations: 30,
+      // Blank and null codes are not countries.
       countries: 3,
       aiEnrichedPct: 75,
-      avgQualityScore: 0.727,
+      // Deliberately not computed — see below.
+      avgQualityScore: null,
       earliest: '2025-01-01T00:00:00.000Z',
       latest: '2026-06-30T00:00:00.000Z',
     })
   })
 
-  it('returns the empty summary when the DB throws', async () => {
+  it('counts the corpus with Atlas Search, exactly rather than as a bound', async () => {
+    // `$searchMeta`'s default `count` is a LOWER BOUND. A headline figure that
+    // is quietly an underestimate is worse than a slow one.
+    const { articles } = summaryDb()
+    await getCorpusSummary()
+    const pipeline = articles.aggregate.mock.calls[0][0] as Array<Record<string, unknown>>
+    const meta = pipeline[0].$searchMeta as Record<string, unknown>
+    expect(meta.count).toEqual({ type: 'total' })
+  })
+
+  it('counts countries with NO filter, so the query stays a covered index scan', async () => {
+    // The whole fix in one assertion. `$group` on `countryCode` alone is a
+    // DISTINCT_SCAN on `countryCode_1_feedSourceId_1`: 43 keys examined, ZERO
+    // documents, 90 ms. Add `BASE_MATCH` and the same query becomes the 27.5
+    // second collection scan — to exclude a set that is measurably empty
+    // (an Atlas Search facet over `status` reports one bucket, `approved`,
+    // 65,203 of 65,203).
+    const { articles } = summaryDb()
+    await getCorpusSummary()
+    const pipeline = articles.aggregate.mock.calls[1][0] as Array<Record<string, unknown>>
+    expect(pipeline).toEqual([{ $group: { _id: '$countryCode' } }])
+  })
+
+  it('does not claim an average quality score it cannot compute', async () => {
+    // `qualityScore` has no index and no Atlas Search mapping, so averaging it
+    // means reading every document. `0` would render as "this corpus scores
+    // zero on quality"; null renders as "—, not computed yet".
+    summaryDb()
+    expect((await getCorpusSummary()).avgQualityScore).toBeNull()
+  })
+
+  it('marks a failed read as NOT ok, so nothing reports it as an empty corpus', async () => {
+    // The bug this flag exists for: every figure is zero in both cases, and the
+    // page rendered the failure as "No data available yet" over 65,203
+    // articles. Zero is a number; a failure is not.
     vi.mocked(getDb).mockRejectedValue(new Error('down'))
     const result = await getCorpusSummary()
+    expect(result.ok).toBe(false)
     expect(result.totalArticles).toBe(0)
     expect(result.earliest).toBeNull()
   })

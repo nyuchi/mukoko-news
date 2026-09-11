@@ -17,6 +17,7 @@ vi.mock('@/components/ui/error-boundary', () => ({
 
 const bundle: InsightsBundle = {
   summary: {
+    ok: true,
     totalArticles: 18081,
     sources: 42,
     organizations: 30,
@@ -80,6 +81,7 @@ const bundle: InsightsBundle = {
 
 const emptyBundle: InsightsBundle = {
   summary: {
+    ok: true,
     totalArticles: 0,
     sources: 0,
     organizations: 0,
