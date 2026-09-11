@@ -17,7 +17,7 @@ Thank you for considering a contribution to Mukoko News! This guide covers the *
 
 We are building for the Pan-African community. Treat all contributors with respect, be inclusive, and keep discussions constructive.
 
-Security vulnerabilities must be reported to **security@nyuchi.com**, not via GitHub issues.
+Security vulnerabilities must be reported to **<security@nyuchi.com>**, not via GitHub issues.
 
 ## Getting Started
 
@@ -93,7 +93,7 @@ pnpm vitest run -t "formatTimeAgo"
 - **Descriptive title** following Conventional Commits format
 - **Reference related issues** with `Fixes #123`
 - **Add or update tests** for any changed behaviour
-- **No AI-generated summaries** in PR descriptions — explain *why* the change matters
+- **No AI-generated summaries** in PR descriptions — explain _why_ the change matters
 
 ### PR Template
 
@@ -213,8 +213,8 @@ vi.mock("@/lib/actions/feed", () => ({
 ## Getting Help
 
 - **Issues**: [github.com/nyuchi/mukoko-news/issues](https://github.com/nyuchi/mukoko-news/issues)
-- **General**: support@nyuchi.com
-- **Security**: security@nyuchi.com
+- **General**: <support@nyuchi.com>
+- **Security**: <security@nyuchi.com>
 
 ---
 

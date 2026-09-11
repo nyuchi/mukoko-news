@@ -1,0 +1,38 @@
+# The org-wide lint gate. Drop this file in as
+# .github/workflows/lint.yml and change nothing else.
+#
+# The five checks it publishes are exactly the five contexts the
+# org ruleset requires:
+#
+#   lint / actionlint
+#   lint / JSON validity
+#   lint / prettier
+#   lint / markdownlint
+#   lint / yamllint
+#
+# Those strings come from the job being called `lint` and calling a
+# reusable workflow - a check publishes as "<caller job> / <called job>".
+# Do NOT convert this to a matrix: a matrix publishes
+# "lint (actionlint)" instead and will not satisfy the ruleset.
+#
+# Also copy .prettierrc, .prettierignore, .markdownlint.jsonc and
+# .yamllint.yaml from nyuchi/.github into your repo root.
+
+name: Lint
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    uses: nyuchi/.github/.github/workflows/reusable-lint.yml@main

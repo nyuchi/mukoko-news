@@ -2,10 +2,10 @@
 
 ## Supported Versions
 
-| Version | Supported |
-|---------|-----------|
-| Latest (`main`) | Yes |
-| Older branches | No |
+| Version         | Supported |
+| --------------- | --------- |
+| Latest (`main`) | Yes       |
+| Older branches  | No        |
 
 We only maintain the latest version. Always use `main`.
 
@@ -13,7 +13,7 @@ We only maintain the latest version. Always use `main`.
 
 **Do NOT** open a public GitHub issue for security vulnerabilities.
 
-Email: **security@nyuchi.com**
+Email: **<security@nyuchi.com>**
 
 Include:
 
@@ -93,12 +93,12 @@ MongoDB Atlas is accessed only from Vercel server-side (Server Actions, Route Ha
 
 ### Secrets Management
 
-| Secret | Where Stored |
-|---|---|
-| `MONGODB_URI` | Vercel environment variables |
-| `WORKOS_API_KEY` | Vercel environment variables |
+| Secret                   | Where Stored                 |
+| ------------------------ | ---------------------------- |
+| `MONGODB_URI`            | Vercel environment variables |
+| `WORKOS_API_KEY`         | Vercel environment variables |
 | `WORKOS_COOKIE_PASSWORD` | Vercel environment variables |
-| `GATEWAY_API_URL` | Vercel environment variables |
+| `GATEWAY_API_URL`        | Vercel environment variables |
 
 Never commit secrets to version control. `.env.local` is gitignored.
 
@@ -121,9 +121,9 @@ Before opening a PR that touches data handling or auth:
 
 ## Contact
 
-- Security issues: security@nyuchi.com
-- General support: support@nyuchi.com
-- Website: https://news.mukoko.com
+- Security issues: <security@nyuchi.com>
+- General support: <support@nyuchi.com>
+- Website: <https://news.mukoko.com>
 
 ---
 

@@ -1,23 +1,30 @@
-# Source files — to be normalized in a dedicated formatting pass
-src/
-backend/src/
-processing/
-fly-worker/
-image-worker/
-mcp-package/
+# Prettier ignore for nyuchi/.github.
 
-# Generated & lock files
+# Standard ignores
 node_modules/
-.next/
-dist/
-.wrangler/
-**/pnpm-lock.yaml
-**/package-lock.json
-**/.venv/
+.git/
 
-# Unsupported by prettier
-*.toml
-*.jsonc
+# Files with structural meaning that Prettier would harm
+LICENSE
+CODEOWNERS
+CODEOWNERS.example
+.github/CODEOWNERS
 
-# Static assets
-public/
+# YAML is handled by yamllint and actionlint, not Prettier — they have
+# stronger guarantees about GitHub Actions semantics that Prettier does
+# not understand (e.g. the `on:` truthy quirk).
+*.yml
+*.yaml
+
+# Governance documents are authored by the Founder as legal / formal
+# documents. Prettier's markdown formatter reflows numbered paragraphs
+# ("2.2 The company pursues...") after a list as loose list-item
+# continuations, which corrupts the document's structure. Hand-format
+# these files.
+profile/governance/
+
+# Lockfiles, generated output
+*-lock.json
+*-lock.yaml
+package-lock.json
+pnpm-lock.yaml
