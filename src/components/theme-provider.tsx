@@ -3,10 +3,14 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 
 import {
-  applyOutlinePreference,
-  readOutlinePreference,
-  storeOutlinePreference,
-  type OutlinePreference,
+  CONTRAST_QUERY,
+  applyContrast,
+  readContrastPreference,
+  resolveContrast,
+  storeContrastPreference,
+  systemAsksForContrast,
+  type ContrastPreference,
+  type ResolvedContrast,
 } from "@/lib/appearance";
 
 export type Theme = "light" | "dark" | "system";
@@ -33,9 +37,11 @@ interface ThemeContextType {
   resolvedTheme: ResolvedTheme;
   setTheme: (theme: Theme) => void;
   cycleTheme: () => void;
-  /** `off` (default) | `on` | `system` — see `OutlinePreference`. */
-  contrast: OutlinePreference;
-  setContrast: (contrast: OutlinePreference) => void;
+  /** `off` (default) | `on` | `system` — the reader's choice. */
+  contrast: ContrastPreference;
+  /** What the document is actually rendering, after `system` is resolved. */
+  resolvedContrast: ResolvedContrast;
+  setContrast: (contrast: ContrastPreference) => void;
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
@@ -58,7 +64,8 @@ export function ThemeProvider({
 }: ThemeProviderProps) {
   const [theme, setTheme] = useState<Theme>(defaultTheme);
   const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>("dark");
-  const [contrast, setContrastState] = useState<OutlinePreference>("off");
+  const [contrast, setContrastState] = useState<ContrastPreference>("off");
+  const [resolvedContrast, setResolvedContrast] = useState<ResolvedContrast>("standard");
   const [mounted, setMounted] = useState(false);
 
   // Initial theme detection from localStorage
@@ -71,16 +78,40 @@ export function ThemeProvider({
     // Contrast is read the same way and at the same moment. Reading it here is
     // a paint late, but the pre-paint bootstrap has already set the attribute,
     // so the PAGE is never wrong — this only syncs the controls to it.
-    setContrastState(readOutlinePreference());
+    const storedContrast = readContrastPreference();
+    setContrastState(storedContrast);
+    setResolvedContrast(resolveContrast(storedContrast, systemAsksForContrast()));
   }, [storageKey]);
+
+  // `system` follows the device LIVE, the same way the theme's `system` follows
+  // `prefers-color-scheme`. Without this, turning the OS switch on or off is
+  // only picked up on the next hard load — which is exactly how a setting comes
+  // to look broken.
+  useEffect(() => {
+    if (!mounted || contrast !== "system") return;
+
+    const query = window.matchMedia(CONTRAST_QUERY);
+    const onChange = (event: MediaQueryListEvent) => {
+      setResolvedContrast(event.matches ? "more" : "standard");
+    };
+    query.addEventListener("change", onChange);
+    return () => query.removeEventListener("change", onChange);
+  }, [mounted, contrast]);
 
   // One writer. Storing without applying leaves the page unchanged until a
   // reload, which is exactly what "the switcher does nothing" looks like.
-  const setContrast = (next: OutlinePreference) => {
+  const setContrast = (next: ContrastPreference) => {
     setContrastState(next);
-    storeOutlinePreference(next);
-    applyOutlinePreference(next, document.documentElement);
+    setResolvedContrast(resolveContrast(next, systemAsksForContrast()));
+    storeContrastPreference(next);
   };
+
+  // The document is written from the RESOLVED value, in one place, so the
+  // preference and the attribute cannot disagree.
+  useEffect(() => {
+    if (!mounted) return;
+    applyContrast(resolvedContrast, document.documentElement);
+  }, [mounted, resolvedContrast]);
 
   // Resolve the actual theme (light or dark) based on theme setting
   useEffect(() => {
@@ -131,7 +162,15 @@ export function ThemeProvider({
   // forced a client-only first paint.
   return (
     <ThemeContext.Provider
-      value={{ theme, resolvedTheme, setTheme, cycleTheme, contrast, setContrast }}
+      value={{
+        theme,
+        resolvedTheme,
+        setTheme,
+        cycleTheme,
+        contrast,
+        resolvedContrast,
+        setContrast,
+      }}
     >
       {children}
     </ThemeContext.Provider>

@@ -6,7 +6,7 @@ const Card = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElemen
     <div
       ref={ref}
       className={cn(
-        // `border-outline` is transparent unless the reader turns outlines on
+        // `border-outline` is transparent unless the reader turns contrast on
         // (or asks their OS for more contrast) — a card separates by FILL, not
         // by a drawn edge. The border stays in the box model so switching it on
         // shifts no layout. No shadow: the card sits BELOW the page, and a well

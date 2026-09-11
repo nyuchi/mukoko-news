@@ -559,27 +559,30 @@
 }
 
 /* ── Deferring to the system where the system knows better ───────────
-   Three things the OS can tell us that a fixed palette cannot.
+   Two things the OS can tell us that a fixed palette cannot — and they are
+   deliberately NOT treated alike.
 
    1. `color-scheme` — tells the UA which way our surfaces run, so form
       controls, scrollbars, spellcheck underlines and the canvas flash on first
       paint are all drawn to match. Without it a dark page gets light native
       widgets and a white flash before CSS applies.
 
-   2. `prefers-contrast: more` — a reader who has asked their OS for higher
-      contrast is telling us our palette is not enough for them. Honour it with
-      the SYSTEM colours (`Canvas` / `CanvasText`), which are exactly the pair
-      that reader has already tuned, rather than a second guess of our own. The
-      brand minerals stay: only the reading surfaces defer.
-
-   3. `forced-colors: active` — Windows High Contrast and similar replace the
+   2. `forced-colors: active` — Windows High Contrast and similar replace the
       palette wholesale. Our job there is to get out of the way and make sure
       nothing depends on a colour we no longer control, so borders become
-      system-coloured rather than invisible.
+      system-coloured and the focus ring is redrawn in `Highlight`, the one
+      colour that survives.
 
-   Deliberately NOT the default: system colours alone would drop the Mzizi
+   `prefers-contrast: more` is the third signal and it is NOT a media query
+   here: it is read in JS, combined with the reader's own Off/On/System choice,
+   and stamped as `data-contrast="more"` — see the contrast block below. A
+   media query cannot be overridden by a preference that is not in the cascade,
+   which is the whole reason the site's control could not switch it off.
+
+   System colours are deliberately NOT the default: they would drop the Mzizi
    surface scale and the mineral identity on every machine, which is a brand
-   decision, not an accessibility one. They apply when the reader has asked. */
+   decision, not an accessibility one. They apply when the OS has already
+   replaced the palette. */
 :root {
   color-scheme: dark;
 }
@@ -587,129 +590,70 @@
   color-scheme: light;
 }
 
-/* ── Component outlines are an ACCESSIBILITY option, not the default look ─────
+/* ── Contrast: one rule, resolved in JS, and the site's setting always wins ──
  *
  * A card is a SURFACE. It reads as a separate object because its fill differs
  * from the page it sits on, its corners are rounded and its content is inset —
  * not because a 1px line is drawn around it. Outlining every component makes
- * the whole app look like a high-contrast theme that nobody asked for, and it
- * flattens hierarchy: when everything is boxed, nothing is emphasised.
+ * the whole app look like a high-contrast theme nobody asked for, and it
+ * flattens hierarchy: when everything is boxed, nothing is emphasised. So the
+ * standard palette draws no component outline at all (`--outline` is
+ * transparent) and `--border` is reserved for SEPARATORS — `border-b`,
+ * `divide-y`, the byline rule — lines that mean "these two things are
+ * different" rather than "here is an edge".
  *
- * So `--outline` is TRANSPARENT by default and every boxed component draws
- * `border border-outline` rather than `border-border`. The border is still in
- * the box model, so switching it on shifts nothing.
+ * The high-contrast treatment is this ONE rule, and `src/lib/appearance.ts`
+ * decides whether it applies: `off` | `on` | `system`, resolved against
+ * `matchMedia('(prefers-contrast: more)')` and stamped on <html> before first
+ * paint — exactly as the theme resolves `system` to a `light`/`dark` class.
  *
- * `--border` keeps its colour and stays visible — it is for SEPARATORS
- * (`border-b`, `divide-y`, the byline rule), which are lines that mean
- * "these two things are different", not lines that mean "here is an edge".
- * Those are different jobs and this is why they are different tokens now.
+ * ⚠️ THERE IS DELIBERATELY NO `@media (prefers-contrast: more)` HERE, and that
+ * is the fix rather than an omission (owner report 2026-09-11 — *"the increase
+ * contrast toggle was on in system settings; when turned off I saw it work, but
+ * like the theme it needs to disable it on the site or have it on"*).
  *
- * The reader picks one of THREE values on /profile, applied to <html> before
- * first paint so nothing flashes:
+ * As a media query this could not be switched off from the site: a preference
+ * that is not in the cascade cannot override a query that is. It shipped
+ * unconditional, so a reader with the OS switch on got the treatment whatever
+ * the control said. The first correction made the query a third CHOICE, but
+ * only for the edges — the text lift stayed unconditional, so `off` still was
+ * not off. Resolving in JS collapses all of that: one attribute, one rule, and
+ * `off` means off.
  *
- *   - attribute ABSENT (or `off`) — no outlines, whatever the OS asks. Default.
- *   - `data-outlines="on"`        — always outlined.
- *   - `data-outlines="system"`    — outlined under `prefers-contrast: more`.
+ * It raises contrast INSIDE the Mzizi scale and never replaces it. Every
+ * surface keeps its step; only the edges and the two dim text roles move.
+ * An earlier version set every surface to `Canvas`, and measured on a phone
+ * with the OS switch on that collapsed all eight background steps into one flat
+ * system colour and outlined every card, chip and the nav pill in stark white
+ * on black — the card stopped reading as a card, because the fill separating it
+ * from the page was gone and the border was the only structure left.
+ * `prefers-contrast: more` means *make differences easier to see*, not *throw
+ * away the palette*; that is `forced-colors`, which is the block below.
  *
- * ⚠️ Corrected 2026-09-11 (owner report). `prefers-contrast: more` used to turn
- * outlines on REGARDLESS of this setting. On the owner's phone with the OS
- * "Increase Contrast" switch on, that meant every card, panel, chip and the nav
- * pill was outlined while the Appearance card showed "Off" selected — *"the
- * contrast is still appearing in dark mode even though it's off"*. A setting
- * that says Off and is not off is worse than no setting, so the OS query became
- * the third CHOICE rather than an override on top of the other two. It still
- * lifts the two dim text roles unconditionally: that half of "make differences
- * easier to see" is about reading, not about drawing boxes.
- *
- * Every rule that draws an edge names `on` or `system` POSITIVELY — nothing
- * keys off the attribute's absence — so a reader whose bootstrap never ran
- * lands on the quiet look rather than on an outlined app they cannot switch off.
- *
- * ⚠️ This deliberately diverges from the Mzizi card spec, which specifies
- * "a full 1px border" (`mzizi_get_tokens: componentSpecs`). Owner decision
+ * ⚠️ The standard look diverges from the Mzizi card spec, which specifies "a
+ * full 1px border" (`mzizi_get_tokens: componentSpecs`). Owner decision
  * 2026-09-10; reported upstream rather than silently forked.
  */
-:root[data-outlines='on'] {
-  /* `--raised`, NOT `--border` — corrected 2026-09-11 (owner report: *"the
-     contrast component doesn't work, I see no visual changes"*).
-     ------------------------------------------------------------------------
-     `--border` is `#2A2927` in dark and `#E7E5E0` in light; the card it would
-     be drawn on is `#131211` / `#EEEEEC`. That is a step of roughly 2% in
-     lightness — real in a colour picker and invisible on a phone. So the
-     control was doing exactly what it said and the reader could not tell,
-     which is indistinguishable from a control that does nothing.
-
-     `--raised` (`#2E2C29` / `#D6D5D1`) is the next step the scale actually
-     provides and is plainly visible against the card in both themes, without
-     the stark hairline of the high-contrast value below. It stays ON PALETTE:
-     the edge is a real Mzizi step, not an invented grey.
-
-     `--border` keeps its own job — separators, where the line divides two
-     things that are already adjacent and needs to be quiet. */
-  --outline: var(--raised);
-}
-
-@media (prefers-contrast: more) {
-  /* Raise contrast WITHIN the Mzizi scale — never replace it.
-     ------------------------------------------------------------------
-     This block used to set every surface to `Canvas` and every border and
-     text colour to `CanvasText`. On a phone with the OS "Increase Contrast"
-     switch on, that is what the reader actually got: all eight background
-     steps (void, base, surface, muted, container, overlay, raised, pitch)
-     collapsed into ONE flat system colour, and every card, chip and the nav
-     pill outlined in stark white on black. The card no longer read as a card,
-     because the only thing separating it from the page — its fill — was gone;
-     the borders were the sole remaining structure, so the product looked like
-     a wireframe.
-
-     That was the wrong reading of the query. `prefers-contrast: more` means
-     "make the difference between things easier to see", not "throw away the
-     palette" — that is `forced-colors`, which is a separate block below and
-     already does exactly that. The Mzizi scale is not low contrast; it is
-     eight deliberately distinct steps, and it is the thing carrying the
-     structure.
-
-     So: keep every surface, lift the two dimmer text roles to full foreground,
-     and — for a reader who has not switched edges off — turn outlines on and
-     give the border a genuinely visible value taken from the palette rather
-     than from the system. */
-
-  /* TEXT lifts unconditionally. This is the half of "more contrast" that is
-     about reading a sentence, and no reader preference here opts out of it. */
-  :root,
-  .dark {
-    --text-secondary: #ffffff;
-    --text-tertiary: #ffffff;
-  }
-
-  .light {
-    --text-secondary: #000000;
-    --text-tertiary: #000000;
-  }
-
-  /* EDGES are the reader's call. `system` is the value that asked for this,
-     and `on` is already outlined and gets the stronger edge to match; an
-     explicit (or defaulted) "off" is left alone — see the header note. */
-  :root[data-outlines='system'],
-  :root[data-outlines='on'] {
-    --outline: var(--border);
-  }
+:root[data-contrast='more'] {
+  /* Outlines switch on. `--border` below is lifted first, so this resolves to
+     the strong edge rather than to the quiet separator colour. */
+  --outline: var(--border);
 
   /* Dark, including the bare `:root` defaults. `--border` takes the value
      `--text-tertiary` normally holds — a measured, on-palette step (APCA
-     Lc 80.3 on the card) that reads clearly as an edge without the
-     wireframe look of a pure-white hairline. */
-  :root[data-outlines='system'],
-  :root[data-outlines='on'] {
-    --border: #d4d4cf;
-    --control: #d4d4cf;
-  }
+     Lc 80.3 on the card) that reads clearly as an edge without the wireframe
+     look of a pure-white hairline. */
+  --text-secondary: #ffffff;
+  --text-tertiary: #ffffff;
+  --border: #d4d4cf;
+  --control: #d4d4cf;
+}
 
-  .light[data-outlines='system'],
-  .light[data-outlines='on'] {
-    --border: #474139;
-    --control: #474139;
-  }
+:root[data-contrast='more'].light {
+  --text-secondary: #000000;
+  --text-tertiary: #000000;
+  --border: #474139;
+  --control: #474139;
 }
 
 @media (forced-colors: active) {

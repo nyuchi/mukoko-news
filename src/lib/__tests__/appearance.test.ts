@@ -3,38 +3,70 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 import {
-  OUTLINE_ATTRIBUTE,
-  OUTLINE_STORAGE_KEY,
-  applyOutlinePreference,
-  parseOutlinePreference,
+  CONTRAST_ATTRIBUTE,
+  CONTRAST_QUERY,
+  CONTRAST_STORAGE_KEY,
+  applyContrast,
+  parseContrastPreference,
+  resolveContrast,
 } from '../appearance';
 
-describe('parseOutlinePreference', () => {
-  it('only the exact strings are honoured', () => {
-    expect(parseOutlinePreference('on')).toBe('on');
-    expect(parseOutlinePreference('system')).toBe('system');
+describe('parseContrastPreference', () => {
+  it('honours the three exact strings', () => {
+    expect(parseContrastPreference('on')).toBe('on');
+    expect(parseContrastPreference('system')).toBe('system');
+    expect(parseContrastPreference('off')).toBe('off');
   });
 
   it('anything else is off', () => {
     // Strict rather than truthy on purpose. A half-written or foreign value in
-    // localStorage must land on the DEFAULT look — an outlined app the reader
-    // never asked for is one they would have no idea how to switch off.
-    for (const raw of ['true', 'ON', '1', 'yes', 'SYSTEM', '', null, undefined, 'off']) {
-      expect(parseOutlinePreference(raw)).toBe('off');
+    // localStorage must land on the DEFAULT look — a treatment the reader never
+    // asked for is one they would have no idea how to switch off.
+    for (const raw of ['true', 'ON', '1', 'yes', 'SYSTEM', 'more', '', null, undefined]) {
+      expect(parseContrastPreference(raw)).toBe('off');
     }
   });
 
-  it('DEFAULTS to off, not to the OS setting', () => {
-    // The report this answers: the OS "Increase Contrast" switch used to turn
-    // outlines on over the top of this control, so a reader who had never
-    // touched it — and one who had explicitly chosen Off — both got an
-    // outlined app while the control read "Off". Following the device is now
-    // the third CHOICE, and a reader has to make it.
-    expect(parseOutlinePreference(null)).toBe('off');
+  it('DEFAULTS to off, not to the device setting', () => {
+    // The report this answers: the OS "Increase Contrast" switch turned the
+    // treatment on over the top of this control. A reader who has never opened
+    // it has not asked for the treatment; `system` is one tap away for one who
+    // wants their device to decide.
+    expect(parseContrastPreference(null)).toBe('off');
   });
 });
 
-describe('applyOutlinePreference', () => {
+/**
+ * The whole point of the setting, in four assertions.
+ *
+ * Owner report 2026-09-11: *"the increase contrast toggle was on in system
+ * settings; when turned off I saw it work, but like the theme it needs to
+ * disable it on the site or have it on."* As a `@media (prefers-contrast:
+ * more)` block this was impossible — a preference that is not in the cascade
+ * cannot override a query that is. Resolving it in JS is what makes the site's
+ * choice authoritative in BOTH directions.
+ */
+describe('resolveContrast', () => {
+  it('OFF stays off even when the device asks for more', () => {
+    expect(resolveContrast('off', true)).toBe('standard');
+  });
+
+  it('ON applies even when the device does not ask', () => {
+    expect(resolveContrast('on', false)).toBe('more');
+  });
+
+  it('SYSTEM is the only value that listens to the device', () => {
+    expect(resolveContrast('system', true)).toBe('more');
+    expect(resolveContrast('system', false)).toBe('standard');
+  });
+
+  it('names the query the provider and the bootstrap both watch', () => {
+    // One string. Two copies of a media query drift, and the drift is silent.
+    expect(CONTRAST_QUERY).toBe('(prefers-contrast: more)');
+  });
+});
+
+describe('applyContrast', () => {
   function fakeRoot() {
     const attrs = new Map<string, string>();
     return {
@@ -44,56 +76,58 @@ describe('applyOutlinePreference', () => {
     };
   }
 
-  it('sets the attribute the CSS keys off', () => {
+  it('stamps the RESOLVED value, never the preference', () => {
+    // The stylesheet has exactly one rule and it names `more`. Writing `system`
+    // here would mean the CSS had to resolve it, which is the arrangement that
+    // could not be switched off.
     const root = fakeRoot();
-    applyOutlinePreference('on', root);
-    expect(root.attrs.get(OUTLINE_ATTRIBUTE)).toBe('on');
+    applyContrast('more', root);
+    expect(root.attrs.get(CONTRAST_ATTRIBUTE)).toBe('more');
   });
 
-  it('carries "system" through as its own value', () => {
+  it('REMOVES the attribute for the standard palette', () => {
+    // Load-bearing: the one rule names `[data-contrast='more']` positively, so
+    // an absent attribute is the standard look. A reader whose bootstrap never
+    // ran — JS off, blocked storage, a throw — gets the standard palette rather
+    // than a treatment they cannot switch off.
     const root = fakeRoot();
-    applyOutlinePreference('system', root);
-    expect(root.attrs.get(OUTLINE_ATTRIBUTE)).toBe('system');
-  });
-
-  it('REMOVES the attribute rather than setting it to "off"', () => {
-    // Load-bearing, not tidiness: every rule that draws an edge names `on` or
-    // `system` POSITIVELY, so an absent attribute is the quiet look. A reader
-    // whose bootstrap never ran — JS off, blocked storage, a throw — gets no
-    // outlines rather than inheriting whatever their OS asked for.
-    const root = fakeRoot();
-    applyOutlinePreference('on', root);
-    applyOutlinePreference('off', root);
-    expect(root.attrs.has(OUTLINE_ATTRIBUTE)).toBe(false);
+    applyContrast('more', root);
+    applyContrast('standard', root);
+    expect(root.attrs.has(CONTRAST_ATTRIBUTE)).toBe(false);
   });
 });
 
 describe('the pre-paint bootstrap agrees with the module', () => {
   /**
    * The script in `layout.tsx` runs before any module is evaluated, so it
-   * carries both storage keys as string literals and CANNOT import them. That
-   * is the whole hazard: a rename here leaves a setting that still saves, still
-   * renders in the toggle, and silently stops applying on load.
+   * carries the storage key, the attribute AND the media query as string
+   * literals and CANNOT import them. That is the whole hazard: a rename here
+   * leaves a setting that still saves, still renders in the control, and
+   * silently stops applying on load.
    */
   const LAYOUT = readFileSync(join(process.cwd(), 'src/app/layout.tsx'), 'utf8');
 
   it('uses the same storage key', () => {
-    expect(LAYOUT).toContain(`localStorage.getItem('${OUTLINE_STORAGE_KEY}')`);
+    expect(LAYOUT).toContain(`localStorage.getItem('${CONTRAST_STORAGE_KEY}')`);
   });
 
-  it('sets the same attribute, and honours both stored values', () => {
-    expect(LAYOUT).toContain(`setAttribute('${OUTLINE_ATTRIBUTE}',`);
-    // Both, or "System" silently becomes "Off" on every hard load — which is
-    // the same class of bug as the one that made "Off" mean "outlined".
-    expect(LAYOUT).toContain("==='on'||o==='system'");
+  it('sets the same attribute, to the same resolved value', () => {
+    expect(LAYOUT).toContain(`setAttribute('${CONTRAST_ATTRIBUTE}','more')`);
+  });
+
+  it('resolves `system` against the same query', () => {
+    // Without this the bootstrap would treat `system` as off until the provider
+    // mounted, and a reader on `system` with the OS switch on would see one
+    // frame of the standard palette on every hard load.
+    expect(LAYOUT).toContain(CONTRAST_QUERY);
   });
 
   it('applies it before first paint, in <head>', () => {
     // Below the fold of <head> and it is a flash: the reader sees one frame of
-    // the un-outlined app, which for someone who needs the edges is the frame
+    // the untreated app, which for someone who needs the contrast is the frame
     // that matters.
     const head = LAYOUT.slice(LAYOUT.indexOf('<head>'), LAYOUT.indexOf('</head>'));
-    expect(head).toContain(OUTLINE_STORAGE_KEY);
+    expect(head).toContain(CONTRAST_STORAGE_KEY);
   });
 });
 

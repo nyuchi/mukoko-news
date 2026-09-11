@@ -185,59 +185,41 @@ describe('the two defects this file exists to prevent', () => {
     }
   })
 
-  it('outlines are OFF by default and switched on by one selector', () => {
+  it('the standard palette draws no component outline', () => {
     // The complaint this answers: every component carried a 1px border, so the
     // product looked like a high-contrast theme nobody chose. A card separates
-    // by fill; the outline is a reader preference and an accessibility fallback.
+    // by fill; the edge is the reader's choice.
     for (const block of [root, light, dark]) {
       expect(declared(block, '--outline')).toBe('transparent')
     }
-    expect(CSS).toContain("[data-outlines='on']")
-    // …and under high contrast it is offered as a third choice, `system`,
-    // rather than forced on top of the other two.
-    const contrast = highContrastBlock()
-    expect(contrast).toContain('--outline: var(--border)')
-    expect(contrast).toContain("[data-outlines='system']")
   })
 
-  it('high contrast never overrules a reader who switched outlines OFF', () => {
-    // The report: with the OS "Increase Contrast" switch on, every card, panel,
-    // chip and the nav pill was outlined while /profile → Appearance showed
-    // "Off — Separated by fill" selected. A setting that says Off and is not
-    // off is worse than no setting, so this block may only draw an edge for a
-    // reader who asked for one — `on`, or the `system` value that opts into
-    // exactly this query.
-    const contrast = highContrastBlock()
-
-    // Every declaration of an edge token must be qualified by an attribute.
-    for (const [selector] of [
-      ...contrast.matchAll(/([^{}]+)\{([^}]*)\}/g),
-    ].map((m) => [m[1].trim(), m[2]] as const).filter(([, body]) =>
-      /--outline:|--border:|--control:/.test(body)
-    )) {
-      expect(
-        selector,
-        `an edge is drawn for "${selector}" regardless of the reader's choice`
-      ).toContain('[data-outlines=')
-    }
-
-    // Text is the half that is NOT the reader's call — "make differences
-    // easier to see" is about reading a sentence, and nothing opts out of it.
-    expect(contrast).toMatch(/(:root|\.dark),?\s*\n?\s*(\.dark)?\s*\{[^}]*--text-tertiary:\s*#ffffff/i)
-  })
-
-  it('high contrast RAISES contrast inside the Mzizi scale, it does not replace it', () => {
-    // The regression: this block used to set every surface to `Canvas` and
-    // every border and text colour to `CanvasText`. With the OS "Increase
-    // Contrast" switch on, all eight background steps collapsed into one flat
-    // system colour and every card was outlined in stark white on black — the
-    // card stopped reading as a card, because the fill that separated it from
-    // the page was gone and the border was the only structure left.
+  it('has ONE contrast rule, keyed off an attribute, with no media query', () => {
+    // The fix, asserted structurally. Owner report 2026-09-11: *"the increase
+    // contrast toggle was on in system settings; when turned off I saw it work,
+    // but like the theme it needs to disable it on the site or have it on."*
     //
-    // `prefers-contrast: more` means "make differences easier to see", not
-    // "throw away the palette". Replacing the palette is `forced-colors`,
-    // which is a different query and has its own block.
-    const contrast = highContrastBlock()
+    // As `@media (prefers-contrast: more)` this was impossible to switch off
+    // from the site — a preference that is not in the cascade cannot override a
+    // query that is. `system` is resolved in JS (see `lib/appearance.ts`) and
+    // stamped as one attribute, exactly as the theme resolves `system` to a
+    // `light`/`dark` class.
+    expect(CSS).toContain("[data-contrast='more']")
+    // Comments stripped first: the note above the rule explains the query at
+    // length, and prose is not a block.
+    const code = CSS.replace(/\/\*[\s\S]*?\*\//g, '')
+    expect(code).not.toMatch(/@media\s*\(\s*prefers-contrast/)
+  })
+
+  it('raises contrast INSIDE the Mzizi scale, it does not replace it', () => {
+    // The regression: this used to set every surface to `Canvas` and every
+    // border and text colour to `CanvasText`. With the OS switch on, all eight
+    // background steps collapsed into one flat system colour and every card was
+    // outlined in stark white on black — the card stopped reading as a card,
+    // because the fill that separated it from the page was gone and the border
+    // was the only structure left.
+    const rule = /:root\[data-contrast='more'\]\s*\{([^}]*)\}/.exec(CSS)?.[1]
+    expect(rule, 'the contrast rule is gone').toBeDefined()
 
     for (const token of [
       '--background',
@@ -247,18 +229,21 @@ describe('the two defects this file exists to prevent', () => {
       '--elevated',
       '--popover',
     ]) {
-      expect(
-        contrast,
-        `${token} must keep its Mzizi step under prefers-contrast: more`
-      ).not.toMatch(new RegExp(`\\${token}\\s*:\\s*Canvas`))
+      expect(rule, `${token} must keep its Mzizi step under high contrast`).not.toContain(token)
     }
 
-    // What it SHOULD do instead: outlines on, the dim text roles lifted to
-    // full foreground, and a border that is visible but still from the
-    // palette rather than a system colour.
-    expect(contrast).toContain('--outline: var(--border)')
-    expect(contrast).toMatch(/--text-tertiary:\s*#(ffffff|000000)/i)
-    expect(contrast).not.toMatch(/--border:\s*CanvasText/)
+    // What it SHOULD do instead: outlines on, the dim text roles lifted to full
+    // foreground, and a border that is visible but still from the palette
+    // rather than a system colour.
+    expect(rule).toContain('--outline: var(--border)')
+    expect(rule).toMatch(/--text-tertiary:\s*#ffffff/i)
+    expect(rule).not.toMatch(/--border:\s*CanvasText/)
+  })
+
+  it('covers BOTH themes, so light is not left on the dark values', () => {
+    // The dark values are on the bare `:root` rule (they are the defaults);
+    // light needs its own, and at a specificity that wins.
+    expect(CSS).toContain(":root[data-contrast='more'].light")
   })
 
   it('forced-colors is where the palette IS handed over', () => {
