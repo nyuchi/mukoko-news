@@ -27,7 +27,7 @@ const PREVIEW = readFileSync(
 )
 
 describe('ProfileAppearance', () => {
-  it('offers all three themes and both outline settings as exclusive choices', () => {
+  it('offers three themes and three outline settings as exclusive choices', () => {
     render(<ProfileAppearance />)
     const options = screen.getAllByRole('radio')
     const labels = options.map((o) => o.textContent)
@@ -38,10 +38,21 @@ describe('ProfileAppearance', () => {
         `no "${name}" option`
       ).toBe(true)
     }
-    // `radio`, not `button`: these are exclusive choices in a named group, and
-    // the role is what lets a screen reader say "2 of 3" rather than reading
-    // five unrelated buttons.
-    expect(options).toHaveLength(5)
+    // Two groups of three. The outline row gained a "System" of its own
+    // because `prefers-contrast: more` used to switch outlines on OVER this
+    // control — so "Off" was not off. Following the device is a choice here
+    // now, not an override on the other two.
+    expect(options).toHaveLength(6)
+    expect(labels.filter((l) => l?.startsWith('System'))).toHaveLength(2)
+  })
+
+  it('stores AND applies the system outline choice', () => {
+    render(<ProfileAppearance />)
+    const systems = screen.getAllByRole('radio').filter((o) => o.textContent?.startsWith('System'))
+    // The second is the outline group's — the first belongs to the theme row.
+    fireEvent.click(systems[1])
+    expect(storeOutlinePreference).toHaveBeenCalledWith('system')
+    expect(applyOutlinePreference).toHaveBeenCalledWith('system', document.documentElement)
   })
 
   it('marks exactly one theme and one outline setting as chosen', () => {
@@ -53,6 +64,9 @@ describe('ProfileAppearance', () => {
     expect(checked.map((c) => c.textContent?.slice(0, 6))).toEqual(
       expect.arrayContaining([expect.stringContaining('System'), expect.stringContaining('Off')])
     )
+    // And "Off" is the one chosen when nothing is stored — the default is the
+    // quiet look, never the device's contrast setting.
+    expect(checked.some((c) => c.textContent?.startsWith('Off'))).toBe(true)
   })
 
   it('applies a theme choice', () => {

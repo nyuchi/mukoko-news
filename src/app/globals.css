@@ -588,15 +588,26 @@
  * "these two things are different", not lines that mean "here is an edge".
  * Those are different jobs and this is why they are different tokens now.
  *
- * Two things turn outlines on:
+ * The reader picks one of THREE values on /profile, applied to <html> before
+ * first paint so nothing flashes:
  *
- *   1. `data-outlines="on"` — the reader's own choice, from /profile. Set on
- *      <html> before first paint so it never flashes.
- *   2. `prefers-contrast: more` — NOT optional there. That block replaces every
- *      surface with `Canvas`, so the page, the card and the hover row become
- *      one colour and fill can no longer separate anything. Outlines are the
- *      only thing left that can, which is the whole argument for keeping them
- *      one token away rather than deleting them.
+ *   - attribute ABSENT (or `off`) — no outlines, whatever the OS asks. Default.
+ *   - `data-outlines="on"`        — always outlined.
+ *   - `data-outlines="system"`    — outlined under `prefers-contrast: more`.
+ *
+ * ⚠️ Corrected 2026-09-11 (owner report). `prefers-contrast: more` used to turn
+ * outlines on REGARDLESS of this setting. On the owner's phone with the OS
+ * "Increase Contrast" switch on, that meant every card, panel, chip and the nav
+ * pill was outlined while the Appearance card showed "Off" selected — *"the
+ * contrast is still appearing in dark mode even though it's off"*. A setting
+ * that says Off and is not off is worse than no setting, so the OS query became
+ * the third CHOICE rather than an override on top of the other two. It still
+ * lifts the two dim text roles unconditionally: that half of "make differences
+ * easier to see" is about reading, not about drawing boxes.
+ *
+ * Every rule that draws an edge names `on` or `system` POSITIVELY — nothing
+ * keys off the attribute's absence — so a reader whose bootstrap never ran
+ * lands on the quiet look rather than on an outlined app they cannot switch off.
  *
  * ⚠️ This deliberately diverges from the Mzizi card spec, which specifies
  * "a full 1px border" (`mzizi_get_tokens: componentSpecs`). Owner decision
@@ -626,13 +637,29 @@
      eight deliberately distinct steps, and it is the thing carrying the
      structure.
 
-     So: keep every surface, turn outlines on (they stop being optional here —
-     see the doctrine note in CLAUDE.md), lift the two dimmer text roles to
-     full foreground, and give the border a genuinely visible value taken from
-     the palette rather than from the system. */
+     So: keep every surface, lift the two dimmer text roles to full foreground,
+     and — for a reader who has not switched edges off — turn outlines on and
+     give the border a genuinely visible value taken from the palette rather
+     than from the system. */
+
+  /* TEXT lifts unconditionally. This is the half of "more contrast" that is
+     about reading a sentence, and no reader preference here opts out of it. */
   :root,
-  .dark,
+  .dark {
+    --text-secondary: #ffffff;
+    --text-tertiary: #ffffff;
+  }
+
   .light {
+    --text-secondary: #000000;
+    --text-tertiary: #000000;
+  }
+
+  /* EDGES are the reader's call. `system` is the value that asked for this,
+     and `on` is already outlined and gets the stronger edge to match; an
+     explicit (or defaulted) "off" is left alone — see the header note. */
+  :root[data-outlines='system'],
+  :root[data-outlines='on'] {
     --outline: var(--border);
   }
 
@@ -640,17 +667,14 @@
      `--text-tertiary` normally holds — a measured, on-palette step (APCA
      Lc 80.3 on the card) that reads clearly as an edge without the
      wireframe look of a pure-white hairline. */
-  :root,
-  .dark {
-    --text-secondary: #ffffff;
-    --text-tertiary: #ffffff;
+  :root[data-outlines='system'],
+  :root[data-outlines='on'] {
     --border: #d4d4cf;
     --control: #d4d4cf;
   }
 
-  .light {
-    --text-secondary: #000000;
-    --text-tertiary: #000000;
+  .light[data-outlines='system'],
+  .light[data-outlines='on'] {
     --border: #474139;
     --control: #474139;
   }

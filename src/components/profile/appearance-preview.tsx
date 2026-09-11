@@ -37,17 +37,39 @@ export function AppearancePreview({
   split = false,
 }: {
   theme: PreviewTheme
-  outlined?: boolean
+  /**
+   * `true`/`false` draw the edge or leave it off. `'split'` draws BOTH halves
+   * of the same theme — plain on the left, outlined on the right — which is the
+   * only honest picture of the outline setting's own "System": whether it draws
+   * an edge depends on a `prefers-contrast` query this component cannot read,
+   * so committing to either picture would advertise the wrong one to half the
+   * readers who see it. Same device as the theme row's split, one axis over.
+   */
+  outlined?: boolean | 'split'
   split?: boolean
 }) {
   if (split) {
+    const edged = outlined === true
     return (
       <span aria-hidden="true" className="flex h-14 w-full overflow-hidden rounded-lg">
         <span className="w-1/2">
-          <Panel theme="light" outlined={outlined} half />
+          <Panel theme="light" outlined={edged} half />
         </span>
         <span className="w-1/2">
-          <Panel theme="dark" outlined={outlined} half />
+          <Panel theme="dark" outlined={edged} half />
+        </span>
+      </span>
+    )
+  }
+
+  if (outlined === 'split') {
+    return (
+      <span aria-hidden="true" className="flex h-14 w-full overflow-hidden rounded-lg">
+        <span className="w-1/2">
+          <Panel theme={theme} outlined={false} half />
+        </span>
+        <span className="w-1/2">
+          <Panel theme={theme} outlined half />
         </span>
       </span>
     )

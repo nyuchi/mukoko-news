@@ -193,10 +193,37 @@ describe('the two defects this file exists to prevent', () => {
       expect(declared(block, '--outline')).toBe('transparent')
     }
     expect(CSS).toContain("[data-outlines='on']")
-    // …and it is NOT optional under high contrast, where a reader has asked
-    // the OS to make differences easier to see.
+    // …and under high contrast it is offered as a third choice, `system`,
+    // rather than forced on top of the other two.
     const contrast = highContrastBlock()
     expect(contrast).toContain('--outline: var(--border)')
+    expect(contrast).toContain("[data-outlines='system']")
+  })
+
+  it('high contrast never overrules a reader who switched outlines OFF', () => {
+    // The report: with the OS "Increase Contrast" switch on, every card, panel,
+    // chip and the nav pill was outlined while /profile → Appearance showed
+    // "Off — Separated by fill" selected. A setting that says Off and is not
+    // off is worse than no setting, so this block may only draw an edge for a
+    // reader who asked for one — `on`, or the `system` value that opts into
+    // exactly this query.
+    const contrast = highContrastBlock()
+
+    // Every declaration of an edge token must be qualified by an attribute.
+    for (const [selector] of [
+      ...contrast.matchAll(/([^{}]+)\{([^}]*)\}/g),
+    ].map((m) => [m[1].trim(), m[2]] as const).filter(([, body]) =>
+      /--outline:|--border:|--control:/.test(body)
+    )) {
+      expect(
+        selector,
+        `an edge is drawn for "${selector}" regardless of the reader's choice`
+      ).toContain('[data-outlines=')
+    }
+
+    // Text is the half that is NOT the reader's call — "make differences
+    // easier to see" is about reading a sentence, and nothing opts out of it.
+    expect(contrast).toMatch(/(:root|\.dark),?\s*\n?\s*(\.dark)?\s*\{[^}]*--text-tertiary:\s*#ffffff/i)
   })
 
   it('high contrast RAISES contrast inside the Mzizi scale, it does not replace it', () => {

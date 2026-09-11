@@ -180,7 +180,7 @@ export default async function RootLayout({
         <script
           dangerouslySetInnerHTML={{
             __html:
-              "(function(){try{var t=localStorage.getItem('mukoko-news-theme');var d=t==='light'?false:t==='dark'?true:window.matchMedia('(prefers-color-scheme: dark)').matches;var c=document.documentElement.classList;c.remove('light','dark');c.add(d?'dark':'light');if(localStorage.getItem('mukoko-news-outlines')==='on')document.documentElement.setAttribute('data-outlines','on');if(localStorage.getItem('mukoko-news-sidebar')==='open')document.documentElement.setAttribute('data-sidebar','open');}catch(e){}})()",
+              "(function(){try{var t=localStorage.getItem('mukoko-news-theme');var d=t==='light'?false:t==='dark'?true:window.matchMedia('(prefers-color-scheme: dark)').matches;var c=document.documentElement.classList;c.remove('light','dark');c.add(d?'dark':'light');var o=localStorage.getItem('mukoko-news-outlines');if(o==='on'||o==='system')document.documentElement.setAttribute('data-outlines',o);if(localStorage.getItem('mukoko-news-sidebar')==='open')document.documentElement.setAttribute('data-sidebar','open');}catch(e){}})()",
           }}
         />
         <OrganizationJsonLd coverage={coverage} />

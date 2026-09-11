@@ -63,7 +63,12 @@ export function ProfileAppearance() {
     applyOutlinePreference(next, document.documentElement)
   }
 
+  // What the THEME previews draw an edge with: only the always-on setting is a
+  // promise about how the app looks right now. `system` depends on a media
+  // query this component cannot read, and guessing would make the theme row
+  // advertise an edge the reader may not have.
   const outlined = outlines === 'on'
+  const previewTheme = theme === 'light' ? 'light' : 'dark'
 
   return (
     <div className="mb-6 overflow-hidden rounded-2xl border border-outline bg-surface">
@@ -96,25 +101,41 @@ export function ProfileAppearance() {
         <legend className="mb-1 text-sm font-medium">Component outlines</legend>
         <p className="mb-3 text-xs text-text-secondary">
           A card is separated from the page by its background. Turn this on to draw an edge
-          around cards, panels and chips as well. Your device switches it on by itself if you
-          have asked your system for more contrast.
+          around cards, panels and chips as well, or choose System to draw it only when you
+          have asked your device for more contrast.
         </p>
-        <div className="grid grid-cols-2 gap-3">
+        {/* Three options, mirroring the theme row above — and for the same
+            reason it has a System of its own. This was two, with the OS
+            `prefers-contrast: more` query switching outlines on over the top of
+            whichever the reader had picked. So "Off" was not off: measured on
+            the owner's phone with the OS switch on, every card, panel and chip
+            was outlined with THIS control reading "Off — Separated by fill".
+            The OS signal is now one of the choices rather than an override on
+            all of them. */}
+        <div className="grid grid-cols-3 gap-3">
           <Option
             label="Off"
             hint="Separated by fill"
-            selected={!outlined}
+            selected={outlines === 'off'}
             onSelect={() => chooseOutlines('off')}
           >
-            <AppearancePreview theme={theme === 'light' ? 'light' : 'dark'} />
+            <AppearancePreview theme={previewTheme} />
           </Option>
           <Option
             label="On"
             hint="Draw an edge"
-            selected={outlined}
+            selected={outlines === 'on'}
             onSelect={() => chooseOutlines('on')}
           >
-            <AppearancePreview theme={theme === 'light' ? 'light' : 'dark'} outlined />
+            <AppearancePreview theme={previewTheme} outlined />
+          </Option>
+          <Option
+            label="System"
+            hint="Follows your device"
+            selected={outlines === 'system'}
+            onSelect={() => chooseOutlines('system')}
+          >
+            <AppearancePreview theme={previewTheme} outlined="split" />
           </Option>
         </div>
       </fieldset>

@@ -10,17 +10,27 @@ import {
 } from '../appearance';
 
 describe('parseOutlinePreference', () => {
-  it('only the exact string turns outlines on', () => {
+  it('only the exact strings are honoured', () => {
     expect(parseOutlinePreference('on')).toBe('on');
+    expect(parseOutlinePreference('system')).toBe('system');
   });
 
   it('anything else is off', () => {
     // Strict rather than truthy on purpose. A half-written or foreign value in
     // localStorage must land on the DEFAULT look — an outlined app the reader
     // never asked for is one they would have no idea how to switch off.
-    for (const raw of ['true', 'ON', '1', 'yes', '', null, undefined, 'off']) {
+    for (const raw of ['true', 'ON', '1', 'yes', 'SYSTEM', '', null, undefined, 'off']) {
       expect(parseOutlinePreference(raw)).toBe('off');
     }
+  });
+
+  it('DEFAULTS to off, not to the OS setting', () => {
+    // The report this answers: the OS "Increase Contrast" switch used to turn
+    // outlines on over the top of this control, so a reader who had never
+    // touched it — and one who had explicitly chosen Off — both got an
+    // outlined app while the control read "Off". Following the device is now
+    // the third CHOICE, and a reader has to make it.
+    expect(parseOutlinePreference(null)).toBe('off');
   });
 });
 
@@ -40,9 +50,17 @@ describe('applyOutlinePreference', () => {
     expect(root.attrs.get(OUTLINE_ATTRIBUTE)).toBe('on');
   });
 
+  it('carries "system" through as its own value', () => {
+    const root = fakeRoot();
+    applyOutlinePreference('system', root);
+    expect(root.attrs.get(OUTLINE_ATTRIBUTE)).toBe('system');
+  });
+
   it('REMOVES the attribute rather than setting it to "off"', () => {
-    // So the stylesheet has exactly one selector meaning "outlined". A
-    // `data-outlines="off"` would invite a second rule that disagrees with it.
+    // Load-bearing, not tidiness: every rule that draws an edge names `on` or
+    // `system` POSITIVELY, so an absent attribute is the quiet look. A reader
+    // whose bootstrap never ran — JS off, blocked storage, a throw — gets no
+    // outlines rather than inheriting whatever their OS asked for.
     const root = fakeRoot();
     applyOutlinePreference('on', root);
     applyOutlinePreference('off', root);
@@ -63,8 +81,11 @@ describe('the pre-paint bootstrap agrees with the module', () => {
     expect(LAYOUT).toContain(`localStorage.getItem('${OUTLINE_STORAGE_KEY}')`);
   });
 
-  it('sets the same attribute, to the same value', () => {
-    expect(LAYOUT).toContain(`setAttribute('${OUTLINE_ATTRIBUTE}','on')`);
+  it('sets the same attribute, and honours both stored values', () => {
+    expect(LAYOUT).toContain(`setAttribute('${OUTLINE_ATTRIBUTE}',`);
+    // Both, or "System" silently becomes "Off" on every hard load — which is
+    // the same class of bug as the one that made "Off" mean "outlined".
+    expect(LAYOUT).toContain("==='on'||o==='system'");
   });
 
   it('applies it before first paint, in <head>', () => {

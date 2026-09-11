@@ -16,14 +16,27 @@
  * side is a single token (`--outline` in `globals.css`), transparent by default
  * and switched on by `data-outlines="on"` on the root element.
  *
- * `prefers-contrast: more` turns them on regardless of this setting, and that
- * is not a courtesy: a reader who asked their OS to make differences easier to
- * see is asking for the edge, and fill is the subtler of the two signals.
+ * ## Why there are THREE values and not two (owner report 2026-09-11)
  *
- * It is NOT because the surfaces stop separating — that block keeps every step
- * of the Mzizi scale. An earlier version replaced them all with `Canvas`, and
- * this comment used to cite that as the reason; see the corrected note under
- * "Deferring to the system" in CLAUDE.md.
+ * `prefers-contrast: more` used to turn outlines on regardless of this setting,
+ * on the argument that a reader who asked their OS for more contrast is asking
+ * for the edge. Measured on the owner's phone with the OS "Increase Contrast"
+ * switch on, that is what it actually produced: every card, panel, chip and the
+ * nav pill outlined, with the Appearance card showing "Off — Separated by fill"
+ * selected. *"The contrast is still appearing in dark mode even though it's
+ * off."*
+ *
+ * A setting that says Off and is not off is worse than no setting. So the OS
+ * query is now one of the three CHOICES rather than an override on top of them:
+ *
+ *   - `off`     — no component outlines, whatever the OS asks. The default.
+ *   - `on`      — always outlined.
+ *   - `system`  — outlined only under `prefers-contrast: more`.
+ *
+ * The OS signal is not discarded — it still lifts `--text-secondary` /
+ * `--text-tertiary` to full foreground unconditionally, which is the part of
+ * "make differences easier to see" that is about READING rather than about
+ * drawing boxes. What it no longer does is overrule a reader who has said no.
  *
  * ## Per-device, like the other preferences here
  *
@@ -32,7 +45,7 @@
  * in the same place as the rest of them, not a decision made here.
  */
 
-export type OutlinePreference = 'on' | 'off'
+export type OutlinePreference = 'on' | 'off' | 'system'
 
 /**
  * Storage key.
@@ -49,14 +62,17 @@ export const OUTLINE_STORAGE_KEY = 'mukoko-news-outlines'
 export const OUTLINE_ATTRIBUTE = 'data-outlines'
 
 /**
- * Anything that is not exactly `"on"` is off.
+ * Only the two exact strings are honoured; everything else is off.
  *
  * Deliberately strict rather than truthy: a half-written or foreign value in
  * localStorage must land on the default look, not on an outlined app the
- * reader never asked for and would have no idea how to turn off.
+ * reader never asked for and would have no idea how to turn off. That is also
+ * why the DEFAULT is `off` rather than `system` — a reader who has never opened
+ * this control has not asked for edges, and inheriting them from an OS switch
+ * they set for other reasons is exactly the complaint this answers.
  */
 export function parseOutlinePreference(raw: string | null | undefined): OutlinePreference {
-  return raw === 'on' ? 'on' : 'off'
+  return raw === 'on' || raw === 'system' ? raw : 'off'
 }
 
 /** Read the stored preference. Never throws — private mode and blocked storage both return the default. */
@@ -80,14 +96,17 @@ export function storeOutlinePreference(preference: OutlinePreference): void {
 /**
  * Apply the preference to the document.
  *
- * `off` REMOVES the attribute rather than setting it to `"off"`, so the CSS
- * selector stays a plain `[data-outlines='on']` and there is exactly one state
- * that means "outlined".
+ * `off` REMOVES the attribute rather than writing `"off"`, and that is
+ * load-bearing rather than tidiness: an ABSENT attribute must mean the quiet
+ * look, so a reader with JavaScript disabled, blocked storage, or a bootstrap
+ * that threw gets no outlines instead of inheriting whatever their OS asked
+ * for. Every rule that draws an edge names `[data-outlines='on']` or
+ * `[data-outlines='system']` positively; nothing keys off the absence.
  */
 export function applyOutlinePreference(
   preference: OutlinePreference,
   root: { setAttribute(name: string, value: string): void; removeAttribute(name: string): void }
 ): void {
-  if (preference === 'on') root.setAttribute(OUTLINE_ATTRIBUTE, 'on')
-  else root.removeAttribute(OUTLINE_ATTRIBUTE)
+  if (preference === 'off') root.removeAttribute(OUTLINE_ATTRIBUTE)
+  else root.setAttribute(OUTLINE_ATTRIBUTE, preference)
 }
