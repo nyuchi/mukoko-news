@@ -218,13 +218,38 @@ export function destinationsInGroup(group: NavGroupId): Destination[] {
 }
 
 /**
- * The five slots in the mobile bottom bar.
+ * The island's two fixed ends (owner decision 2026-09-11).
  *
- * Five is the ceiling for a thumb-reachable bar, so this is a deliberate
- * subset, not the whole list — everything else is one tap away under Profile,
- * which is why `/profile` holds a slot rather than, say, `/insights`.
+ * Everything BETWEEN these is contextual to the page. Two anchors rather than
+ * a fixed bar of five, because the value of a floating island is that it
+ * carries what the current page needs — but a control that moves under your
+ * thumb between pages is worse than no control at all. So the way home and the
+ * way to your account never move, and the middle is free to change.
  */
-export const BOTTOM_NAV_HREFS = ['/', '/discover', '/newsbytes', '/saved', '/profile'] as const
+export const ISLAND_HOME_HREF = '/'
+export const ISLAND_ACCOUNT_HREF = '/profile'
+
+/**
+ * What fills the middle when the page contributes nothing of its own.
+ *
+ * A reading surface with no actions of its own should still be navigation, not
+ * a gap — so the island falls back to the three destinations a thumb reaches
+ * for constantly. A page with actions (an article: like, save, share, open at
+ * the publisher) replaces these via `useIslandActions`.
+ */
+export const ISLAND_DEFAULT_HREFS = ['/discover', '/newsbytes', '/saved'] as const
+
+/**
+ * The island at rest, end to end.
+ *
+ * Five is the ceiling for a thumb-reachable row, which is what caps the
+ * contextual middle at three: two anchors plus three is the whole budget.
+ */
+export const BOTTOM_NAV_HREFS = [
+  ISLAND_HOME_HREF,
+  ...ISLAND_DEFAULT_HREFS,
+  ISLAND_ACCOUNT_HREF,
+] as const
 
 /**
  * Routes that render no app chrome at all.

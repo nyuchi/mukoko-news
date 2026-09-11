@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { RefreshCw, X } from 'lucide-react';
+import { ArrowUpCircle, RefreshCw, X } from 'lucide-react';
 
 /**
  * Bump this when NEXT_PUBLIC_BUILD_ID / the Vercel commit SHA are unavailable
@@ -22,6 +22,37 @@ export function getServiceWorkerUrl(): string {
     process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA ||
     SW_FALLBACK_VERSION;
   return `/sw.js?v=${encodeURIComponent(buildId)}`;
+}
+
+/**
+ * The version a waiting worker would upgrade you TO.
+ *
+ * Read off the waiting worker's own script URL rather than from
+ * `process.env`: the env var is baked into the bundle that is ALREADY
+ * running, so it names the version you are leaving, not the one you are
+ * getting. `getServiceWorkerUrl` puts the build id in `?v=`, and the waiting
+ * registration's `scriptURL` is the incoming build's copy of it.
+ *
+ * Commit SHAs are shortened the way every git UI shortens them; anything else
+ * (a `VERSION`-style tag, the `v1` fallback) is shown as written. Returns null
+ * when there is nothing trustworthy to show — a version line that says
+ * "unknown" is worse than no version line.
+ */
+export function incomingVersion(scriptUrl: string | undefined | null): string | null {
+  if (!scriptUrl) return null;
+  let raw: string | null = null;
+  try {
+    raw = new URL(scriptUrl, 'https://example.invalid').searchParams.get('v');
+  } catch {
+    return null;
+  }
+  if (!raw) return null;
+
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  // A 40-char hex SHA is unreadable in a toast; 7 is what git shows.
+  if (/^[0-9a-f]{7,40}$/i.test(trimmed)) return trimmed.slice(0, 7);
+  return trimmed.length > 24 ? null : trimmed;
 }
 
 interface ServiceWorkerRegisterProps {
@@ -106,27 +137,53 @@ export function ServiceWorkerRegister({ reloadPage }: ServiceWorkerRegisterProps
 
   if (!waitingWorker || dismissed) return null;
 
+  const version = incomingVersion(waitingWorker.scriptURL);
+
   return (
+    /* A card at the BOTTOM LEFT, in the sidebar's own column when it is docked
+       (owner direction 2026-09-11). It was a centred pill floating over the
+       middle of the page, which put it straight over whatever you were
+       reading — and an update is never so urgent that it should take the
+       reading surface. The sidebar's foot is chrome; this belongs with the
+       chrome. Below `lg` it stacks above the island using the one clearance
+       token every pinned surface reads. */
     <div
       role="status"
-      className="fixed left-4 right-4 z-50 mx-auto flex max-w-md items-center gap-3 rounded-2xl border border-outline bg-background/95 p-3 pl-4 shadow-lg backdrop-blur-xl bottom-[calc(env(safe-area-inset-bottom,0px)_+_5.75rem)] md:bottom-6"
+      className="fixed left-4 z-50 w-[min(20rem,calc(100vw-2rem))] rounded-2xl border border-outline bg-popover p-4 shadow-lg backdrop-blur-xl bottom-[var(--bottom-nav-clearance)] lg:bottom-4 lg:w-[calc(var(--sidebar-width)-2rem)]"
     >
-      <p className="flex-1 text-sm text-foreground">Update available</p>
+      <div className="flex items-start gap-3">
+        <ArrowUpCircle className="mt-0.5 h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium text-foreground">Update available</p>
+          {/* Naming the target build is the point of the card: "an update is
+              available" tells you nothing you can check afterwards, and a
+              reader who refreshes has no way to confirm they got it. */}
+          {version ? (
+            <p className="mt-0.5 truncate font-mono text-xs text-text-secondary">
+              Upgrading to {version}
+            </p>
+          ) : (
+            <p className="mt-0.5 text-xs text-text-secondary">
+              A newer version is ready to install.
+            </p>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={() => setDismissed(true)}
+          aria-label="Dismiss update notification"
+          className="-mr-1 -mt-1 shrink-0 rounded-xl p-2 text-text-tertiary transition-colors hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <X className="h-4 w-4" aria-hidden="true" />
+        </button>
+      </div>
       <button
         type="button"
         onClick={applyUpdate}
-        className="flex items-center gap-1.5 rounded-xl bg-primary px-3 py-2 text-sm font-medium text-on-primary transition-opacity hover:opacity-90"
+        className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-xl bg-primary px-3 py-2 text-sm font-medium text-on-primary transition-opacity hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover"
       >
         <RefreshCw className="h-4 w-4" aria-hidden="true" />
-        Refresh
-      </button>
-      <button
-        type="button"
-        onClick={() => setDismissed(true)}
-        aria-label="Dismiss update notification"
-        className="rounded-xl p-2 text-text-tertiary transition-colors hover:text-foreground"
-      >
-        <X className="h-4 w-4" aria-hidden="true" />
+        Refresh now
       </button>
     </div>
   );

@@ -118,6 +118,35 @@ describe('the overlay push', () => {
 })
 
 /**
+ * The island centres on the CONTENT COLUMN, not the viewport (owner decision
+ * 2026-09-11). The shell's inset is padding, and padding on an ancestor does
+ * nothing to a `position: fixed` child — so the island has to carry the offset
+ * itself or it would straddle the docked sidebar's edge.
+ */
+describe('the island and the docked sidebar', () => {
+  it('shifts the island right when the sidebar is docked open', () => {
+    expect(CSS).toMatch(
+      /html\[data-sidebar='open'\]\s+#bottom-island\s*\{\s*left:\s*calc\(var\(--sidebar-width\)/
+    )
+  })
+
+  it('offsets from the same width token the sidebar and the shell use', () => {
+    // A literal here would drift from the sidebar the moment its width
+    // changed, and the island would sit over the column edge.
+    const rule = /#bottom-island\s*\{\s*left:\s*calc\(([^)]*\)?[^}]*)\}/.exec(CSS)?.[1] ?? ''
+    expect(rule).toContain('var(--sidebar-width)')
+  })
+
+  it('only shifts where the sidebar actually docks', () => {
+    // Below `lg` the sidebar overlays and the shell TRANSLATES; the island
+    // rides inside the shell and is carried by that transform, so a second
+    // offset here would move it twice.
+    const dockedBlock = CSS.slice(CSS.indexOf('@media (min-width: 1024px)'))
+    expect(dockedBlock).toContain('#bottom-island')
+  })
+})
+
+/**
  * The pre-paint bootstrap cannot import this module — it runs before any
  * module is evaluated — so it repeats the storage key and the attribute as
  * string literals. This is the only thing standing between a rename here and

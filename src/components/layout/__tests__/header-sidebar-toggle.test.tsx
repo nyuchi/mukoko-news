@@ -90,6 +90,21 @@ describe('Header — the sidebar toggle', () => {
     expect(window.localStorage.getItem(SIDEBAR_STORAGE_KEY)).toBe('open')
   })
 
+  it('sits outside the centred masthead column, hard against the sidebar edge', () => {
+    // It used to live inside the header's `mx-auto max-w-[--width-wide]`
+    // container, which on a wide screen put ~580px of empty header between the
+    // docked sidebar and the control that closes it — measured from the owner's
+    // screen recording, and named there as "too far apart". The toggle now sits
+    // in an outer band that starts at the shell's own left edge.
+    const { container } = renderHeader()
+    const band = toggle().parentElement!
+    expect(band.className).not.toContain('max-w-')
+    expect(band.className).not.toContain('mx-auto')
+    // And the centred column is a SIBLING of the toggle, not its ancestor.
+    const column = container.querySelector('[class*="max-w-"]')
+    expect(column?.contains(toggle())).toBe(false)
+  })
+
   it('is absent inside the embed iframe', () => {
     // Our markup in somebody else's page has no sidebar to toggle.
     mockPathname.mockReturnValue('/embed/iframe')

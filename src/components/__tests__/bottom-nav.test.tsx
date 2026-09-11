@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { BottomNav } from '../layout/bottom-nav';
+import { IslandProvider } from '@/contexts/island-context';
 import { BOTTOM_NAV_HREFS } from '@/lib/navigation';
 
 // Mock next/navigation
@@ -8,6 +9,18 @@ const mockUsePathname = vi.fn();
 vi.mock('next/navigation', () => ({
   usePathname: () => mockUsePathname(),
 }));
+
+/**
+ * The island reads what the current page contributed, so it needs the
+ * provider. With nothing registered it falls back to plain navigation, which
+ * is what every assertion below exercises.
+ */
+const renderIsland = () =>
+  render(
+    <IslandProvider>
+      <BottomNav />
+    </IslandProvider>
+  );
 
 describe('BottomNav', () => {
   beforeEach(() => {
@@ -17,7 +30,7 @@ describe('BottomNav', () => {
   it('should render navigation on home page', () => {
     mockUsePathname.mockReturnValue('/');
 
-    render(<BottomNav />);
+    renderIsland();
 
     expect(screen.getByRole('navigation', { name: /main navigation/i })).toBeInTheDocument();
     expect(screen.getByText('Feed')).toBeInTheDocument();
@@ -37,7 +50,7 @@ describe('BottomNav', () => {
   it('renders on NewsBytes, over the video', () => {
     mockUsePathname.mockReturnValue('/newsbytes');
 
-    render(<BottomNav />);
+    renderIsland();
 
     expect(screen.getByRole('navigation', { name: /main navigation/i })).toBeInTheDocument();
   });
@@ -45,7 +58,7 @@ describe('BottomNav', () => {
   it('renders on article pages', () => {
     mockUsePathname.mockReturnValue('/article/123');
 
-    render(<BottomNav />);
+    renderIsland();
 
     expect(screen.getByRole('navigation', { name: /main navigation/i })).toBeInTheDocument();
   });
@@ -55,7 +68,7 @@ describe('BottomNav', () => {
     // somebody else's page.
     mockUsePathname.mockReturnValue('/embed/iframe');
 
-    const { container } = render(<BottomNav />);
+    const { container } = renderIsland();
 
     expect(container.firstChild).toBeNull();
   });
@@ -65,7 +78,7 @@ describe('BottomNav', () => {
     // against, so the pill would dissolve into whatever is behind it.
     mockUsePathname.mockReturnValue('/newsbytes');
 
-    render(<BottomNav />);
+    renderIsland();
 
     const nav = screen.getByRole('navigation', { name: /main navigation/i });
     expect(nav).toHaveClass('bg-black/70');
@@ -75,7 +88,7 @@ describe('BottomNav', () => {
   it('should render on discover page', () => {
     mockUsePathname.mockReturnValue('/discover');
 
-    render(<BottomNav />);
+    renderIsland();
 
     expect(screen.getByRole('navigation')).toBeInTheDocument();
   });
@@ -83,7 +96,7 @@ describe('BottomNav', () => {
   it('should highlight active link', () => {
     mockUsePathname.mockReturnValue('/discover');
 
-    render(<BottomNav />);
+    renderIsland();
 
     const discoverLink = screen.getByRole('link', { name: /discover/i });
     expect(discoverLink).toHaveClass('text-primary');
@@ -93,7 +106,7 @@ describe('BottomNav', () => {
   it('should not highlight inactive links', () => {
     mockUsePathname.mockReturnValue('/');
 
-    render(<BottomNav />);
+    renderIsland();
 
     const discoverLink = screen.getByRole('link', { name: /discover/i });
     expect(discoverLink).not.toHaveClass('text-primary');
@@ -103,7 +116,7 @@ describe('BottomNav', () => {
   it('should have correct href for all navigation items', () => {
     mockUsePathname.mockReturnValue('/');
 
-    render(<BottomNav />);
+    renderIsland();
 
     expect(screen.getByRole('link', { name: /feed/i })).toHaveAttribute('href', '/');
     expect(screen.getByRole('link', { name: /discover/i })).toHaveAttribute('href', '/discover');
@@ -115,7 +128,7 @@ describe('BottomNav', () => {
   it('should render on saved page', () => {
     mockUsePathname.mockReturnValue('/saved');
 
-    render(<BottomNav />);
+    renderIsland();
 
     expect(screen.getByRole('navigation')).toBeInTheDocument();
     const savedLink = screen.getByRole('link', { name: /saved/i });
@@ -125,7 +138,7 @@ describe('BottomNav', () => {
   it('should render on profile page', () => {
     mockUsePathname.mockReturnValue('/profile');
 
-    render(<BottomNav />);
+    renderIsland();
 
     expect(screen.getByRole('navigation')).toBeInTheDocument();
     const profileLink = screen.getByRole('link', { name: /profile/i });
@@ -135,7 +148,7 @@ describe('BottomNav', () => {
   it('should render on article sub-routes (anchored regex)', () => {
     mockUsePathname.mockReturnValue('/article/123/comments');
 
-    render(<BottomNav />);
+    renderIsland();
 
     expect(screen.getByRole('navigation')).toBeInTheDocument();
   });
@@ -147,7 +160,7 @@ describe('BottomNav', () => {
     // rather than silently shortening the bar to four items.
     mockUsePathname.mockReturnValue('/');
 
-    render(<BottomNav />);
+    renderIsland();
 
     const hrefs = screen.getAllByRole('link').map((a) => a.getAttribute('href'));
     expect(hrefs).toEqual([...BOTTOM_NAV_HREFS]);
@@ -157,7 +170,7 @@ describe('BottomNav', () => {
     it('should float inset from the viewport edges (not flush bottom)', () => {
       mockUsePathname.mockReturnValue('/');
 
-      render(<BottomNav />);
+      renderIsland();
 
       const nav = screen.getByRole('navigation', { name: /main navigation/i });
       expect(nav).toHaveClass('fixed', 'left-4', 'right-4');
@@ -170,7 +183,7 @@ describe('BottomNav', () => {
       // card that happened to be sitting at the bottom of the screen.
       mockUsePathname.mockReturnValue('/');
 
-      render(<BottomNav />);
+      renderIsland();
 
       const nav = screen.getByRole('navigation', { name: /main navigation/i });
       expect(nav).toHaveClass('rounded-full');
@@ -180,7 +193,7 @@ describe('BottomNav', () => {
     it('should lift above the home-indicator via the safe-area inset', () => {
       mockUsePathname.mockReturnValue('/');
 
-      render(<BottomNav />);
+      renderIsland();
 
       const nav = screen.getByRole('navigation', { name: /main navigation/i });
       expect(nav).toHaveClass('bottom-[calc(env(safe-area-inset-bottom,0px)_+_0.75rem)]');
@@ -189,7 +202,7 @@ describe('BottomNav', () => {
     it('should use the floating card styling (blur, border, shadow)', () => {
       mockUsePathname.mockReturnValue('/');
 
-      render(<BottomNav />);
+      renderIsland();
 
       const nav = screen.getByRole('navigation', { name: /main navigation/i });
       expect(nav).toHaveClass('bg-background/90', 'backdrop-blur-xl', 'border', 'shadow-lg');
@@ -199,7 +212,7 @@ describe('BottomNav', () => {
     it('should keep 48px minimum touch targets on nav items', () => {
       mockUsePathname.mockReturnValue('/');
 
-      render(<BottomNav />);
+      renderIsland();
 
       for (const link of screen.getAllByRole('link')) {
         expect(link).toHaveClass('min-h-12');

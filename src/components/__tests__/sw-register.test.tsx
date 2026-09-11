@@ -1,6 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
-import { ServiceWorkerRegister, getServiceWorkerUrl } from '@/components/pwa/sw-register';
+import {
+  ServiceWorkerRegister,
+  getServiceWorkerUrl,
+  incomingVersion,
+} from '@/components/pwa/sw-register';
 
 type Listener = () => void;
 
@@ -178,3 +182,43 @@ describe('ServiceWorkerRegister', () => {
     expect(screen.queryByText('Update available')).not.toBeInTheDocument();
   });
 });
+
+/**
+ * The card names the build it would upgrade you TO.
+ *
+ * "Update available" alone tells a reader nothing they can check afterwards —
+ * they refresh and have no way to confirm they got the thing. The version has
+ * to come off the WAITING worker's script URL, because `process.env` is baked
+ * into the bundle already running and therefore names the version being left.
+ */
+describe('incomingVersion', () => {
+  it('shortens a commit SHA the way git does', () => {
+    expect(incomingVersion('https://news.mukoko.com/sw.js?v=9f2c1ab7d4e5f60718293a4b5c6d7e8f90a1b2c3')).toBe(
+      '9f2c1ab'
+    )
+  })
+
+  it('keeps a human version tag as written', () => {
+    expect(incomingVersion('/sw.js?v=4.52.0')).toBe('4.52.0')
+    expect(incomingVersion('/sw.js?v=v1')).toBe('v1')
+  })
+
+  it.each([
+    ['no query at all', '/sw.js'],
+    ['an empty v', '/sw.js?v='],
+    ['only whitespace', '/sw.js?v=%20%20'],
+    ['nothing to read', undefined],
+    ['null', null],
+  ])('returns null for %s rather than inventing one', (_label, url) => {
+    // A version line reading "unknown" is worse than no version line.
+    expect(incomingVersion(url as string | undefined)).toBeNull()
+  })
+
+  it('refuses an implausibly long value instead of overflowing the card', () => {
+    expect(incomingVersion(`/sw.js?v=${'x'.repeat(80)}`)).toBeNull()
+  })
+
+  it('does not throw on a malformed URL', () => {
+    expect(() => incomingVersion('::::')).not.toThrow()
+  })
+})

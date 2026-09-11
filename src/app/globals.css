@@ -27,13 +27,14 @@
   /* The full Mzizi background scale. Five steps were missing, which is why
      menus reused the hover-row colour, the share modal hand-rolled its own
      backdrop, and article heroes had no media-well token. */
-  /* How much bottom space the floating mobile nav needs kept clear: its own
-     height (4rem) + the 0.75rem it floats by + a 0.75rem breathing gap, on top
-     of the home-indicator inset. Every surface that pins something to the
-     bottom on mobile reads this, so the pill and an action rail can never be
-     lifted by different amounts again. Zero above `md`, where the pill is not
-     rendered — consumers apply `md:` themselves since a CSS variable cannot
-     carry a breakpoint. */
+  /* How much bottom space the floating island needs kept clear: its own height
+     (4rem) + the 0.75rem it floats by + a 0.75rem breathing gap, on top of the
+     home-indicator inset. Every surface that pins something above the island
+     reads this, so they can never be lifted by different amounts.
+
+     It applies at EVERY width now. The island used to be `md:hidden` and this
+     was reset to zero above `md`; with one island on every screen, a reset
+     would put the last line of every desktop article under it. */
   --bottom-nav-clearance: calc(env(safe-area-inset-bottom, 0px) + 5.5rem);
   /* How wide the navigation sidebar is when docked. Read by the sidebar
      itself AND by the page inset below, so the column and the space kept for
@@ -475,9 +476,31 @@
      Consume them through `<PageContainer>`, not by hand. */
   --width-wide: 1200px; /* chrome: header, footer, index pages */
   --width-reading: 800px; /* one column of running text — the article body */
+  /* Both widen on a big screen (owner review 2026-09-11: "the content width is
+     quite narrow on desktop"). 800px is a good measure at 1280px and reads as
+     a ribbon at 2500px, where it leaves more empty page than article. The
+     steps below stay inside a sane measure — ~90 characters at the top step,
+     not the 120+ a full-bleed column would give — so the text still scans. */
   --width-form: 600px; /* a single form or auth card */
   --page-gutter: 1rem; /* 16px — the a11y floor at every width */
   --page-gutter-sm: 1.5rem; /* 24px from the `sm` breakpoint up */
+}
+
+/* The widths step up with the viewport. Declared as overrides of the tokens
+   themselves rather than as `xl:max-w-*` at the call sites, so every surface
+   that already consumes the token widens together and none can drift. */
+@media (min-width: 1280px) {
+  :root {
+    --width-wide: 1320px;
+    --width-reading: 880px;
+  }
+}
+
+@media (min-width: 1920px) {
+  :root {
+    --width-wide: 1480px;
+    --width-reading: 960px;
+  }
 }
 
 /* Data-dense surfaces: admin tables, dashboards, power-user tools. */
@@ -826,6 +849,17 @@ textarea {
   html[data-sidebar='open'] .app-shell {
     padding-left: var(--sidebar-width);
   }
+
+  /* The island centres on the CONTENT COLUMN, not the viewport (owner decision
+     2026-09-11). The shell's inset is padding, and padding on an ancestor does
+     nothing to a `position: fixed` child — so the island needs the offset
+     itself or it would centre on the whole window and straddle the sidebar's
+     edge. Keyed off the same attribute as the shell inset, and for the same
+     reason: a reload with the sidebar open must paint in the right place
+     rather than jump there once React hydrates. */
+  html[data-sidebar='open'] #bottom-island {
+    left: calc(var(--sidebar-width) + 1rem);
+  }
 }
 
 /* Below `lg` the sidebar PUSHES the page instead of covering it.
@@ -868,8 +902,13 @@ textarea {
     transform 200ms ease-out;
 }
 
+#bottom-island {
+  transition: left 200ms ease-out;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .app-shell {
+  .app-shell,
+  #bottom-island {
     transition: none;
   }
 }
