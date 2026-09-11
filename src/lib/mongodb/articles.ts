@@ -9,7 +9,7 @@ import { getDb, QUERY_MAX_TIME_MS } from './client'
 import { stripHtml } from '@/lib/utils'
 import { clampInt, MAX_LIMIT, MAX_PAGE } from '@/lib/safety'
 import { getPublisherOrganization, type PublisherOrganization } from './organizations'
-import type { Article } from '@/lib/api'
+import type { Article, SourceSignals } from '@/lib/api'
 
 interface MongoArticle {
   /**
@@ -81,34 +81,98 @@ interface MongoFeedSource {
   feedUrl?: string
   sourceUrl?: string
   /**
-   * The publisher's trust score, 0-100, owned by the gateway's publisher-
-   * verification flow (`PublisherVerificationService` stacks the Tier-1 entity
-   * and Tier-2 publisher boosts onto it and audits every change in
-   * `news.sourceScoreHistory`). Read-only here.
+   * When the pipeline last SUCCESSFULLY read this feed.
    *
-   * Absent on sources the flow has never scored — and absent is NOT zero. A
-   * source nobody has assessed is unassessed; rendering that as 0/100 would
-   * publish an accusation the platform never made.
+   * Deliberately this and not `lastFetchedAt`, which is the last *attempt*, nor
+   * `sourceHealth`/`consecutiveFailures`/`lastFetchError`, which are the
+   * attempt's verdict. Measured on the live cluster 2026-09-11: of the 387
+   * active sources sitting in `lastFetchStatus: 'error'`, **351 (91%) carry our
+   * own MongoDB read timeout** (`…mongodb.net:27017: The read operation timed
+   * out`) as the source's fetch error — so the platform had marked 351 named
+   * newsrooms `critical`/`failing` for the crime of our database being slow.
+   * Only 28 carry a real publisher-side HTTP status. Publishing that as a
+   * statement about a publisher would be publishing our outage as their fault.
+   *
+   * `lastSuccessfulFetchAt` cannot make that mistake: it is a timestamp of a
+   * thing that demonstrably happened, and it says nothing about whose fault a
+   * gap is. On the same measurement 138 sources had succeeded within 24h and
+   * 238 within a week — i.e. the feeds are overwhelmingly fine and the health
+   * field was simply wrong.
    */
-  trustScore?: number
+  lastSuccessfulFetchAt?: Date
+  /** How many articles the platform holds from this source. */
+  articleCount?: number
+  /** When this source was first registered — "delivering since". */
+  createdAt?: Date
+  /**
+   * How the source's country was established: `declared` (the catalogue country
+   * we queried), `tld` (its own ccTLD corroborates it), `assumed` (registered
+   * before the field existed and nothing corroborates it).
+   *
+   * Carried BECAUSE it is unflattering. Measured 2026-09-11 across the 414
+   * active sources: 80 declared, 117 tld, **217 assumed** — and the assumed set
+   * is where `theguardian.com` sits filed as Zimbabwean. A country shown with
+   * no provenance reads as a fact; shown as `assumed` it reads as what it is.
+   */
+  countryCodeSource?: string
 }
 
 /**
- * A publisher trust score in 0-100, or `undefined` when the source has none.
+ * The signals about a source the platform can actually stand behind.
  *
- * The guard is deliberately strict about `0`. `qualityScore` on articles has
- * exactly this failure already documented in `article-metrics.ts`: ingestion
- * writes a literal `0` before enrichment runs, so `0` there means "not yet
- * assessed" and is treated as a sentinel. Trust is scored by a different
- * subsystem and a genuine 0 is possible, so this keeps 0 — but it rejects the
- * non-finite and out-of-range values a bad write could leave behind, rather
- * than rendering a 4,000% bar.
+ * ## Why there is no score here
+ *
+ * There is a `feedSources.trustScore`, every active source carries one, and it
+ * used to be rendered on every article page as **"Source trust score"** with a
+ * band label. It was withdrawn on 2026-09-11 (owner decision) because it does
+ * not measure trust. It is `(avgQuality*0.7 + volume*0.3)*100` over a 7-day
+ * window — i.e. *has this source lately published a lot of long, fluent text* —
+ * and measured on the live cluster that produces:
+ *
+ *  - **200 of the 201 sources scoring >= 70 ("Established") have a feed the
+ *    platform records as broken**; exactly one is healthy, and the 23 genuinely
+ *    healthy sources all sit in the LOWEST band;
+ *  - `src-malawivoice-mw`, which carries 45+ foreign-language casino-affiliate
+ *    pages, scores **85.8 -> "Established"**, because a fluent SEO page scores
+ *    *well* on `content_depth`;
+ *  - `news.sourceScoreHistory`, which this module's own comments claimed audits
+ *    every change to it, is **empty** — 0 rows. There is no trail.
+ *
+ * A composite that rates a casino-spam farm above almost every real newsroom on
+ * the platform is not a weak signal, it is a wrong one, and this repo's rule
+ * for wrong values is the one the pipeline's country backfill states: *a null
+ * is a known gap, a wrong value is a silent error every reader takes as fact.*
+ * The score comes back when the pipeline folds feed reliability into it; until
+ * then nothing here reads it.
+ *
+ * Returns `undefined` when the source record itself is absent, so callers can
+ * omit the panel rather than render an empty one.
  */
-function resolveSourceTrust(source?: MongoFeedSource): number | undefined {
-  const raw = source?.trustScore
-  if (typeof raw !== 'number' || !Number.isFinite(raw)) return undefined
-  if (raw < 0 || raw > 100) return undefined
-  return Math.round(raw)
+function resolveSourceSignals(source?: MongoFeedSource): SourceSignals | undefined {
+  if (!source) return undefined
+
+  const articles =
+    typeof source.articleCount === 'number' && Number.isFinite(source.articleCount)
+      ? Math.max(0, Math.trunc(source.articleCount))
+      : undefined
+
+  // A closed set, and anything else is dropped rather than passed through. The
+  // field is written by the pipeline and Mongo's validators accept unknown
+  // values, so an unrecognised string must not reach the page and be rendered
+  // as though it were a provenance the platform recognises.
+  const provenance =
+    source.countryCodeSource === 'declared' ||
+    source.countryCodeSource === 'tld' ||
+    source.countryCodeSource === 'assumed'
+      ? source.countryCodeSource
+      : undefined
+
+  return {
+    article_count: articles,
+    last_successful_fetch_at: source.lastSuccessfulFetchAt?.toISOString(),
+    delivering_since: source.createdAt?.toISOString(),
+    country_code_source: provenance,
+  }
 }
 
 /**
@@ -264,10 +328,10 @@ function toArticle(
     // read. Also derived, never stored — it feeds the source icon.
     source_url: resolveSourceSiteUrl(source),
     // Resolved from the feed-source record on the same read as `source_url`,
-    // never stored on the article — same rule as `publisher`. The score moves
-    // when staff approve or revoke a publisher claim, and a copy on 63k
-    // articles could not follow it.
-    source_trust: resolveSourceTrust(source),
+    // never stored on the article — same rule as `publisher`. These move when
+    // the pipeline next reads the feed, and a copy on 63k articles could not
+    // follow them.
+    source_signals: resolveSourceSignals(source),
     slug: doc.slug,
     category: resolveCategory(doc),
     keywords: resolveKeywords(doc),

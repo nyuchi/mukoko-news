@@ -10,6 +10,8 @@ import {
   Clock,
   Search,
   BadgeCheck,
+  RadioTower,
+  Lock,
 } from "lucide-react";
 import { SourceIcon } from "@/components/ui/source-icon";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
@@ -20,6 +22,8 @@ import { COUNTRIES, getFullUrl } from "@/lib/constants";
 import { useCoverage } from "@/contexts/coverage-context";
 import { WebPageJsonLd } from "@/components/ui/json-ld";
 import { formatTimeAgo } from "@/lib/utils";
+import { useAuth } from "@workos-inc/authkit-nextjs/components";
+import { canAccess, planFor } from "@/lib/access";
 
 interface Source {
   id: string;
@@ -49,7 +53,48 @@ interface Source {
    */
   newsroom_id?: string;
   newsroom_name?: string;
+  /**
+   * When the pipeline last SUCCESSFULLY read this feed.
+   *
+   * The honest reliability signal. `sourceHealth`/`consecutiveFailures` are
+   * deliberately NOT carried: measured 2026-09-11, 351 of the 387 active
+   * sources in an error state recorded the platform's own MongoDB timeout as
+   * the publisher's fetch error.
+   */
+  last_successful_fetch_at?: string;
+  delivering_since?: string;
+  country_code_source?: "declared" | "tld" | "assumed";
 }
+
+/**
+ * How a source's country was established, in words a reader can weigh.
+ *
+ * Shown BECAUSE `assumed` is unflattering — 217 of 414 active sources, the
+ * bucket that files `theguardian.com` as Zimbabwean, because the newsdata
+ * collector registers an outlet under the country it QUERIED rather than the
+ * country the outlet is in. A country shown bare reads as a fact.
+ */
+const PROVENANCE: Record<
+  NonNullable<Source["country_code_source"]>,
+  { short: string; title: string; chip: string }
+> = {
+  declared: {
+    short: "declared",
+    title: "Country declared by the source catalogue",
+    chip: "bg-muted text-text-tertiary",
+  },
+  tld: {
+    short: "verified by domain",
+    title: "Country corroborated by the publisher's own country domain",
+    chip: "bg-container-malachite text-on-container-malachite",
+  },
+  assumed: {
+    short: "unverified",
+    title:
+      "Country not corroborated — inherited from how the source was discovered, not from the publisher",
+    chip: "bg-container-terracotta text-on-container-terracotta",
+  },
+};
 
 type SortKey = "articles" | "name" | "recent" | "errors";
 
@@ -74,6 +119,11 @@ export default function SourcesPage() {
   const deferredAuthor = useDeferredValue(authorFilter);
   const [authors, setAuthors] = useState<SourceAuthor[]>([]);
   const [sortBy, setSortBy] = useState<SortKey>("articles");
+  const { user, loading: authLoading } = useAuth();
+  // Locked while the session resolves, never the other way round — the opposite
+  // flashes the gated record to every anonymous reader on every load.
+  const showRecord =
+    !authLoading && canAccess("source-transparency", planFor(!!user));
 
   useEffect(() => {
     async function fetchSources() {
@@ -337,6 +387,26 @@ export default function SourcesPage() {
           </select>
         </div>
 
+        {/* The source record, and the offer of it.
+
+            One `useAuth()` here rather than one per row: the directory renders
+            414 active sources, and the answer is the same for all of them. */}
+        {!showRecord && (
+          <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl bg-surface px-4 py-3 text-sm text-text-secondary ring-1 ring-outline">
+            <Lock className="h-3.5 w-3.5 shrink-0 text-text-tertiary" aria-hidden="true" />
+            <span>
+              Signed-in readers also see when each feed was last read, how long it has
+              been delivering, and whether its country is verified.
+            </span>
+            <Link
+              href="/sign-in?returnTo=/sources"
+              className="rounded-sm font-medium text-secondary hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              Sign in
+            </Link>
+          </div>
+        )}
+
         {/* Source list */}
         <div className="space-y-3">
           {filteredSources.length === 0 ? (
@@ -345,7 +415,7 @@ export default function SourcesPage() {
             </div>
           ) : (
             filteredSources.map((source) => (
-              <SourceRow key={source.id} source={source} />
+              <SourceRow key={source.id} source={source} showRecord={showRecord} />
             ))
           )}
         </div>
@@ -375,8 +445,11 @@ function StatCard({
   );
 }
 
-function SourceRow({ source }: { source: Source }) {
+function SourceRow({ source, showRecord }: { source: Source; showRecord: boolean }) {
   const country = COUNTRIES.find((c) => c.code === source.country_id);
+  const provenance = source.country_code_source
+    ? PROVENANCE[source.country_code_source]
+    : undefined;
   const articleCount = source.article_count || 0;
   const hasIssues = hasHighErrorRate(source);
   const isInactive = articleCount === 0;
@@ -422,6 +495,14 @@ function SourceRow({ source }: { source: Source }) {
               {country.flag}
             </span>
           )}
+          {showRecord && provenance && (
+            <span
+              className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${provenance.chip}`}
+              title={provenance.title}
+            >
+              {provenance.short}
+            </span>
+          )}
           {source.url && (
             <a
               href={source.url}
@@ -442,6 +523,24 @@ function SourceRow({ source }: { source: Source }) {
             <span className="flex items-center gap-1">
               <Clock className="w-3 h-3" />
               {formatTimeAgo(source.latest_article_at)}
+            </span>
+          )}
+          {showRecord && source.last_successful_fetch_at && (
+            <span
+              className="flex items-center gap-1"
+              title="When Mukoko last successfully read this feed"
+            >
+              <RadioTower className="w-3 h-3" />
+              feed read {formatTimeAgo(source.last_successful_fetch_at)}
+            </span>
+          )}
+          {showRecord && source.delivering_since && (
+            <span title="When this source was first registered with Mukoko">
+              since{" "}
+              {new Date(source.delivering_since).toLocaleDateString("en-GB", {
+                month: "short",
+                year: "numeric",
+              })}
             </span>
           )}
         </div>

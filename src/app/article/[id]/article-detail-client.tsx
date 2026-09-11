@@ -27,7 +27,7 @@ import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { ArticleReadingMeta, ArticleMetricsPanel } from "@/components/article/article-metrics";
 import { ArticleByline } from "@/components/article/article-byline";
 import { ArticleSummary } from "@/components/article/article-summary";
-import { ArticleTrustPanel } from "@/components/article/article-trust";
+import { SourceProvenancePanel } from "@/components/article/source-provenance";
 import { RelatedArticles } from "@/components/article/related-articles";
 import { ReadProgress } from "@/components/article/read-progress";
 import { PageContainer, PageBleed } from "@/components/layout/page-container";
@@ -480,7 +480,7 @@ export default function ArticleDetailClient({
             </a>
           )}
 
-          <ArticleTrustPanel article={article} />
+          <SourceProvenancePanel article={article} />
 
           {/* Topics, as the reader's way onward into the developing story.
               They sit after the body rather than in the header: the header

@@ -50,6 +50,15 @@ export type Feature =
   | 'saved-articles'
   /** A verified publisher's own dashboard. */
   | 'publisher-dashboard'
+  /**
+   * The provenance panel on a source: how many articles we hold from it, when
+   * we last successfully read its feed, how long it has been delivering, and
+   * how we established its country.
+   *
+   * Signed-in rather than public because it is the platform's own operational
+   * record of a named third party, not something the publisher published.
+   */
+  | 'source-transparency'
 
 /**
  * The minimum plan each feature needs.
@@ -74,6 +83,7 @@ const REQUIRES: Record<Feature, Plan> = {
   'analytics-export': 'free',
   'saved-articles': 'free',
   'publisher-dashboard': 'free',
+  'source-transparency': 'free',
 }
 
 /**
