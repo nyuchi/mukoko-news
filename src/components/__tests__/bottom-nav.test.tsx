@@ -82,7 +82,7 @@ describe('BottomNav', () => {
 
     const nav = screen.getByRole('navigation', { name: /main navigation/i });
     expect(nav).toHaveClass('bg-black/70');
-    expect(nav).not.toHaveClass('bg-background/90');
+    expect(nav).not.toHaveClass('bg-raised/90');
   });
 
   it('should render on discover page', () => {
@@ -205,7 +205,7 @@ describe('BottomNav', () => {
       renderIsland();
 
       const nav = screen.getByRole('navigation', { name: /main navigation/i });
-      expect(nav).toHaveClass('bg-background/90', 'backdrop-blur-xl', 'border', 'shadow-lg');
+      expect(nav).toHaveClass('bg-raised/90', 'backdrop-blur-xl', 'border', 'shadow-lg');
       // …on a reading route. The immersive variant is asserted above.
     });
 

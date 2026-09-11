@@ -429,7 +429,7 @@ export default function HomeClient({ initialFeed = null, initialCategories = nul
       {/* Quick Category Pills — sticks flush beneath the measured global header height */}
       <nav
         aria-label="Quick navigation"
-        className="sticky z-40 py-3 border-b border-elevated bg-background/80 backdrop-blur-xl"
+        className="sticky z-40 py-3 border-b border-elevated bg-raised/80 backdrop-blur-xl"
         style={{ top: headerOffset }}
       >
         <div className="flex gap-2 overflow-x-auto scrollbar-hide" style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}>

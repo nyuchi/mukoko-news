@@ -305,3 +305,77 @@ describe('the two defects this file exists to prevent', () => {
     }
   })
 })
+
+/**
+ * A `var(--x)` with no fallback, pointing at a property nothing defines, is
+ * INVALID AT COMPUTED-VALUE TIME — the declaration is thrown away and so is
+ * every declaration that reads it, silently and with no warning anywhere.
+ *
+ * That is not hypothetical. `--chart-positive: var(--malachite)` and
+ * `--chart-negative: var(--copper)` shipped in all three theme blocks, and
+ * neither `--malachite` nor `--copper` has ever existed: the mineral values
+ * live on `--color-malachite` / `--color-copper`, because that is the shape
+ * Tailwind's `@theme inline` consumes. So the positive and negative sentiment
+ * marks had no colour at all, in every theme, while the stylesheet read as
+ * though they were carefully assigned — and the "no chart mark is a literal"
+ * test above passed happily, because a dangling `var()` is not a literal.
+ */
+describe('every custom property a value reads is actually defined', () => {
+  it('has no dangling var() reference', () => {
+    // Comments are stripped first: this file explains the bug in prose, and a
+    // `var(--malachite)` quoted inside a comment is not a declaration.
+    const code = CSS.replace(/\/\*[\s\S]*?\*\//g, '')
+    const defined = new Set(Array.from(code.matchAll(/(--[A-Za-z0-9_-]+)\s*:/g), (m) => m[1]))
+    // Only references WITHOUT a fallback matter: `var(--x, 2px)` degrades to
+    // the fallback rather than poisoning the declaration.
+    const dangling = new Set<string>()
+    for (const m of code.matchAll(/var\(\s*(--[A-Za-z0-9_-]+)\s*\)/g)) {
+      if (!defined.has(m[1])) dangling.add(m[1])
+    }
+    expect(Array.from(dangling).sort(), 'these var() references resolve to nothing').toEqual([])
+  })
+})
+
+/**
+ * The mineral stripe is the one piece of chrome whose entire job is to carry
+ * the brand, and it drew five HARD-CODED LIGHT mineral hexes — so in dark mode
+ * it rendered deep, muddy bands against a near-black page (owner report
+ * 2026-09-11: *"the mineral strip is not theme aware"*). The tokens already
+ * swap per theme; the stripe simply never asked for them.
+ */
+describe('the minerals stripe', () => {
+  const STRIPE = /\.minerals-stripe,\s*\n\.minerals-stripe-horizontal\s*\{([^}]*)\}/.exec(CSS)?.[1]
+
+  it('is built from the shared stop list', () => {
+    expect(STRIPE, 'the shared .minerals-stripe rule is gone').toBeDefined()
+  })
+
+  it('carries no literal colour — it reads the theme tokens', () => {
+    expect(STRIPE).not.toMatch(/#[0-9a-f]{3,8}\b/i)
+    expect(STRIPE).not.toMatch(/\b(rgb|hsl|oklch|oklab)\(/i)
+  })
+
+  it('shows all SEVEN minerals, not five', () => {
+    // The mark is the Seed of Life — one centre cell ringed by six. A palette
+    // stripe missing sodalite and copper is not the palette.
+    for (const mineral of [
+      'cobalt',
+      'tanzanite',
+      'malachite',
+      'gold',
+      'terracotta',
+      'sodalite',
+      'copper',
+    ]) {
+      expect(STRIPE, `the stripe has no ${mineral} band`).toContain(`var(--color-${mineral})`)
+    }
+  })
+
+  it('draws both orientations from one list', () => {
+    // Two copies drifted once already; a mineral added to one and not the
+    // other is a stripe that disagrees with itself depending on which way
+    // round it is drawn.
+    expect(CSS).toContain('linear-gradient(to bottom, var(--stripe-stops))')
+    expect(CSS).toContain('linear-gradient(to right, var(--stripe-stops))')
+  })
+})

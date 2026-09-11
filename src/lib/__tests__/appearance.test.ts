@@ -141,8 +141,8 @@ describe('components separate by fill, not by a drawn edge', () => {
   it('a control edge is its own token, not the surface outline', () => {
     // `--outline` is transparent by default; an input painted with it would be
     // an invisible field. `--control` is always visible and follows `--border`,
-    // including into the `prefers-contrast: more` block where that becomes
-    // `CanvasText`.
+    // including into the `prefers-contrast: more` block, where (for a reader
+    // who has not switched edges off) both take a measured on-palette value.
     const css = readFileSync(join(process.cwd(), 'src/app/globals.css'), 'utf8');
     expect(css).toMatch(/--control:\s*var\(--border\)/);
     expect(css).toContain('--color-control: var(--control)');
@@ -153,6 +153,79 @@ describe('components separate by fill, not by a drawn edge', () => {
       .filter((file) => BOX_OUTLINE.test(readFileSync(file, 'utf8')))
       .map((file) => file.replace(`${process.cwd()}/`, ''));
 
+    expect(offenders).toEqual([]);
+  });
+});
+
+/**
+ * Matte black is the BACKGROUND. It is not an elevated surface colour.
+ *
+ * Owner report 2026-09-11. Three pieces of chrome that float above the page —
+ * the bottom island, the sticky header once scrolled, and the home feed's
+ * sticky filter bar — painted themselves `bg-background/NN`, i.e. a
+ * translucent wash of the very surface they are floating over. On a near-black
+ * dark page that gives an element with no fill of its own, whose only
+ * definition is its border; which is exactly why the island read as a
+ * wireframe pill rather than as something lifted off the page.
+ *
+ * The scale already answers this: `--raised` is Mzizi `raised`, "raised
+ * elements above overlay — menus, toasts", and a floating pill is a toast in
+ * every way that matters. A role takes the step that carries its name.
+ *
+ * The check is on the element's OWN class list, so a `bg-background/10` tint
+ * painted on a button *inside* sticky chrome is not caught — that is a wash
+ * over another fill, not a missing one. `inset-0` is exempt on the same
+ * principle rather than as a file carve-out: an element pinned to all four
+ * edges IS the page ground, so painting it with the page colour is correct.
+ */
+describe('elevated chrome does not paint itself with the page background', () => {
+  function walkTsx(dir: string, out: string[] = []): string[] {
+    for (const entry of readdirSync(dir)) {
+      const full = join(dir, entry);
+      if (statSync(full).isDirectory()) {
+        if (entry !== '__tests__' && entry !== 'node_modules') walkTsx(full, out);
+      } else if (/\.tsx$/.test(entry) && !/\.test\.tsx$/.test(entry)) {
+        out.push(full);
+      }
+    }
+    return out;
+  }
+
+  /** Every `className` value in a file — a quoted string or a braced expression. */
+  function classNameValues(source: string): string[] {
+    const values: string[] = [];
+    for (const match of source.matchAll(/className=/g)) {
+      const start = match.index! + match[0].length;
+      const opener = source[start];
+      if (opener === '"' || opener === "'") {
+        const end = source.indexOf(opener, start + 1);
+        if (end !== -1) values.push(source.slice(start + 1, end));
+      } else if (opener === '{') {
+        let depth = 0;
+        let i = start;
+        for (; i < source.length; i += 1) {
+          if (source[i] === '{') depth += 1;
+          else if (source[i] === '}') {
+            depth -= 1;
+            if (depth === 0) break;
+          }
+        }
+        values.push(source.slice(start, i + 1));
+      }
+    }
+    return values;
+  }
+
+  it('no fixed or sticky element fills itself with --background', () => {
+    const offenders: string[] = [];
+    for (const file of walkTsx(join(process.cwd(), 'src'))) {
+      for (const value of classNameValues(readFileSync(file, 'utf8'))) {
+        if (!/\b(fixed|sticky)\b/.test(value)) continue;
+        if (!/\bbg-background\b/.test(value)) continue;
+        if (value.includes('inset-0')) continue; // full-bleed: it IS the page
+        offenders.push(`${file.replace(`${process.cwd()}/`, '')}: ${value.slice(0, 60)}`);
+      }
+    }
     expect(offenders).toEqual([]);
   });
 });

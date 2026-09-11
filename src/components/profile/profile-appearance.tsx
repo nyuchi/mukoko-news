@@ -1,16 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
 import { Check } from 'lucide-react'
 
 import { useTheme, type Theme } from '@/components/theme-provider'
 import { AppearancePreview } from '@/components/profile/appearance-preview'
-import {
-  applyOutlinePreference,
-  readOutlinePreference,
-  storeOutlinePreference,
-  type OutlinePreference,
-} from '@/lib/appearance'
+import { type OutlinePreference } from '@/lib/appearance'
 
 /**
  * Appearance: theme and component outlines, both picked by looking.
@@ -35,12 +29,16 @@ import {
  * on the device, and gating an accessibility control behind a sign-in makes it
  * unreachable for the readers most likely to need it.
  *
- * ## The one-frame question
+ * ## Both come from `useTheme()`
  *
- * Both values are read in an effect, which is a paint too late — but the
- * pre-paint bootstrap in `layout.tsx` has already set the class and the
- * attribute, so the PAGE is never wrong. This only syncs the controls to it,
- * from the same helpers the bootstrap mirrors.
+ * Contrast is part of the theme (owner direction 2026-09-11), so the provider
+ * owns reading, storing and applying it and this component only renders the
+ * choice. It used to hold its own state and write the document itself, which
+ * meant nothing else in the app could ask what the setting was.
+ *
+ * The provider reads both in an effect, a paint too late — but the pre-paint
+ * bootstrap in `layout.tsx` has already set the class and the attribute, so
+ * the PAGE is never wrong; that read only syncs these controls to it.
  */
 
 const THEMES: { value: Theme; label: string; hint: string }[] = [
@@ -50,18 +48,12 @@ const THEMES: { value: Theme; label: string; hint: string }[] = [
 ]
 
 export function ProfileAppearance() {
-  const { theme, setTheme } = useTheme()
-  const [outlines, setOutlines] = useState<OutlinePreference>('off')
-
-  useEffect(() => {
-    setOutlines(readOutlinePreference())
-  }, [])
-
-  function chooseOutlines(next: OutlinePreference) {
-    setOutlines(next)
-    storeOutlinePreference(next)
-    applyOutlinePreference(next, document.documentElement)
-  }
+  // BOTH come from the theme, which is the point — contrast is part of the
+  // theme, not a preference sitting beside it (owner direction 2026-09-11).
+  // This component now only renders the choice; the provider owns reading it,
+  // storing it and applying it to the document.
+  const { theme, setTheme, contrast, setContrast } = useTheme()
+  const outlines: OutlinePreference = contrast
 
   // What the THEME previews draw an edge with: only the always-on setting is a
   // promise about how the app looks right now. `system` depends on a media
@@ -117,7 +109,7 @@ export function ProfileAppearance() {
             label="Off"
             hint="Separated by fill"
             selected={outlines === 'off'}
-            onSelect={() => chooseOutlines('off')}
+            onSelect={() => setContrast('off')}
           >
             <AppearancePreview theme={previewTheme} />
           </Option>
@@ -125,7 +117,7 @@ export function ProfileAppearance() {
             label="On"
             hint="Draw an edge"
             selected={outlines === 'on'}
-            onSelect={() => chooseOutlines('on')}
+            onSelect={() => setContrast('on')}
           >
             <AppearancePreview theme={previewTheme} outlined />
           </Option>
@@ -133,7 +125,7 @@ export function ProfileAppearance() {
             label="System"
             hint="Follows your device"
             selected={outlines === 'system'}
-            onSelect={() => chooseOutlines('system')}
+            onSelect={() => setContrast('system')}
           >
             <AppearancePreview theme={previewTheme} outlined="split" />
           </Option>

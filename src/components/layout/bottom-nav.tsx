@@ -95,7 +95,7 @@ export function BottomNav() {
       className={`fixed bottom-[calc(env(safe-area-inset-bottom,0px)_+_0.75rem)] left-4 right-4 z-50 mx-auto max-w-md rounded-full border shadow-lg backdrop-blur-xl ${
         immersive
           ? "border-white/15 bg-black/70"
-          : "border-outline bg-background/90"
+          : "border-outline bg-raised/90"
       }`}
       aria-label="Main navigation"
     >

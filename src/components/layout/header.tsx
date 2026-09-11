@@ -124,7 +124,7 @@ export function Header() {
         isNewsBytes
           ? "bg-gradient-to-b from-black/60 via-black/30 to-transparent"
           : isScrolled
-            ? "bg-background/70 backdrop-blur-xl border-b border-elevated/50 shadow-sm"
+            ? "bg-raised/70 backdrop-blur-xl border-b border-elevated/50 shadow-sm"
             : ""
       }`}
     >

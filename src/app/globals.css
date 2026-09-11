@@ -124,11 +124,11 @@
      lightness, chroma, colour-vision separation and contrast against the mode's
      own surface. Sentiment slots additionally carry direct labels + a legend, so
      identity never rests on hue alone. Re-validate before changing a value. */
-  --chart-primary: var(--tanzanite);   /* single-series volume + magnitude bars */
-  --chart-positive: var(--malachite);
+  --chart-primary: var(--color-tanzanite);   /* single-series volume + magnitude bars */
+  --chart-positive: var(--color-malachite);
   --chart-neutral: var(--neutral);     /* deliberate neutral midpoint, not an identity hue */
-  --chart-negative: var(--copper);
-  --chart-mixed: var(--gold);
+  --chart-negative: var(--color-copper);
+  --chart-mixed: var(--color-gold);
   --chart-grid: var(--border);
 
   /* UI Elements */
@@ -226,11 +226,11 @@
      lightness, chroma, colour-vision separation and contrast against the mode's
      own surface. Sentiment slots additionally carry direct labels + a legend, so
      identity never rests on hue alone. Re-validate before changing a value. */
-  --chart-primary: var(--tanzanite);   /* single-series volume + magnitude bars */
-  --chart-positive: var(--malachite);
+  --chart-primary: var(--color-tanzanite);   /* single-series volume + magnitude bars */
+  --chart-positive: var(--color-malachite);
   --chart-neutral: var(--neutral);     /* deliberate neutral midpoint, not an identity hue */
-  --chart-negative: var(--copper);
-  --chart-mixed: var(--gold);
+  --chart-negative: var(--color-copper);
+  --chart-mixed: var(--color-gold);
   --chart-grid: var(--border);
 
   /* UI Elements */
@@ -315,11 +315,11 @@
   --on-container-copper: #5A2310;
 
   /* Data-visualisation marks — see the note in the dark block above. */
-  --chart-primary: var(--tanzanite);
-  --chart-positive: var(--malachite);
+  --chart-primary: var(--color-tanzanite);
+  --chart-positive: var(--color-malachite);
   --chart-neutral: var(--neutral);     /* deliberate neutral midpoint, not an identity hue */
-  --chart-negative: var(--copper);
-  --chart-mixed: var(--gold);
+  --chart-negative: var(--color-copper);
+  --chart-mixed: var(--color-gold);
   --chart-grid: var(--border);
 
   /* UI Elements */
@@ -614,7 +614,23 @@
  * 2026-09-10; reported upstream rather than silently forked.
  */
 :root[data-outlines='on'] {
-  --outline: var(--border);
+  /* `--raised`, NOT `--border` — corrected 2026-09-11 (owner report: *"the
+     contrast component doesn't work, I see no visual changes"*).
+     ------------------------------------------------------------------------
+     `--border` is `#2A2927` in dark and `#E7E5E0` in light; the card it would
+     be drawn on is `#131211` / `#EEEEEC`. That is a step of roughly 2% in
+     lightness — real in a colour picker and invisible on a phone. So the
+     control was doing exactly what it said and the reader could not tell,
+     which is indistinguishable from a control that does nothing.
+
+     `--raised` (`#2E2C29` / `#D6D5D1`) is the next step the scale actually
+     provides and is plainly visible against the card in both themes, without
+     the stark hairline of the high-contrast value below. It stays ON PALETTE:
+     the edge is a real Mzizi step, not an invented grey.
+
+     `--border` keeps its own job — separators, where the line divides two
+     things that are already adjacent and needs to be quiet. */
+  --outline: var(--raised);
 }
 
 @media (prefers-contrast: more) {
@@ -803,7 +819,47 @@ textarea {
   border-color: rgba(255, 255, 255, 0.15);
 }
 
-/* Five African Minerals vertical stripe (4px on left edge) */
+/* The seven African Minerals, as a 4px stripe.
+   --------------------------------------------------------------------------
+   THEME-AWARE, and it was not (owner report 2026-09-11). Every stop was a
+   hard-coded LIGHT mineral hex — `#0047AB`, `#4B0082`, `#004D40`, `#5D4037`,
+   `#A0522D` — so in dark mode the one piece of chrome whose entire job is to
+   carry the brand rendered five deep, muddy bands against a near-black page,
+   at exactly the moment the palette has light steps that would sing there.
+   The tokens already swap per theme; the stripe simply never asked for them.
+
+   It was also FIVE minerals, not seven. The doctrine is the Seed of Life —
+   one centre cell ringed by six — and sodalite and copper were missing from
+   the one surface that claims to show the whole palette, so `--stripe-step`
+   is now 100/7 and every mineral has a band.
+
+   `--color-*` rather than the bare aliases: those exist for three minerals
+   only (`--tanzanite`, `--cobalt`, `--gold`), and reaching for a
+   `var(--malachite)` that is not defined is what silently killed two chart
+   marks — see the dangling-reference test. */
+.minerals-stripe,
+.minerals-stripe-horizontal {
+  /* One list, shared by both orientations. Two copies drifted once already:
+     a mineral added to one and not the other is a stripe that disagrees with
+     itself depending on which way round it is drawn. */
+  --stripe-step: 14.2857%;
+  --stripe-stops:
+    var(--color-cobalt) 0%,
+    var(--color-cobalt) var(--stripe-step),
+    var(--color-tanzanite) var(--stripe-step),
+    var(--color-tanzanite) calc(var(--stripe-step) * 2),
+    var(--color-malachite) calc(var(--stripe-step) * 2),
+    var(--color-malachite) calc(var(--stripe-step) * 3),
+    var(--color-gold) calc(var(--stripe-step) * 3),
+    var(--color-gold) calc(var(--stripe-step) * 4),
+    var(--color-terracotta) calc(var(--stripe-step) * 4),
+    var(--color-terracotta) calc(var(--stripe-step) * 5),
+    var(--color-sodalite) calc(var(--stripe-step) * 5),
+    var(--color-sodalite) calc(var(--stripe-step) * 6),
+    var(--color-copper) calc(var(--stripe-step) * 6),
+    var(--color-copper) 100%;
+}
+
 .minerals-stripe {
   position: fixed;
   left: 0;
@@ -811,38 +867,14 @@ textarea {
   bottom: 0;
   width: 4px;
   z-index: 100;
-  background: linear-gradient(
-    to bottom,
-    #0047AB 0%,      /* Cobalt */
-    #0047AB 20%,
-    #4B0082 20%,     /* Tanzanite */
-    #4B0082 40%,
-    #004D40 40%,     /* Malachite */
-    #004D40 60%,
-    #5D4037 60%,     /* Gold */
-    #5D4037 80%,
-    #A0522D 80%,     /* Terracotta */
-    #A0522D 100%
-  );
+  background: linear-gradient(to bottom, var(--stripe-stops));
 }
 
 /* Horizontal version for mobile bottom or accents */
 .minerals-stripe-horizontal {
   height: 4px;
   width: 100%;
-  background: linear-gradient(
-    to right,
-    #0047AB 0%,      /* Cobalt */
-    #0047AB 20%,
-    #4B0082 20%,     /* Tanzanite */
-    #4B0082 40%,
-    #004D40 40%,     /* Malachite */
-    #004D40 60%,
-    #5D4037 60%,     /* Gold */
-    #5D4037 80%,
-    #A0522D 80%,     /* Terracotta */
-    #A0522D 100%
-  );
+  background: linear-gradient(to right, var(--stripe-stops));
 }
 
 /* Hide scrollbar for horizontal ticker embeds */
