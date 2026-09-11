@@ -11,6 +11,8 @@ can follow Lagos, Nairobi and Dakar without opening twenty tabs.
 All **54** African Union member states are in scope. How many are _live_ is a number the
 app measures rather than asserts — see [Coverage](#coverage).
 
+**Version:** 4.58.0 &nbsp;·&nbsp; **Live:** [news.mukoko.com](https://news.mukoko.com)
+
 [**Read the news →**](https://news.mukoko.com) &nbsp;·&nbsp;
 [**Join the Discord →**](https://discord.gg/Ga2XusN6Ty) &nbsp;·&nbsp;
 [**Contribute →**](CONTRIBUTING.md)
@@ -27,7 +29,7 @@ app measures rather than asserts — see [Coverage](#coverage).
 
 [![Discord](https://img.shields.io/badge/Discord-join_the_hive-5865F2?logo=discord&logoColor=white)](https://discord.gg/Ga2XusN6Ty)
 [![Live site](https://img.shields.io/badge/live-news.mukoko.com-brightgreen)](https://news.mukoko.com)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![CI](https://github.com/nyuchi/mukoko-news/actions/workflows/deploy.yml/badge.svg)](https://github.com/nyuchi/mukoko-news/actions/workflows/deploy.yml)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
 </div>
@@ -65,8 +67,6 @@ The frontend reads news data directly from MongoDB Atlas via Next.js Server Acti
 - **Embed widgets** — drop a news feed into any site with one `<script>` tag
 - **MCP server** — AI assistants can query Pan-African news at `news.mukoko.dev/mcp`
 - **Accessible** — Radix UI primitives, WCAG AAA contrast, Schema.org structured data
-
----
 
 ---
 
@@ -145,13 +145,25 @@ pnpm test:coverage    # with coverage report
 
 ### Design system
 
-**[Mzizi](https://mzizi.nyuchi.com) is the source of truth** — the palette, the background
-scale and the type ramp are read from its MCP (`mzizi_get_tokens`), not defined here.
-`src/app/globals.css` holds this app's copy, and `src/app/__tests__/design-tokens.test.ts`
-asserts every value against a checked-in Mzizi snapshot, so a drift fails CI rather than
-shipping.
+**[Mzizi](https://mzizi.dev) is the upstream source** for the palette, the background
+scale and the type ramp. Be precise about how that binding works, because it is looser
+than "read from Mzizi" suggests:
 
-Seven **African Minerals** carry the brand; these four are the ones you meet first:
+- `src/app/globals.css` holds this app's copy of the values. Nothing is fetched at build
+  time or at runtime — there is no Mzizi package dependency and no network call.
+- `src/app/__tests__/design-tokens.test.ts` parses that stylesheet and asserts every
+  value against a `SNAPSHOT` object literal **inside the test file itself**. There is no
+  separate snapshot artefact.
+- That snapshot is a copy of what `mzizi_get_tokens` returned on a dated, recorded
+  refresh. It is updated **deliberately**, by a human re-querying the MCP in a reviewed
+  change — never by relaxing an assertion.
+
+So CI catches `globals.css` drifting away from the frozen copy. It does **not** catch
+Mzizi itself moving; that is what the deliberate refresh is for.
+
+Mzizi's full palette is **21 colour families** — seven minerals, seven heritage, seven
+experimental. This app uses the **seven minerals**; these four are the ones you meet
+first:
 
 | Role          | Light     | Dark      | Mineral                                                |
 | ------------- | --------- | --------- | ------------------------------------------------------ |
@@ -198,7 +210,10 @@ AI assistants and agents can query Pan-African news via the [Model Context Proto
 }
 ```
 
-No authentication required. The MCP server lives in [`nyuchi/mukoko-news-gateway`](https://github.com/nyuchi/mukoko-news-gateway).
+The read tools answer anonymously. The server itself lives in
+[`nyuchi/mukoko-news-gateway`](https://github.com/nyuchi/mukoko-news-gateway) and is
+deployed to `news.mukoko.dev`, not to this app — `news.mukoko.com` serves no `/mcp`
+route.
 
 ---
 
@@ -229,12 +244,16 @@ We take security seriously. Report vulnerabilities by email to **<security@nyuch
 
 ---
 
-## License
+## Licence
 
-MIT — see [LICENSE](LICENSE).
+**This repository ships no LICENSE file**, and `package.json` declares no `license`
+field. Despite the wording below, no licence is currently granted — a LICENSE file
+needs adding before the "open-source contributors" framing is accurate.
+
+© Nyuchi Africa (PVT) Ltd.
 
 ---
 
 "Ndiri nekuti tiri" — I am because we are
 
-Built by [Nyuchi Technologies](https://nyuchi.com) and open-source contributors.
+Built by [Nyuchi Web Services](https://nyuchi.com) and contributors.
