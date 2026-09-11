@@ -356,25 +356,36 @@ describe('the minerals stripe', () => {
     }
   })
 
-  it('runs down the RIGHT edge, where no chrome competes with it', () => {
-    // On the left it ran down the SHELL's edge, which is where the sidebar
-    // lives: docked, the stripe sat outside the panel and the page it belongs
-    // to was two columns away, so it read as a bar stuck to the browser rather
-    // than as the page's own border.
-    const rule = /\.minerals-stripe\s*\{([^}]*)\}/.exec(
-      CSS.slice(CSS.indexOf('.minerals-stripe-horizontal {'))
-    )
-    const vertical = /\n\.minerals-stripe \{([^}]*)\}/.exec(CSS)?.[1] ?? rule?.[1] ?? ''
-    expect(vertical).toMatch(/right:\s*0/)
-    expect(vertical).not.toMatch(/\bleft:\s*0/)
+  it('runs down the LEFT edge', () => {
+    const vertical = /\n\.minerals-stripe \{([^}]*)\}/.exec(CSS)?.[1] ?? ''
+    expect(vertical).toMatch(/left:\s*0/)
+    expect(vertical).not.toMatch(/\bright:\s*0/)
   })
 
-  it('is thick enough to resolve into seven colours', () => {
-    // At 4px the bands were a hairline nobody could read as a palette, which
-    // is the only thing the stripe is for.
-    const vertical = /\n\.minerals-stripe \{([^}]*)\}/.exec(CSS)?.[1] ?? ''
-    const width = /width:\s*(\d+)px/.exec(vertical)?.[1]
-    expect(Number(width)).toBeGreaterThanOrEqual(6)
+  it('tracks the page column, not the browser edge', () => {
+    // The objection to the left edge was never the side: it was that the
+    // stripe ran down the SHELL's edge, which is where the sidebar lives, so
+    // docked it sat outside the panel with the page two columns away. It is
+    // offset by the sidebar's width when docked, through the same
+    // `data-sidebar` rule the shell inset and the island use.
+    expect(CSS).toMatch(
+      /html\[data-sidebar='open'\]\s+\.minerals-stripe\s*\{\s*left:\s*var\(--sidebar-width\)/
+    )
+    // …and only where the sidebar actually docks. Below `lg` the shell
+    // TRANSLATES and the stripe rides inside it, so a second offset would
+    // move it twice.
+    const dockedBlock = CSS.slice(CSS.indexOf('@media (min-width: 1024px)'))
+    expect(dockedBlock).toContain('.minerals-stripe')
+  })
+
+  it('is mounted inside the shell, so the overlay sidebar covers it', () => {
+    // At `z-index: 100` against the panel's 60, a viewport-fixed stripe would
+    // paint straight across the open overlay menu. Inside `.app-shell` it is
+    // contained by the push transform and travels with the page instead.
+    const LAYOUT = readFileSync(join(process.cwd(), 'src/app/layout.tsx'), 'utf8')
+    const shellAt = LAYOUT.indexOf('className="app-shell')
+    expect(shellAt).toBeGreaterThan(-1)
+    expect(LAYOUT.indexOf('minerals-stripe')).toBeGreaterThan(shellAt)
   })
 
   it('draws both orientations from one list', () => {

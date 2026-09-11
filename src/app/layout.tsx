@@ -191,9 +191,6 @@ export default async function RootLayout({
         <CoverageProvider value={coverage}>
         <ThemeProvider defaultTheme="system" storageKey="mukoko-news-theme">
           <PreferencesProvider>
-            {/* Five African Minerals vertical stripe */}
-            <div className="minerals-stripe" />
-
             {/* Skip link: the header carries the brand, primary nav, search and
                 the account control, so without this a keyboard or switch user
                 re-traverses all of it on every page (WCAG 2.4.1). Visually
@@ -217,6 +214,15 @@ export default async function RootLayout({
                   React class, so a reload with the sidebar open paints already
                   inset instead of jumping sideways a frame later. */}
               <div className="app-shell flex min-h-screen flex-col">
+              {/* The seven African Minerals, down the PAGE's left border.
+                  Inside `.app-shell` on purpose: the shell is what the docked
+                  sidebar insets and what the overlay sidebar translates, so
+                  nesting the stripe here is what makes it track the page's
+                  edge rather than the browser's — and what keeps it from
+                  painting across the open overlay panel, which it would at
+                  `z-index: 100` against the panel's 60. */}
+              <div className="minerals-stripe" />
+
                 <Header />
                 {/* Bottom padding on mobile keeps the floating nav pill from
                     covering the last row of content. The amount is
