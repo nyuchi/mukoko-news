@@ -77,6 +77,47 @@ describe('the docking breakpoint', () => {
 })
 
 /**
+ * Below `lg` the page is PUSHED aside rather than covered, so it stays visible
+ * and obviously tappable to come back to. The distance it moves and the width
+ * of the panel have to be the same value: short and a strip of page is still
+ * covered, long and there is a band of void beside it.
+ */
+describe('the overlay push', () => {
+  const PANEL = readFileSync(
+    join(process.cwd(), 'src/components/layout/nav-sidebar.tsx'),
+    'utf8'
+  )
+
+  it('moves the page by the overlay width', () => {
+    expect(CSS).toMatch(
+      /html\[data-sidebar='open'\]\s+\.app-shell\s*\{[^}]*transform:\s*translateX\(var\(--sidebar-overlay-width\)\)/
+    )
+  })
+
+  it('sizes the panel from that same token', () => {
+    expect(PANEL).toContain('w-[var(--sidebar-overlay-width)]')
+  })
+
+  it('caps the push so the page stays grabbable rather than leaving entirely', () => {
+    // A full-width panel on a narrow phone would push the page clean off the
+    // right edge, and the only way back would be a control the reader cannot
+    // see.
+    expect(CSS).toMatch(/--sidebar-overlay-width:\s*min\(\s*\d+vw\s*,\s*var\(--sidebar-width\)\s*\)/)
+  })
+
+  it('pushes only below the breakpoint the page insets at', () => {
+    // Both at once would inset AND translate, moving the page twice.
+    expect(CSS).toMatch(/@media \(max-width:\s*1023\.98px\)/)
+  })
+
+  it('stops the pushed page widening the document', () => {
+    // The overlay's scroll lock covers this, but it is applied from an effect
+    // — a reload with the sidebar open would be briefly side-scrollable.
+    expect(CSS).toMatch(/html\[data-sidebar='open'\]\s*\{\s*overflow-x:\s*hidden/)
+  })
+})
+
+/**
  * The pre-paint bootstrap cannot import this module — it runs before any
  * module is evaluated — so it repeats the storage key and the attribute as
  * string literals. This is the only thing standing between a rename here and

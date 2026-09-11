@@ -143,14 +143,14 @@ export function NavSidebar() {
         aria-label="All pages"
         inert={inert}
         onKeyDown={onKeyDown}
-        className={`fixed inset-y-0 left-0 z-[60] flex w-[min(88vw,var(--sidebar-width))] flex-col border-r border-border bg-popover shadow-2xl transition-transform duration-200 ease-out lg:z-30 lg:w-[var(--sidebar-width)] lg:shadow-none ${
+        className={`fixed inset-y-0 left-0 z-[60] flex w-[var(--sidebar-overlay-width)] flex-col border-r border-border bg-popover shadow-2xl transition-transform duration-200 ease-out lg:z-30 lg:w-[var(--sidebar-width)] lg:shadow-none ${
           open ? "translate-x-0" : "-translate-x-full"
         }`}
       >
-        <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
-          <Link href="/" className="flex min-w-0 items-center gap-2">
-            <AppIcon size={28} />
-            <span className="truncate font-serif text-lg font-semibold lowercase text-primary">
+        <div className="flex items-center justify-between gap-3 px-4 pb-2 pt-4">
+          <Link href="/" className="flex min-w-0 items-center gap-2.5">
+            <AppIcon size={32} />
+            <span className="truncate font-serif text-2xl font-semibold lowercase text-primary">
               mukoko news
             </span>
           </Link>
@@ -178,7 +178,7 @@ export function NavSidebar() {
 
             return (
               <div key={group.id} className="mb-4 last:mb-0">
-                <h2 className="px-3 pb-1 font-mono text-[11px] font-medium uppercase tracking-wider text-text-tertiary">
+                <h2 className="px-3 pb-1 pt-2 font-mono text-[11px] font-medium uppercase tracking-wider text-text-tertiary">
                   {group.label}
                 </h2>
                 <ul>
@@ -196,14 +196,14 @@ export function NavSidebar() {
                           // only to make the tap feel immediate rather than
                           // waiting for the route to commit.
                           onClick={isDocked ? undefined : close}
-                          className={`flex min-h-[var(--touch-a11y)] items-center gap-3 rounded-xl px-3 transition-colors ${
+                          className={`flex min-h-[var(--touch-a11y)] items-center gap-3.5 rounded-xl px-3 transition-colors ${
                             isActive
-                              ? "bg-primary/10 text-primary"
-                              : "text-foreground hover:bg-elevated"
+                              ? "bg-elevated font-semibold text-primary"
+                              : "text-foreground hover:bg-elevated/60"
                           }`}
                         >
                           <Icon className="h-5 w-5 shrink-0" aria-hidden="true" />
-                          <span className="truncate text-sm font-medium">{d.label}</span>
+                          <span className="truncate text-base">{d.label}</span>
                         </Link>
                       </li>
                     );
@@ -214,12 +214,12 @@ export function NavSidebar() {
                         href={SUPPORT_URL}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="flex min-h-[var(--touch-a11y)] items-center gap-3 rounded-xl px-3 text-foreground transition-colors hover:bg-elevated"
+                        className="flex min-h-[var(--touch-a11y)] items-center gap-3.5 rounded-xl px-3 text-foreground transition-colors hover:bg-elevated/60"
                       >
                         {/* No icon: it leaves the app, and an icon here would
                             make it read as one more in-app destination. */}
                         <span className="w-5 shrink-0" aria-hidden="true" />
-                        <span className="truncate text-sm font-medium">Support</span>
+                        <span className="truncate text-base">Support</span>
                       </a>
                     </li>
                   )}

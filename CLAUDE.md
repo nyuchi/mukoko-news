@@ -117,16 +117,20 @@ src/
 | | docked (`lg`+) | overlay (below `lg`) |
 | --- | --- | --- |
 | role | `navigation` landmark | `dialog` + `aria-modal` |
-| page | inset by `--sidebar-width` | unchanged, scrim over it |
+| page | inset by `--sidebar-width` | **pushed aside** by `--sidebar-overlay-width`, dimmed |
 | choosing a page | **stays open** | closes |
 | focus / scroll | untouched | trapped / locked |
 | Escape | ignored | closes |
 
-The docked column is the point. It first shipped as a modal drawer that closed on every navigation, and owner review named that exactly right: *"what you showed us was just a menu dropdown"*. **A menu that closes on every click is a dropdown**; a sidebar is the thing you navigate *from*, repeatedly, with it still there. Below `lg` there is no room for a 17rem column beside an article, so it overlays — and the four modal behaviours belong to the overlay **only**: docked, a focus trap strands a keyboard reader inside a panel that is simply part of the page, and a scroll lock freezes a document nothing is covering.
+The docked column is the point. It first shipped as a modal drawer that closed on every navigation, and owner review named that exactly right: *"what you showed us was just a menu dropdown"*. **A menu that closes on every click is a dropdown**; a sidebar is the thing you navigate *from*, repeatedly, with it still there. Below `lg` there is no room for an 18rem column beside an article, so it overlays — and the four modal behaviours belong to the overlay **only**: docked, a focus trap strands a keyboard reader inside a panel that is simply part of the page, and a scroll lock freezes a document nothing is covering.
 
 It is **one DOM tree reshaped by responsive classes plus an `isDocked` flag**, never two subtrees behind `lg:hidden` — jsdom applies no media queries, so both would render in every test and every `getByRole` would match twice (the trap `ArticleActionBar` already documents). `isDocked` comes from `matchMedia`, because focus trapping, scroll locking and closing-on-navigation cannot be expressed in CSS, and it is kept **live** so a rotated tablet gets the right behaviour rather than the one its viewport had at mount.
 
 **The breakpoint is 1024px in two places and must stay that way** — `SIDEBAR_DOCK_BREAKPOINT_PX` builds the `matchMedia` query, and a `@media (min-width: 1024px)` rule in `globals.css` insets the page. `sidebar.test.ts` asserts they still agree: a drift leaves a band of widths where the page is inset for a sidebar that still behaves like a modal.
+
+**Below `lg` the page is PUSHED, not covered** (owner direction 2026-09-11, with the Claude mobile sidebar as the reference). The shell translates right by exactly the panel's width and stays on screen, dimmed, with its leading corner rounded — so it reads as the page you were on, moved aside, and it is obvious you get back by tapping it. A panel that merely covers the page leaves nothing to aim at but a scrim. **`--sidebar-overlay-width` is the panel's width AND the push distance**, one value: short and a strip of page is still covered, long and there is a band of void beside it; `sidebar.test.ts` asserts both read the same token. It is capped at `86vw` so a narrow phone never pushes the page clean off the right edge, leaving the way back invisible. The floating bottom pill moved **inside** `.app-shell` for this — left outside it would hang over the sidebar while everything beneath it slid away.
+
+The push uses `transform`, not `margin-left`, to stay off the layout path. The cost is that a non-`none` transform makes the shell the containing block for `position: fixed` descendants — the article action rail, chiefly — so the page's pinned furniture travels with the page, which is what you want while the sidebar is open. Closed, the transform is `none` and nothing is contained (`none` interpolates as the identity transform, so it still animates).
 
 **The page inset is CSS keyed off `data-sidebar`, not React state**, set pre-paint by the same bootstrap that restores the theme and outlines. The panel may arrive a frame late — it slides in on a transform, so late reads as the animation — but the inset cannot: from an effect it would shift the whole document sideways one frame after paint on every load for a reader who left the sidebar open. State is persisted to `localStorage` (`mukoko-news-sidebar`); within a session the provider lives in the root layout and so already survives every in-app navigation.
 

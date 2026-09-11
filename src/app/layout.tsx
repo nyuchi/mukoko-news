@@ -225,8 +225,12 @@ export default async function RootLayout({
                   {children}
                 </main>
                 <Footer />
+                {/* Inside the shell so it travels with the page when the
+                    sidebar pushes it aside on mobile. Left outside, the
+                    floating pill would hang over the sidebar while everything
+                    beneath it slid away. */}
+                <BottomNav />
               </div>
-              <BottomNav />
             </SidebarProvider>
 
             {/* Onboarding Modal */}
