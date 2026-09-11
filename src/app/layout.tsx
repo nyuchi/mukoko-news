@@ -6,6 +6,8 @@ import { PreferencesProvider } from '@/contexts/preferences-context';
 import { Header } from '@/components/layout/header';
 import { Footer } from '@/components/layout/footer';
 import { BottomNav } from '@/components/layout/bottom-nav';
+import { NavSidebar } from '@/components/layout/nav-sidebar';
+import { SidebarProvider } from '@/contexts/sidebar-context';
 import { OnboardingModal } from '@/components/onboarding-modal';
 import { ServiceWorkerRegister } from '@/components/pwa/sw-register';
 import { WebMcpProvider } from '@/components/agent/webmcp-provider';
@@ -177,7 +179,7 @@ export default async function RootLayout({
         <script
           dangerouslySetInnerHTML={{
             __html:
-              "(function(){try{var t=localStorage.getItem('mukoko-news-theme');var d=t==='light'?false:t==='dark'?true:window.matchMedia('(prefers-color-scheme: dark)').matches;var c=document.documentElement.classList;c.remove('light','dark');c.add(d?'dark':'light');if(localStorage.getItem('mukoko-news-outlines')==='on')document.documentElement.setAttribute('data-outlines','on');}catch(e){}})()",
+              "(function(){try{var t=localStorage.getItem('mukoko-news-theme');var d=t==='light'?false:t==='dark'?true:window.matchMedia('(prefers-color-scheme: dark)').matches;var c=document.documentElement.classList;c.remove('light','dark');c.add(d?'dark':'light');if(localStorage.getItem('mukoko-news-outlines')==='on')document.documentElement.setAttribute('data-outlines','on');if(localStorage.getItem('mukoko-news-sidebar')==='open')document.documentElement.setAttribute('data-sidebar','open');}catch(e){}})()",
           }}
         />
         <OrganizationJsonLd coverage={coverage} />
@@ -202,17 +204,30 @@ export default async function RootLayout({
               Skip to main content
             </a>
 
-            <Header />
-            {/* Bottom padding on mobile keeps the floating nav pill from
-                covering the last row of content. The amount is
-                `--bottom-nav-clearance` in globals.css, shared with every other
-                surface that pins something above the pill, so they cannot be
-                lifted by different amounts. */}
-            <main id="main-content" tabIndex={-1} className="flex-1 relative z-10 pb-[var(--bottom-nav-clearance)] md:pb-0">
-              {children}
-            </main>
-            <Footer />
-            <BottomNav />
+            <SidebarProvider>
+              {/* Outside `.app-shell`, not inside it: the shell is what gets
+                  inset by the sidebar's width, so nesting the sidebar in the
+                  thing it displaces would push it off its own left edge. */}
+              <NavSidebar />
+
+              {/* Everything the docked sidebar pushes across. The inset is a
+                  CSS rule keyed off `data-sidebar` (see globals.css), not a
+                  React class, so a reload with the sidebar open paints already
+                  inset instead of jumping sideways a frame later. */}
+              <div className="app-shell flex min-h-screen flex-col">
+                <Header />
+                {/* Bottom padding on mobile keeps the floating nav pill from
+                    covering the last row of content. The amount is
+                    `--bottom-nav-clearance` in globals.css, shared with every other
+                    surface that pins something above the pill, so they cannot be
+                    lifted by different amounts. */}
+                <main id="main-content" tabIndex={-1} className="flex-1 relative z-10 pb-[var(--bottom-nav-clearance)] md:pb-0">
+                  {children}
+                </main>
+                <Footer />
+              </div>
+              <BottomNav />
+            </SidebarProvider>
 
             {/* Onboarding Modal */}
             <OnboardingModal />

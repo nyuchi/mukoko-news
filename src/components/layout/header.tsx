@@ -1,13 +1,14 @@
 "use client";
 
-import { useState, useEffect, useSyncExternalStore, useMemo, useRef } from "react";
+import { useState, useEffect, useSyncExternalStore, useMemo } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Menu, RotateCw, Search, Zap } from "lucide-react";
+import { PanelLeft, PanelLeftClose, RotateCw, Search, Zap } from "lucide-react";
 import { UserAvatar } from "./user-avatar";
 import { DateTimeWeather } from "./datetime-weather";
-import { NavSidebar } from "./nav-sidebar";
 import { AppIcon } from "@/components/ui/app-icon";
+import { useSidebar } from "@/contexts/sidebar-context";
+import { hidesAppChrome } from "@/lib/navigation";
 
 const navLinks = [
   { href: "/", label: "Feed" },
@@ -69,9 +70,10 @@ export function Header() {
   const pathname = usePathname();
   const router = useRouter();
   const [isScrolled, setIsScrolled] = useState(false);
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const { open: isSidebarOpen, toggle: toggleSidebar } = useSidebar();
   const isNewsBytes = pathname === "/newsbytes";
+  // Our markup inside somebody else's page has no sidebar to toggle.
+  const showSidebarToggle = !hidesAppChrome(pathname);
   // The date/time + weather strip is masthead furniture for the reading
   // surfaces. It is suppressed on the two chrome-less routes: NewsBytes is a
   // full-bleed immersive reader whose header is a gradient scrim, and the
@@ -134,6 +136,42 @@ export function Header() {
           isNewsBytes ? "" : "max-w-[var(--width-wide)]"
         }`}
       >
+        {/* The sidebar toggle owns the FAR LEFT of the header.
+            ------------------------------------------------------------------
+            It briefly lived in the actions pill on the right, grouped with
+            search and the account control. That was wrong twice over: the
+            left edge is where every desktop app puts this control, and — once
+            the sidebar docks and the page insets — it is the edge the sidebar
+            itself occupies, so the toggle sits directly against the thing it
+            toggles.
+
+            The icon is `PanelLeft`, the standard sidebar glyph, not the
+            hamburger it was. A hamburger promises a menu that drops down and
+            goes away; this reveals a column that stays. `PanelLeftClose` when
+            open, so the icon states what the next tap does rather than what
+            is currently true. */}
+        {showSidebarToggle && (
+          <button
+            type="button"
+            onClick={toggleSidebar}
+            aria-label={isSidebarOpen ? "Hide sidebar" : "Show sidebar"}
+            aria-expanded={isSidebarOpen}
+            aria-controls="nav-sidebar"
+            title={isSidebarOpen ? "Hide sidebar" : "Show sidebar"}
+            className={`mr-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-colors sm:mr-2 sm:h-11 sm:w-11 ${
+              isNewsBytes
+                ? "text-white hover:bg-white/20"
+                : "text-text-secondary hover:bg-elevated hover:text-foreground"
+            }`}
+          >
+            {isSidebarOpen ? (
+              <PanelLeftClose className="h-5 w-5" aria-hidden="true" />
+            ) : (
+              <PanelLeft className="h-5 w-5" aria-hidden="true" />
+            )}
+          </button>
+        )}
+
         {/* Logo / Page Title with Dropdown - fixed height container */}
         <div className="min-w-0 flex-shrink relative h-8">
           {/* Logo - visible when not scrolled */}
@@ -200,25 +238,6 @@ export function Header() {
         <div className={`flex items-center rounded-full p-0.5 sm:p-1 gap-0.5 sm:gap-1 flex-shrink-0 ${
           isNewsBytes ? "bg-black/40 backdrop-blur-md" : "bg-primary"
         }`}>
-          {/* Opens the full navigation drawer. It sits in the actions pill
-              rather than at the far left because that is the edge a thumb
-              already reaches for on this header — search, bytes and the
-              account control are all here. */}
-          <button
-            ref={menuButtonRef}
-            type="button"
-            onClick={() => setIsMenuOpen(true)}
-            aria-label="Open menu"
-            aria-haspopup="dialog"
-            aria-expanded={isMenuOpen}
-            className={`flex items-center justify-center w-9 h-9 sm:w-11 sm:h-11 rounded-full transition-colors ${
-              isNewsBytes
-                ? "bg-white/10 hover:bg-white/20"
-                : "bg-background/10 hover:bg-background/20"
-            }`}
-          >
-            <Menu className="w-4 h-4 sm:w-5 sm:h-5 text-white" aria-hidden="true" />
-          </button>
           <Link
             href="/search"
             className={`flex items-center justify-center w-9 h-9 sm:w-11 sm:h-11 rounded-full transition-colors ${
@@ -257,11 +276,6 @@ export function Header() {
         </div>
       )}
 
-      <NavSidebar
-        open={isMenuOpen}
-        onClose={() => setIsMenuOpen(false)}
-        returnFocusRef={menuButtonRef}
-      />
     </header>
   );
 }
