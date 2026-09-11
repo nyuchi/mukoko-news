@@ -185,32 +185,41 @@ describe('the two defects this file exists to prevent', () => {
     }
   })
 
-  it('outlines are OFF by default and switched on by one selector', () => {
+  it('the standard palette draws no component outline', () => {
     // The complaint this answers: every component carried a 1px border, so the
     // product looked like a high-contrast theme nobody chose. A card separates
-    // by fill; the outline is a reader preference and an accessibility fallback.
+    // by fill; the edge is the reader's choice.
     for (const block of [root, light, dark]) {
       expect(declared(block, '--outline')).toBe('transparent')
     }
-    expect(CSS).toContain("[data-outlines='on']")
-    // …and it is NOT optional under high contrast, where a reader has asked
-    // the OS to make differences easier to see.
-    const contrast = highContrastBlock()
-    expect(contrast).toContain('--outline: var(--border)')
   })
 
-  it('high contrast RAISES contrast inside the Mzizi scale, it does not replace it', () => {
-    // The regression: this block used to set every surface to `Canvas` and
-    // every border and text colour to `CanvasText`. With the OS "Increase
-    // Contrast" switch on, all eight background steps collapsed into one flat
-    // system colour and every card was outlined in stark white on black — the
-    // card stopped reading as a card, because the fill that separated it from
-    // the page was gone and the border was the only structure left.
+  it('has ONE contrast rule, keyed off an attribute, with no media query', () => {
+    // The fix, asserted structurally. Owner report 2026-09-11: *"the increase
+    // contrast toggle was on in system settings; when turned off I saw it work,
+    // but like the theme it needs to disable it on the site or have it on."*
     //
-    // `prefers-contrast: more` means "make differences easier to see", not
-    // "throw away the palette". Replacing the palette is `forced-colors`,
-    // which is a different query and has its own block.
-    const contrast = highContrastBlock()
+    // As `@media (prefers-contrast: more)` this was impossible to switch off
+    // from the site — a preference that is not in the cascade cannot override a
+    // query that is. `system` is resolved in JS (see `lib/appearance.ts`) and
+    // stamped as one attribute, exactly as the theme resolves `system` to a
+    // `light`/`dark` class.
+    expect(CSS).toContain("[data-contrast='more']")
+    // Comments stripped first: the note above the rule explains the query at
+    // length, and prose is not a block.
+    const code = CSS.replace(/\/\*[\s\S]*?\*\//g, '')
+    expect(code).not.toMatch(/@media\s*\(\s*prefers-contrast/)
+  })
+
+  it('raises contrast INSIDE the Mzizi scale, it does not replace it', () => {
+    // The regression: this used to set every surface to `Canvas` and every
+    // border and text colour to `CanvasText`. With the OS switch on, all eight
+    // background steps collapsed into one flat system colour and every card was
+    // outlined in stark white on black — the card stopped reading as a card,
+    // because the fill that separated it from the page was gone and the border
+    // was the only structure left.
+    const rule = /:root\[data-contrast='more'\]\s*\{([^}]*)\}/.exec(CSS)?.[1]
+    expect(rule, 'the contrast rule is gone').toBeDefined()
 
     for (const token of [
       '--background',
@@ -220,18 +229,21 @@ describe('the two defects this file exists to prevent', () => {
       '--elevated',
       '--popover',
     ]) {
-      expect(
-        contrast,
-        `${token} must keep its Mzizi step under prefers-contrast: more`
-      ).not.toMatch(new RegExp(`\\${token}\\s*:\\s*Canvas`))
+      expect(rule, `${token} must keep its Mzizi step under high contrast`).not.toContain(token)
     }
 
-    // What it SHOULD do instead: outlines on, the dim text roles lifted to
-    // full foreground, and a border that is visible but still from the
-    // palette rather than a system colour.
-    expect(contrast).toContain('--outline: var(--border)')
-    expect(contrast).toMatch(/--text-tertiary:\s*#(ffffff|000000)/i)
-    expect(contrast).not.toMatch(/--border:\s*CanvasText/)
+    // What it SHOULD do instead: outlines on, the dim text roles lifted to full
+    // foreground, and a border that is visible but still from the palette
+    // rather than a system colour.
+    expect(rule).toContain('--outline: var(--border)')
+    expect(rule).toMatch(/--text-tertiary:\s*#ffffff/i)
+    expect(rule).not.toMatch(/--border:\s*CanvasText/)
+  })
+
+  it('covers BOTH themes, so light is not left on the dark values', () => {
+    // The dark values are on the bare `:root` rule (they are the defaults);
+    // light needs its own, and at a specificity that wins.
+    expect(CSS).toContain(":root[data-contrast='more'].light")
   })
 
   it('forced-colors is where the palette IS handed over', () => {
@@ -276,5 +288,100 @@ describe('the two defects this file exists to prevent', () => {
       expect(declared(block, '--accent')).toBe('var(--container-cobalt)')
       expect(declared(block, '--brand-accent')).toBe('var(--tanzanite)')
     }
+  })
+})
+
+/**
+ * A `var(--x)` with no fallback, pointing at a property nothing defines, is
+ * INVALID AT COMPUTED-VALUE TIME — the declaration is thrown away and so is
+ * every declaration that reads it, silently and with no warning anywhere.
+ *
+ * That is not hypothetical. `--chart-positive: var(--malachite)` and
+ * `--chart-negative: var(--copper)` shipped in all three theme blocks, and
+ * neither `--malachite` nor `--copper` has ever existed: the mineral values
+ * live on `--color-malachite` / `--color-copper`, because that is the shape
+ * Tailwind's `@theme inline` consumes. So the positive and negative sentiment
+ * marks had no colour at all, in every theme, while the stylesheet read as
+ * though they were carefully assigned — and the "no chart mark is a literal"
+ * test above passed happily, because a dangling `var()` is not a literal.
+ */
+describe('every custom property a value reads is actually defined', () => {
+  it('has no dangling var() reference', () => {
+    // Comments are stripped first: this file explains the bug in prose, and a
+    // `var(--malachite)` quoted inside a comment is not a declaration.
+    const code = CSS.replace(/\/\*[\s\S]*?\*\//g, '')
+    const defined = new Set(Array.from(code.matchAll(/(--[A-Za-z0-9_-]+)\s*:/g), (m) => m[1]))
+    // Only references WITHOUT a fallback matter: `var(--x, 2px)` degrades to
+    // the fallback rather than poisoning the declaration.
+    const dangling = new Set<string>()
+    for (const m of code.matchAll(/var\(\s*(--[A-Za-z0-9_-]+)\s*\)/g)) {
+      if (!defined.has(m[1])) dangling.add(m[1])
+    }
+    expect(Array.from(dangling).sort(), 'these var() references resolve to nothing').toEqual([])
+  })
+})
+
+/**
+ * The mineral stripe is the one piece of chrome whose entire job is to carry
+ * the brand, and it drew five HARD-CODED LIGHT mineral hexes — so in dark mode
+ * it rendered deep, muddy bands against a near-black page (owner report
+ * 2026-09-11: *"the mineral strip is not theme aware"*). The tokens already
+ * swap per theme; the stripe simply never asked for them.
+ */
+describe('the minerals stripe', () => {
+  const STRIPE = /\.minerals-stripe,\s*\n\.minerals-stripe-horizontal\s*\{([^}]*)\}/.exec(CSS)?.[1]
+
+  it('is built from the shared stop list', () => {
+    expect(STRIPE, 'the shared .minerals-stripe rule is gone').toBeDefined()
+  })
+
+  it('carries no literal colour — it reads the theme tokens', () => {
+    expect(STRIPE).not.toMatch(/#[0-9a-f]{3,8}\b/i)
+    expect(STRIPE).not.toMatch(/\b(rgb|hsl|oklch|oklab)\(/i)
+  })
+
+  it('shows all SEVEN minerals, not five', () => {
+    // The mark is the Seed of Life — one centre cell ringed by six. A palette
+    // stripe missing sodalite and copper is not the palette.
+    for (const mineral of [
+      'cobalt',
+      'tanzanite',
+      'malachite',
+      'gold',
+      'terracotta',
+      'sodalite',
+      'copper',
+    ]) {
+      expect(STRIPE, `the stripe has no ${mineral} band`).toContain(`var(--color-${mineral})`)
+    }
+  })
+
+  it('runs down the RIGHT edge, where no chrome competes with it', () => {
+    // On the left it ran down the SHELL's edge, which is where the sidebar
+    // lives: docked, the stripe sat outside the panel and the page it belongs
+    // to was two columns away, so it read as a bar stuck to the browser rather
+    // than as the page's own border.
+    const rule = /\.minerals-stripe\s*\{([^}]*)\}/.exec(
+      CSS.slice(CSS.indexOf('.minerals-stripe-horizontal {'))
+    )
+    const vertical = /\n\.minerals-stripe \{([^}]*)\}/.exec(CSS)?.[1] ?? rule?.[1] ?? ''
+    expect(vertical).toMatch(/right:\s*0/)
+    expect(vertical).not.toMatch(/\bleft:\s*0/)
+  })
+
+  it('is thick enough to resolve into seven colours', () => {
+    // At 4px the bands were a hairline nobody could read as a palette, which
+    // is the only thing the stripe is for.
+    const vertical = /\n\.minerals-stripe \{([^}]*)\}/.exec(CSS)?.[1] ?? ''
+    const width = /width:\s*(\d+)px/.exec(vertical)?.[1]
+    expect(Number(width)).toBeGreaterThanOrEqual(6)
+  })
+
+  it('draws both orientations from one list', () => {
+    // Two copies drifted once already; a mineral added to one and not the
+    // other is a stripe that disagrees with itself depending on which way
+    // round it is drawn.
+    expect(CSS).toContain('linear-gradient(to bottom, var(--stripe-stops))')
+    expect(CSS).toContain('linear-gradient(to right, var(--stripe-stops))')
   })
 })

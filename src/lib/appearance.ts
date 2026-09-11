@@ -1,93 +1,132 @@
 /**
- * Reader-controlled appearance options that are NOT the theme.
+ * Contrast — the second half of the theme.
  *
- * Right now that is one thing: whether components draw a visible outline.
+ * ## One setting, three states, exactly like the theme
  *
- * ## Why this is a setting and not the default
+ * `off` | `on` | `system`, the same shape as Light | Dark | System, and for the
+ * same reason: **the site's setting has to win in both directions.** Owner
+ * report 2026-09-11 — *"the increase contrast toggle was on in system
+ * settings; when turned off I saw it work, but like the theme it needs to
+ * disable it on the site or have it on."*
  *
- * A card is a surface. It reads as a separate object because its fill differs
- * from the page, its corners are rounded and its content is inset — not because
- * a 1px line is drawn around it. Outlining every component makes the whole app
- * look like a high-contrast theme nobody asked for, and it flattens hierarchy:
- * when everything is boxed, nothing is emphasised.
+ * That is the whole history of this module in one line. It shipped as a pair of
+ * values (outlines on/off) sitting UNDER an unconditional
+ * `@media (prefers-contrast: more)` block, so a reader with the OS switch on
+ * got the high-contrast treatment whatever the control said — a setting that
+ * says Off and is not off. The first fix made the OS query a third choice but
+ * only for the EDGES; the text lift stayed unconditional, so `off` still was
+ * not off. It is now the whole treatment, and `off` means off.
  *
- * But outlines are exactly the right answer for a reader who wants more edge
- * definition, so they stay one toggle away rather than being deleted. The CSS
- * side is a single token (`--outline` in `globals.css`), transparent by default
- * and switched on by `data-outlines="on"` on the root element.
+ * ## Resolved in JS, not in CSS — and that is what makes it work
  *
- * `prefers-contrast: more` turns them on regardless of this setting, and that
- * is not a courtesy: a reader who asked their OS to make differences easier to
- * see is asking for the edge, and fill is the subtler of the two signals.
+ * `system` is resolved here against `matchMedia('(prefers-contrast: more)')`
+ * and a single attribute is stamped on `<html>`, precisely as the theme
+ * resolves `system` to a `light`/`dark` class. The stylesheet then has ONE
+ * rule, `:root[data-contrast='more']`, and no media query at all.
  *
- * It is NOT because the surfaces stop separating — that block keeps every step
- * of the Mzizi scale. An earlier version replaced them all with `Canvas`, and
- * this comment used to cite that as the reason; see the corrected note under
- * "Deferring to the system" in CLAUDE.md.
+ * Expressing it in CSS instead means duplicating the whole declaration block —
+ * once for `[data-contrast='on']` and once inside the media query for
+ * `[data-contrast='system']` — and two copies of a palette drift. Worse, a
+ * media query cannot be overridden by a preference that is not also in the
+ * cascade, which is exactly the bug being fixed.
  *
  * ## Per-device, like the other preferences here
  *
- * `localStorage`, same as the theme and `PreferencesContext`. It does not
- * follow the account across the Mukoko apps yet — that is a known gap, recorded
- * in the same place as the rest of them, not a decision made here.
+ * `localStorage`, same as the theme. It does not follow the account across the
+ * Mukoko apps yet — a known gap recorded with the rest of them, not a decision
+ * made here.
  */
 
-export type OutlinePreference = 'on' | 'off'
+export type ContrastPreference = 'off' | 'on' | 'system'
+
+/** What the document is actually rendering: the treatment, or not. */
+export type ResolvedContrast = 'standard' | 'more'
 
 /**
  * Storage key.
  *
- * The pre-paint bootstrap script in `layout.tsx` reads this key as a STRING
- * LITERAL — it has to, because it runs before any module is evaluated. The two
- * cannot import from each other, so a test asserts they still agree; that is
- * the only thing standing between a rename here and a setting that silently
- * stops applying.
+ * The pre-paint bootstrap in `layout.tsx` reads this as a STRING LITERAL — it
+ * has to, because it runs before any module is evaluated. The two cannot import
+ * from each other, so a test asserts they still agree; that is the only thing
+ * standing between a rename here and a setting that silently stops applying.
  */
-export const OUTLINE_STORAGE_KEY = 'mukoko-news-outlines'
+export const CONTRAST_STORAGE_KEY = 'mukoko-news-contrast'
 
-/** The attribute the CSS keys off. */
-export const OUTLINE_ATTRIBUTE = 'data-outlines'
+/** The attribute the CSS keys off. Carries the RESOLVED value, never the preference. */
+export const CONTRAST_ATTRIBUTE = 'data-contrast'
+
+/** The OS signal `system` follows. One string, used by the provider and the bootstrap. */
+export const CONTRAST_QUERY = '(prefers-contrast: more)'
 
 /**
- * Anything that is not exactly `"on"` is off.
+ * Anything that is not one of the three exact strings is `off`.
  *
- * Deliberately strict rather than truthy: a half-written or foreign value in
- * localStorage must land on the default look, not on an outlined app the
- * reader never asked for and would have no idea how to turn off.
+ * Deliberately strict, and the DEFAULT is `off` rather than `system`: a reader
+ * who has never opened this control has not asked for the treatment, and
+ * inheriting it from an OS switch they set for unrelated reasons is the exact
+ * complaint this module exists to answer. `system` is one tap away for a reader
+ * who does want their device to decide.
  */
-export function parseOutlinePreference(raw: string | null | undefined): OutlinePreference {
-  return raw === 'on' ? 'on' : 'off'
+export function parseContrastPreference(raw: string | null | undefined): ContrastPreference {
+  return raw === 'on' || raw === 'system' ? raw : 'off'
 }
 
-/** Read the stored preference. Never throws — private mode and blocked storage both return the default. */
-export function readOutlinePreference(): OutlinePreference {
+/**
+ * The preference plus the OS signal, as the one value the stylesheet sees.
+ *
+ * `on` and `off` ignore `systemAsks` entirely — that is what "the site's
+ * setting wins in both directions" means, and asserting it is cheaper than
+ * arguing about it later.
+ */
+export function resolveContrast(
+  preference: ContrastPreference,
+  systemAsks: boolean
+): ResolvedContrast {
+  if (preference === 'on') return 'more'
+  if (preference === 'off') return 'standard'
+  return systemAsks ? 'more' : 'standard'
+}
+
+/** Does the device ask for more contrast? Never throws — an unanswerable query is a no. */
+export function systemAsksForContrast(): boolean {
   try {
-    return parseOutlinePreference(window.localStorage.getItem(OUTLINE_STORAGE_KEY))
+    return window.matchMedia(CONTRAST_QUERY).matches
+  } catch {
+    return false
+  }
+}
+
+/** Read the stored preference. Never throws — private mode and blocked storage return the default. */
+export function readContrastPreference(): ContrastPreference {
+  try {
+    return parseContrastPreference(window.localStorage.getItem(CONTRAST_STORAGE_KEY))
   } catch {
     return 'off'
   }
 }
 
 /** Persist the preference. Never throws; a failed write costs the setting, not the page. */
-export function storeOutlinePreference(preference: OutlinePreference): void {
+export function storeContrastPreference(preference: ContrastPreference): void {
   try {
-    window.localStorage.setItem(OUTLINE_STORAGE_KEY, preference)
+    window.localStorage.setItem(CONTRAST_STORAGE_KEY, preference)
   } catch {
     /* private mode, blocked storage — the attribute below still applies for this session */
   }
 }
 
 /**
- * Apply the preference to the document.
+ * Apply the RESOLVED value to the document.
  *
- * `off` REMOVES the attribute rather than setting it to `"off"`, so the CSS
- * selector stays a plain `[data-outlines='on']` and there is exactly one state
- * that means "outlined".
+ * `standard` REMOVES the attribute rather than writing it, and that is
+ * load-bearing rather than tidiness: the single CSS rule names
+ * `[data-contrast='more']` positively, so an absent attribute is the standard
+ * look. A reader whose bootstrap never ran — JS off, blocked storage, a throw —
+ * gets the standard palette rather than a treatment they cannot switch off.
  */
-export function applyOutlinePreference(
-  preference: OutlinePreference,
+export function applyContrast(
+  resolved: ResolvedContrast,
   root: { setAttribute(name: string, value: string): void; removeAttribute(name: string): void }
 ): void {
-  if (preference === 'on') root.setAttribute(OUTLINE_ATTRIBUTE, 'on')
-  else root.removeAttribute(OUTLINE_ATTRIBUTE)
+  if (resolved === 'more') root.setAttribute(CONTRAST_ATTRIBUTE, 'more')
+  else root.removeAttribute(CONTRAST_ATTRIBUTE)
 }

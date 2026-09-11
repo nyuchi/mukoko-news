@@ -45,7 +45,7 @@ export default async function TopicPage({ params }: TopicPageProps) {
   const title = topicTitle(topic || decodeURIComponent(slug))
 
   return (
-    <div className="mx-auto w-full max-w-[var(--width-reading)] px-[var(--page-gutter)] sm:px-[var(--page-gutter-sm)] py-8">
+    <div className="mx-auto w-full max-w-[var(--width-reading)] px-[var(--page-gutter)] sm:px-[var(--page-gutter-sm)] py-[var(--page-block-reading)]">
       <Link
         href="/discover"
         className="mb-6 inline-flex items-center gap-1.5 text-sm text-text-secondary hover:text-foreground transition-colors focus-visible:outline-none focus-visible:underline"

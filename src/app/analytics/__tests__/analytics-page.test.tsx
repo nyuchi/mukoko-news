@@ -29,8 +29,11 @@ vi.mock('next/navigation', () => ({
 // The console is signed-in only. The guard wraps WorkOS, which cannot resolve
 // under jsdom, so it is mocked here and the access rules are asserted directly.
 const mockSignedIn = vi.fn()
+// The page asks the ACCESS SEAM now, not "is there a session" — so the gate
+// and the locked card a reader sees read the same table. The mock follows.
 vi.mock('@/lib/auth/guard', () => ({
   isViewerSignedIn: () => mockSignedIn(),
+  viewerCanAccess: async () => mockSignedIn(),
 }))
 
 // The page reads via Server Actions, so mock the action module (not mongodb/).

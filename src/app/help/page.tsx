@@ -33,7 +33,7 @@ const faqs = [
 
 export default function HelpPage() {
   return (
-    <div className="mx-auto w-full max-w-[var(--width-reading)] px-[var(--page-gutter)] sm:px-[var(--page-gutter-sm)] py-12">
+    <div className="mx-auto w-full max-w-[var(--width-reading)] px-[var(--page-gutter)] sm:px-[var(--page-gutter-sm)] py-[var(--page-block-reading)]">
       <h1 className="text-3xl font-bold text-foreground mb-2">Help Center</h1>
       <p className="text-text-secondary mb-8">
         Find answers to common questions about using Mukoko News

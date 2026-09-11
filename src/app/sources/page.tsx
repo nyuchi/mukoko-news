@@ -213,7 +213,7 @@ export default function SourcesPage() {
         description={`Browse all news sources on Mukoko News. View source health, article counts and coverage — ${coverage.fragment}.`}
         url={getFullUrl("/sources")}
       />
-      <div className="mx-auto w-full max-w-[var(--width-wide)] px-[var(--page-gutter)] sm:px-[var(--page-gutter-sm)] py-8">
+      <div className="mx-auto w-full max-w-[var(--width-wide)] px-[var(--page-gutter)] sm:px-[var(--page-gutter-sm)] py-[var(--page-block)]">
         {/* Header */}
         <div className="mb-8">
           <Link
@@ -489,7 +489,7 @@ function statusTitle(source: Source): string {
 function SourcesPageSkeleton() {
   return (
     <div
-      className="mx-auto w-full max-w-[var(--width-wide)] px-[var(--page-gutter)] sm:px-[var(--page-gutter-sm)] py-8"
+      className="mx-auto w-full max-w-[var(--width-wide)] px-[var(--page-gutter)] sm:px-[var(--page-gutter-sm)] py-[var(--page-block)]"
       aria-label="Loading sources"
       role="status"
       aria-live="polite"

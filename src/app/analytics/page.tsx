@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation'
-import { isViewerSignedIn } from '@/lib/auth/guard'
+import { viewerCanAccess } from '@/lib/auth/guard'
 import {
   runCorpusQueryAction,
   getQueryFacetsAction,
@@ -35,7 +35,7 @@ export default async function AnalyticsPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
-  if (!(await isViewerSignedIn())) {
+  if (!(await viewerCanAccess('analytics-console'))) {
     // Preserve the query so a shared link survives the sign-in round trip: the
     // analyst lands back on the exact console they were sent, not on a blank one.
     const qs = new URLSearchParams()

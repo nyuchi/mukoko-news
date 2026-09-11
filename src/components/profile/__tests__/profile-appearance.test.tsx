@@ -7,17 +7,14 @@ import { describe, expect, it, vi } from 'vitest'
 import { ProfileAppearance } from '../profile-appearance'
 
 const setTheme = vi.fn()
+const setContrast = vi.fn()
 let currentTheme = 'system'
+let currentContrast = 'off'
+// One mock, because there is one provider: contrast is part of the theme
+// (owner direction 2026-09-11). This card previously reached into
+// `@/lib/appearance` itself and had to be mocked at two seams.
 vi.mock('@/components/theme-provider', () => ({
-  useTheme: () => ({ theme: currentTheme, setTheme }),
-}))
-
-const storeOutlinePreference = vi.fn()
-const applyOutlinePreference = vi.fn()
-vi.mock('@/lib/appearance', () => ({
-  readOutlinePreference: () => 'off',
-  storeOutlinePreference: (...a: unknown[]) => storeOutlinePreference(...a),
-  applyOutlinePreference: (...a: unknown[]) => applyOutlinePreference(...a),
+  useTheme: () => ({ theme: currentTheme, setTheme, contrast: currentContrast, setContrast }),
 }))
 
 const CSS = readFileSync(join(process.cwd(), 'src/app/globals.css'), 'utf8')
@@ -27,7 +24,7 @@ const PREVIEW = readFileSync(
 )
 
 describe('ProfileAppearance', () => {
-  it('offers all three themes and both outline settings as exclusive choices', () => {
+  it('offers three themes and three outline settings as exclusive choices', () => {
     render(<ProfileAppearance />)
     const options = screen.getAllByRole('radio')
     const labels = options.map((o) => o.textContent)
@@ -38,10 +35,20 @@ describe('ProfileAppearance', () => {
         `no "${name}" option`
       ).toBe(true)
     }
-    // `radio`, not `button`: these are exclusive choices in a named group, and
-    // the role is what lets a screen reader say "2 of 3" rather than reading
-    // five unrelated buttons.
-    expect(options).toHaveLength(5)
+    // Two groups of three. The outline row gained a "System" of its own
+    // because `prefers-contrast: more` used to switch outlines on OVER this
+    // control — so "Off" was not off. Following the device is a choice here
+    // now, not an override on the other two.
+    expect(options).toHaveLength(6)
+    expect(labels.filter((l) => l?.startsWith('System'))).toHaveLength(2)
+  })
+
+  it('stores AND applies the system outline choice', () => {
+    render(<ProfileAppearance />)
+    const systems = screen.getAllByRole('radio').filter((o) => o.textContent?.startsWith('System'))
+    // The second is the outline group's — the first belongs to the theme row.
+    fireEvent.click(systems[1])
+    expect(setContrast).toHaveBeenCalledWith('system')
   })
 
   it('marks exactly one theme and one outline setting as chosen', () => {
@@ -53,6 +60,9 @@ describe('ProfileAppearance', () => {
     expect(checked.map((c) => c.textContent?.slice(0, 6))).toEqual(
       expect.arrayContaining([expect.stringContaining('System'), expect.stringContaining('Off')])
     )
+    // And "Off" is the one chosen when nothing is stored — the default is the
+    // quiet look, never the device's contrast setting.
+    expect(checked.some((c) => c.textContent?.startsWith('Off'))).toBe(true)
   })
 
   it('applies a theme choice', () => {
@@ -61,13 +71,22 @@ describe('ProfileAppearance', () => {
     expect(setTheme).toHaveBeenCalledWith('dark')
   })
 
-  it('stores AND applies an outline choice', () => {
+  it('hands an outline choice to the theme, which owns storing and applying it', () => {
     // Storing without applying leaves the page unchanged until a reload —
-    // which reads as the control not working.
+    // which reads as the control not working. Both now happen in one place.
     render(<ProfileAppearance />)
     fireEvent.click(screen.getAllByRole('radio').find((o) => o.textContent?.startsWith('On'))!)
-    expect(storeOutlinePreference).toHaveBeenCalledWith('on')
-    expect(applyOutlinePreference).toHaveBeenCalledWith('on', document.documentElement)
+    expect(setContrast).toHaveBeenCalledWith('on')
+  })
+
+  it('shows the contrast the THEME reports, not its own copy', () => {
+    currentContrast = 'on'
+    render(<ProfileAppearance />)
+    const checked = screen
+      .getAllByRole('radio')
+      .filter((o) => o.getAttribute('aria-checked') === 'true')
+    expect(checked.some((c) => c.textContent?.startsWith('On'))).toBe(true)
+    currentContrast = 'off'
   })
 })
 

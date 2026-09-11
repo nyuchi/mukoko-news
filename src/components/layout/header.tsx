@@ -70,7 +70,10 @@ export function Header() {
   const pathname = usePathname();
   const router = useRouter();
   const [isScrolled, setIsScrolled] = useState(false);
-  const { open: isSidebarOpen, toggle: toggleSidebar } = useSidebar();
+  const { open: isSidebarOpen, isDocked, toggle: toggleSidebar } = useSidebar();
+  // The docked sidebar carries the masthead itself, so the header repeating
+  // it puts the same wordmark on screen twice, at two different heights.
+  const sidebarOwnsBrand = isSidebarOpen && isDocked;
   const isNewsBytes = pathname === "/newsbytes";
   // Our markup inside somebody else's page has no sidebar to toggle.
   const showSidebarToggle = !hidesAppChrome(pathname);
@@ -121,7 +124,7 @@ export function Header() {
         isNewsBytes
           ? "bg-gradient-to-b from-black/60 via-black/30 to-transparent"
           : isScrolled
-            ? "bg-background/70 backdrop-blur-xl border-b border-elevated/50 shadow-sm"
+            ? "bg-raised/70 backdrop-blur-xl border-b border-elevated/50 shadow-sm"
             : ""
       }`}
     >
@@ -131,11 +134,13 @@ export function Header() {
           `sm` breakpoint the header sat 8px wider than the article under it and
           the page visibly stepped in at the shoulder. NewsBytes is full-bleed
           by design and opts out of the max-width only. */}
-      <div
-        className={`mx-auto flex w-full items-center justify-between px-[var(--page-gutter)] py-3 sm:px-[var(--page-gutter-sm)] sm:py-4 ${
-          isNewsBytes ? "" : "max-w-[var(--width-wide)]"
-        }`}
-      >
+      {/* Two bands, not one. The toggle belongs to the SHELL's left edge —
+          hard against the sidebar it opens — while the masthead belongs to the
+          centred reading column. They used to be a single centred container,
+          which put ~580px of empty header between the docked sidebar and the
+          control that closes it ("this versus this is too far apart", owner
+          review 2026-09-11). */}
+      <div className="flex w-full items-center gap-1 pl-[var(--page-gutter)] sm:gap-2 sm:pl-[var(--page-gutter-sm)]">
         {/* The sidebar toggle owns the FAR LEFT of the header.
             ------------------------------------------------------------------
             It briefly lived in the actions pill on the right, grouped with
@@ -172,18 +177,50 @@ export function Header() {
           </button>
         )}
 
-        {/* Logo / Page Title with Dropdown - fixed height container */}
-        <div className="min-w-0 flex-shrink relative h-8">
+        <div
+          className={`flex min-w-0 flex-1 items-center justify-between py-3 pr-[var(--page-gutter)] sm:py-4 sm:pr-[var(--page-gutter-sm)] ${
+            isNewsBytes ? "" : "mx-auto max-w-[var(--width-wide)]"
+          }`}
+        >
+        {/* The masthead, and the scrolled page title it cross-fades with.
+            ------------------------------------------------------------------
+            A one-cell GRID, not a `relative` box with two `absolute` children.
+            Both layers sit in `col-start-1 row-start-1`, so they still stack
+            and cross-fade in place — but the container now has the WIDTH of
+            the wider of them instead of zero.
+
+            Zero width is what centred the wordmark. Absolutely positioned
+            children contribute nothing to their parent's size, so this was a
+            0px flex item between the toggle and the actions pill; with
+            `justify-between` distributing the free space, a zero-width middle
+            item lands in the MIDDLE of the header, and the wordmark — which
+            overflowed it — ran out from there and straight under the pill.
+            Owner report 2026-09-11: "the wordmark needs to be left not
+            centered". In flow it is the first item in the row, so it starts at
+            the left edge and the pill can no longer sit on top of it.
+
+            `min-w-0` + `truncate` is the other half: with a real width the
+            lockup now takes part in shrinking, so a narrow phone ellipsises
+            the wordmark rather than pushing the pill off the header. */}
+        <div className="grid min-h-8 min-w-0 shrink items-center justify-items-start">
           {/* Logo - visible when not scrolled */}
+          {/* Hidden while the sidebar is docked open: it carries the masthead
+              there, and two "mukoko news" lockups on one screen at two
+              different heights is what owner review called the heading being
+              "out of context across the whole". */}
           <Link
             href="/"
-            className={`absolute top-1/2 -translate-y-1/2 left-0 flex items-center gap-2 transition-all duration-300 ${
-              isScrolled && pageTitle ? "opacity-0 pointer-events-none" : "opacity-100"
+            className={`col-start-1 row-start-1 flex min-w-0 items-center gap-2 transition-opacity duration-300 ${
+              sidebarOwnsBrand || (isScrolled && pageTitle)
+                ? "opacity-0 pointer-events-none"
+                : "opacity-100"
             }`}
+            aria-hidden={sidebarOwnsBrand || undefined}
+            tabIndex={sidebarOwnsBrand ? -1 : undefined}
           >
             <AppIcon size={32} />
             <span
-              className={`font-serif font-semibold lowercase text-[16px] sm:text-[20px] whitespace-nowrap ${
+              className={`truncate font-serif font-semibold lowercase text-[16px] sm:text-[20px] ${
                 isNewsBytes ? "text-white" : "text-primary"
               }`}
             >
@@ -194,13 +231,13 @@ export function Header() {
           {/* Page title dropdown - visible when scrolled */}
           {pageTitle && (
             <div
-              className={`absolute top-1/2 -translate-y-1/2 left-0 transition-all duration-300 ${
+              className={`col-start-1 row-start-1 min-w-0 transition-opacity duration-300 ${
                 isScrolled ? "opacity-100" : "opacity-0 pointer-events-none"
               }`}
             >
               <button
                 onClick={handleTitleClick}
-                className={`flex items-center gap-2 transition-colors ${
+                className={`flex min-w-0 items-center gap-2 transition-colors ${
                   isNewsBytes ? "text-white" : "text-primary hover:text-primary/80"
                 }`}
                 title="Refresh this page"
@@ -261,6 +298,7 @@ export function Header() {
             <Zap className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
           </Link>
           <UserAvatar onDark={isNewsBytes} />
+          </div>
         </div>
       </div>
 

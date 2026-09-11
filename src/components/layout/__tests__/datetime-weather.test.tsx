@@ -8,10 +8,21 @@ import { formatLocalDateTime } from '@/lib/local-time';
 import type { WeatherSnapshot } from '@/lib/weather';
 
 const mockFetchCurrentWeather = vi.fn();
+const mockGeolocationAvailability = vi.fn();
+const mockRequestCoords = vi.fn();
+const mockReadStoredCoords = vi.fn();
+const mockStoreCoords = vi.fn();
 
 vi.mock('@/lib/weather', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/weather')>();
-  return { ...actual, fetchCurrentWeather: () => mockFetchCurrentWeather() };
+  return {
+    ...actual,
+    fetchCurrentWeather: (...args: unknown[]) => mockFetchCurrentWeather(...args),
+    geolocationAvailability: () => mockGeolocationAvailability(),
+    requestCoords: () => mockRequestCoords(),
+    readStoredCoords: () => mockReadStoredCoords(),
+    storeCoords: (...args: unknown[]) => mockStoreCoords(...args),
+  };
 });
 
 const snapshot: WeatherSnapshot = {
@@ -27,6 +38,10 @@ describe('DateTimeWeather', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockFetchCurrentWeather.mockResolvedValue(null);
+    // The default for every existing case: no position, nothing remembered.
+    mockGeolocationAvailability.mockResolvedValue('unsupported');
+    mockRequestCoords.mockResolvedValue(null);
+    mockReadStoredCoords.mockReturnValue(null);
   });
 
   afterEach(() => {
@@ -220,5 +235,88 @@ describe('DateTimeWeather', () => {
     );
     // …and no inline styles either.
     expect(source).not.toMatch(/style=\{\{/);
+  });
+});
+
+/**
+ * The reported bug: *"the weather is not location aware, it's pulling a random
+ * place not actually where the user currently is."* On a Zimbabwean handset
+ * the strip read "Opposite Carrier Singapore" — a carrier-NAT egress, which is
+ * what mobile networks routinely hand to IP geolocation.
+ *
+ * The fix uses the reader's real coordinates, and the constraint on it is
+ * every bit as important as the fix: a news site that springs a location
+ * dialog on a first-time reader has spent trust it had not earned.
+ */
+describe('DateTimeWeather — location', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockFetchCurrentWeather.mockResolvedValue(null);
+    mockRequestCoords.mockResolvedValue(null);
+    mockReadStoredCoords.mockReturnValue(null);
+  });
+
+  it('NEVER asks for a position on load when permission has not been granted', async () => {
+    mockGeolocationAvailability.mockResolvedValue('prompt');
+    render(<DateTimeWeather />);
+    await waitFor(() => expect(mockGeolocationAvailability).toHaveBeenCalled());
+    // Asking is what raises the browser dialog. It must take a press.
+    expect(mockRequestCoords).not.toHaveBeenCalled();
+  });
+
+  it('offers the control when a press could actually work', async () => {
+    mockGeolocationAvailability.mockResolvedValue('prompt');
+    render(<DateTimeWeather />);
+    const button = await screen.findByRole('button', { name: /use my location/i });
+
+    await act(async () => {
+      button.click();
+    });
+    expect(mockRequestCoords).toHaveBeenCalled();
+  });
+
+  it.each([['denied'], ['unsupported']])(
+    'offers no control when the answer is %s',
+    async (state) => {
+      // A button the browser will refuse to honour is worse than no button.
+      mockGeolocationAvailability.mockResolvedValue(state);
+      render(<DateTimeWeather />);
+      await waitFor(() => expect(mockGeolocationAvailability).toHaveBeenCalled());
+      expect(screen.queryByRole('button', { name: /use my location/i })).toBeNull();
+    }
+  );
+
+  it('takes a fix silently when permission is ALREADY granted', async () => {
+    mockGeolocationAvailability.mockResolvedValue('granted');
+    mockRequestCoords.mockResolvedValue({ lat: -17.83, lon: 31.03 });
+    render(<DateTimeWeather />);
+
+    await waitFor(() => expect(mockRequestCoords).toHaveBeenCalled());
+    // Remembered, so the next visit is right before any permission round-trip.
+    await waitFor(() => expect(mockStoreCoords).toHaveBeenCalledWith({ lat: -17.83, lon: 31.03 }));
+    // And the reading is actually taken AT that position, not from the IP.
+    await waitFor(() =>
+      expect(mockFetchCurrentWeather).toHaveBeenCalledWith({ lat: -17.83, lon: 31.03 })
+    );
+  });
+
+  it('uses a remembered fix immediately, without waiting on permissions', async () => {
+    mockGeolocationAvailability.mockResolvedValue('prompt');
+    mockReadStoredCoords.mockReturnValue({ lat: -17.83, lon: 31.03 });
+    render(<DateTimeWeather />);
+
+    await waitFor(() =>
+      expect(mockFetchCurrentWeather).toHaveBeenCalledWith({ lat: -17.83, lon: 31.03 })
+    );
+    // …and does not nag for a permission it already has the answer to.
+    expect(screen.queryByRole('button', { name: /use my location/i })).toBeNull();
+  });
+
+  it('falls back to the IP reading when there is no fix at all', async () => {
+    mockGeolocationAvailability.mockResolvedValue('denied');
+    render(<DateTimeWeather />);
+    // `null` is the signal to call the endpoint with no params — a wrong city
+    // is still a reading, and it is what every reader got before this.
+    await waitFor(() => expect(mockFetchCurrentWeather).toHaveBeenCalledWith(null));
   });
 });

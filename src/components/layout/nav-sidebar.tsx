@@ -33,7 +33,8 @@ import { DESTINATIONS, NAV_GROUPS, hidesAppChrome } from "@/lib/navigation";
  * The two modes are the same markup reshaped by responsive classes plus an
  * `isDocked` flag, never two subtrees taking turns behind `lg:hidden`. jsdom
  * applies no media queries, so both would render in every test and each
- * `getByRole` would match twice — the same trap `ArticleActionBar` documents.
+ * `getByRole` would match twice — the trap the deleted article action bar was
+ * the cautionary tale for.
  *
  * The landmark role changes with the mode, and that is correct rather than
  * clever: docked it is a `navigation` region the reader can Tab through as
@@ -147,10 +148,18 @@ export function NavSidebar() {
           open ? "translate-x-0" : "-translate-x-full"
         }`}
       >
-        <div className="flex items-center justify-between gap-3 px-4 pb-2 pt-4">
-          <Link href="/" className="flex min-w-0 items-center gap-2.5">
+        {/* This row is the app header's first row, continued.
+            ------------------------------------------------------------------
+            Same icon size, same wordmark size, same vertical padding — so the
+            masthead sits on one baseline straight across the top of the app
+            rather than stepping down at the sidebar's edge. It did step, and
+            owner review named it: the sidebar heading was "out of context
+            across the whole". When the sidebar is docked open THIS is the
+            masthead; the header hides its own copy. */}
+        <div className="flex items-center justify-between gap-3 px-4 py-3 sm:py-4">
+          <Link href="/" className="flex min-w-0 items-center gap-2">
             <AppIcon size={32} />
-            <span className="truncate font-serif text-2xl font-semibold lowercase text-primary">
+            <span className="truncate font-serif text-[16px] font-semibold lowercase text-primary sm:text-[20px]">
               mukoko news
             </span>
           </Link>

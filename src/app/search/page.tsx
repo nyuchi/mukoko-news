@@ -118,7 +118,7 @@ export default function SearchPage() {
 
   return (
     <ErrorBoundary fallback={<div className="p-8 text-center text-text-secondary">Failed to load search</div>}>
-      <div className="mx-auto w-full max-w-[var(--width-wide)] px-[var(--page-gutter)] sm:px-[var(--page-gutter-sm)] py-8">
+      <div className="mx-auto w-full max-w-[var(--width-wide)] px-[var(--page-gutter)] sm:px-[var(--page-gutter-sm)] py-[var(--page-block)]">
         {/* Search Bar */}
       <div className="mb-8">
         <form onSubmit={handleSearch} className="relative">

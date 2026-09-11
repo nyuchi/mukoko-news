@@ -27,13 +27,14 @@
   /* The full Mzizi background scale. Five steps were missing, which is why
      menus reused the hover-row colour, the share modal hand-rolled its own
      backdrop, and article heroes had no media-well token. */
-  /* How much bottom space the floating mobile nav needs kept clear: its own
-     height (4rem) + the 0.75rem it floats by + a 0.75rem breathing gap, on top
-     of the home-indicator inset. Every surface that pins something to the
-     bottom on mobile reads this, so the pill and an action rail can never be
-     lifted by different amounts again. Zero above `md`, where the pill is not
-     rendered — consumers apply `md:` themselves since a CSS variable cannot
-     carry a breakpoint. */
+  /* How much bottom space the floating island needs kept clear: its own height
+     (4rem) + the 0.75rem it floats by + a 0.75rem breathing gap, on top of the
+     home-indicator inset. Every surface that pins something above the island
+     reads this, so they can never be lifted by different amounts.
+
+     It applies at EVERY width now. The island used to be `md:hidden` and this
+     was reset to zero above `md`; with one island on every screen, a reset
+     would put the last line of every desktop article under it. */
   --bottom-nav-clearance: calc(env(safe-area-inset-bottom, 0px) + 5.5rem);
   /* How wide the navigation sidebar is when docked. Read by the sidebar
      itself AND by the page inset below, so the column and the space kept for
@@ -123,11 +124,11 @@
      lightness, chroma, colour-vision separation and contrast against the mode's
      own surface. Sentiment slots additionally carry direct labels + a legend, so
      identity never rests on hue alone. Re-validate before changing a value. */
-  --chart-primary: var(--tanzanite);   /* single-series volume + magnitude bars */
-  --chart-positive: var(--malachite);
+  --chart-primary: var(--color-tanzanite);   /* single-series volume + magnitude bars */
+  --chart-positive: var(--color-malachite);
   --chart-neutral: var(--neutral);     /* deliberate neutral midpoint, not an identity hue */
-  --chart-negative: var(--copper);
-  --chart-mixed: var(--gold);
+  --chart-negative: var(--color-copper);
+  --chart-mixed: var(--color-gold);
   --chart-grid: var(--border);
 
   /* UI Elements */
@@ -225,11 +226,11 @@
      lightness, chroma, colour-vision separation and contrast against the mode's
      own surface. Sentiment slots additionally carry direct labels + a legend, so
      identity never rests on hue alone. Re-validate before changing a value. */
-  --chart-primary: var(--tanzanite);   /* single-series volume + magnitude bars */
-  --chart-positive: var(--malachite);
+  --chart-primary: var(--color-tanzanite);   /* single-series volume + magnitude bars */
+  --chart-positive: var(--color-malachite);
   --chart-neutral: var(--neutral);     /* deliberate neutral midpoint, not an identity hue */
-  --chart-negative: var(--copper);
-  --chart-mixed: var(--gold);
+  --chart-negative: var(--color-copper);
+  --chart-mixed: var(--color-gold);
   --chart-grid: var(--border);
 
   /* UI Elements */
@@ -314,11 +315,11 @@
   --on-container-copper: #5A2310;
 
   /* Data-visualisation marks — see the note in the dark block above. */
-  --chart-primary: var(--tanzanite);
-  --chart-positive: var(--malachite);
+  --chart-primary: var(--color-tanzanite);
+  --chart-positive: var(--color-malachite);
   --chart-neutral: var(--neutral);     /* deliberate neutral midpoint, not an identity hue */
-  --chart-negative: var(--copper);
-  --chart-mixed: var(--gold);
+  --chart-negative: var(--color-copper);
+  --chart-mixed: var(--color-gold);
   --chart-grid: var(--border);
 
   /* UI Elements */
@@ -475,9 +476,47 @@
      Consume them through `<PageContainer>`, not by hand. */
   --width-wide: 1200px; /* chrome: header, footer, index pages */
   --width-reading: 800px; /* one column of running text — the article body */
+  /* Both widen on a big screen (owner review 2026-09-11: "the content width is
+     quite narrow on desktop"). 800px is a good measure at 1280px and reads as
+     a ribbon at 2500px, where it leaves more empty page than article. The
+     steps below stay inside a sane measure — ~90 characters at the top step,
+     not the 120+ a full-bleed column would give — so the text still scans. */
   --width-form: 600px; /* a single form or auth card */
   --page-gutter: 1rem; /* 16px — the a11y floor at every width */
   --page-gutter-sm: 1.5rem; /* 24px from the `sm` breakpoint up */
+
+  /* ── Page vertical rhythm ───────────────────────────────────────────────
+     The widths and gutters were tokenised; the SPACE ABOVE AND BELOW a page
+     column was not, and 26 call sites had picked `py-6`, `py-8`, `py-12` and
+     `py-16` independently. Owner report 2026-09-11: *"not all pages follow
+     the same width layout, each page seems to run its own, no global
+     option."* The widths had in fact already converged — what a reader was
+     seeing move between pages was the top margin.
+
+     Two values, chosen by what the column HOLDS rather than per page, so
+     there is one decision instead of twenty-six:
+       · `--page-block`          index and chrome columns — a grid of cards
+       · `--page-block-reading`  one column of running text, which wants more
+                                 air above it before the first line */
+  --page-block: 2rem; /* 32px */
+  --page-block-reading: 3rem; /* 48px */
+}
+
+/* The widths step up with the viewport. Declared as overrides of the tokens
+   themselves rather than as `xl:max-w-*` at the call sites, so every surface
+   that already consumes the token widens together and none can drift. */
+@media (min-width: 1280px) {
+  :root {
+    --width-wide: 1320px;
+    --width-reading: 880px;
+  }
+}
+
+@media (min-width: 1920px) {
+  :root {
+    --width-wide: 1480px;
+    --width-reading: 960px;
+  }
 }
 
 /* Data-dense surfaces: admin tables, dashboards, power-user tools. */
@@ -520,27 +559,30 @@
 }
 
 /* ── Deferring to the system where the system knows better ───────────
-   Three things the OS can tell us that a fixed palette cannot.
+   Two things the OS can tell us that a fixed palette cannot — and they are
+   deliberately NOT treated alike.
 
    1. `color-scheme` — tells the UA which way our surfaces run, so form
       controls, scrollbars, spellcheck underlines and the canvas flash on first
       paint are all drawn to match. Without it a dark page gets light native
       widgets and a white flash before CSS applies.
 
-   2. `prefers-contrast: more` — a reader who has asked their OS for higher
-      contrast is telling us our palette is not enough for them. Honour it with
-      the SYSTEM colours (`Canvas` / `CanvasText`), which are exactly the pair
-      that reader has already tuned, rather than a second guess of our own. The
-      brand minerals stay: only the reading surfaces defer.
-
-   3. `forced-colors: active` — Windows High Contrast and similar replace the
+   2. `forced-colors: active` — Windows High Contrast and similar replace the
       palette wholesale. Our job there is to get out of the way and make sure
       nothing depends on a colour we no longer control, so borders become
-      system-coloured rather than invisible.
+      system-coloured and the focus ring is redrawn in `Highlight`, the one
+      colour that survives.
 
-   Deliberately NOT the default: system colours alone would drop the Mzizi
+   `prefers-contrast: more` is the third signal and it is NOT a media query
+   here: it is read in JS, combined with the reader's own Off/On/System choice,
+   and stamped as `data-contrast="more"` — see the contrast block below. A
+   media query cannot be overridden by a preference that is not in the cascade,
+   which is the whole reason the site's control could not switch it off.
+
+   System colours are deliberately NOT the default: they would drop the Mzizi
    surface scale and the mineral identity on every machine, which is a brand
-   decision, not an accessibility one. They apply when the reader has asked. */
+   decision, not an accessibility one. They apply when the OS has already
+   replaced the palette. */
 :root {
   color-scheme: dark;
 }
@@ -548,89 +590,70 @@
   color-scheme: light;
 }
 
-/* ── Component outlines are an ACCESSIBILITY option, not the default look ─────
+/* ── Contrast: one rule, resolved in JS, and the site's setting always wins ──
  *
  * A card is a SURFACE. It reads as a separate object because its fill differs
  * from the page it sits on, its corners are rounded and its content is inset —
  * not because a 1px line is drawn around it. Outlining every component makes
- * the whole app look like a high-contrast theme that nobody asked for, and it
- * flattens hierarchy: when everything is boxed, nothing is emphasised.
+ * the whole app look like a high-contrast theme nobody asked for, and it
+ * flattens hierarchy: when everything is boxed, nothing is emphasised. So the
+ * standard palette draws no component outline at all (`--outline` is
+ * transparent) and `--border` is reserved for SEPARATORS — `border-b`,
+ * `divide-y`, the byline rule — lines that mean "these two things are
+ * different" rather than "here is an edge".
  *
- * So `--outline` is TRANSPARENT by default and every boxed component draws
- * `border border-outline` rather than `border-border`. The border is still in
- * the box model, so switching it on shifts nothing.
+ * The high-contrast treatment is this ONE rule, and `src/lib/appearance.ts`
+ * decides whether it applies: `off` | `on` | `system`, resolved against
+ * `matchMedia('(prefers-contrast: more)')` and stamped on <html> before first
+ * paint — exactly as the theme resolves `system` to a `light`/`dark` class.
  *
- * `--border` keeps its colour and stays visible — it is for SEPARATORS
- * (`border-b`, `divide-y`, the byline rule), which are lines that mean
- * "these two things are different", not lines that mean "here is an edge".
- * Those are different jobs and this is why they are different tokens now.
+ * ⚠️ THERE IS DELIBERATELY NO `@media (prefers-contrast: more)` HERE, and that
+ * is the fix rather than an omission (owner report 2026-09-11 — *"the increase
+ * contrast toggle was on in system settings; when turned off I saw it work, but
+ * like the theme it needs to disable it on the site or have it on"*).
  *
- * Two things turn outlines on:
+ * As a media query this could not be switched off from the site: a preference
+ * that is not in the cascade cannot override a query that is. It shipped
+ * unconditional, so a reader with the OS switch on got the treatment whatever
+ * the control said. The first correction made the query a third CHOICE, but
+ * only for the edges — the text lift stayed unconditional, so `off` still was
+ * not off. Resolving in JS collapses all of that: one attribute, one rule, and
+ * `off` means off.
  *
- *   1. `data-outlines="on"` — the reader's own choice, from /profile. Set on
- *      <html> before first paint so it never flashes.
- *   2. `prefers-contrast: more` — NOT optional there. That block replaces every
- *      surface with `Canvas`, so the page, the card and the hover row become
- *      one colour and fill can no longer separate anything. Outlines are the
- *      only thing left that can, which is the whole argument for keeping them
- *      one token away rather than deleting them.
+ * It raises contrast INSIDE the Mzizi scale and never replaces it. Every
+ * surface keeps its step; only the edges and the two dim text roles move.
+ * An earlier version set every surface to `Canvas`, and measured on a phone
+ * with the OS switch on that collapsed all eight background steps into one flat
+ * system colour and outlined every card, chip and the nav pill in stark white
+ * on black — the card stopped reading as a card, because the fill separating it
+ * from the page was gone and the border was the only structure left.
+ * `prefers-contrast: more` means *make differences easier to see*, not *throw
+ * away the palette*; that is `forced-colors`, which is the block below.
  *
- * ⚠️ This deliberately diverges from the Mzizi card spec, which specifies
- * "a full 1px border" (`mzizi_get_tokens: componentSpecs`). Owner decision
+ * ⚠️ The standard look diverges from the Mzizi card spec, which specifies "a
+ * full 1px border" (`mzizi_get_tokens: componentSpecs`). Owner decision
  * 2026-09-10; reported upstream rather than silently forked.
  */
-:root[data-outlines='on'] {
+:root[data-contrast='more'] {
+  /* Outlines switch on. `--border` below is lifted first, so this resolves to
+     the strong edge rather than to the quiet separator colour. */
   --outline: var(--border);
-}
-
-@media (prefers-contrast: more) {
-  /* Raise contrast WITHIN the Mzizi scale — never replace it.
-     ------------------------------------------------------------------
-     This block used to set every surface to `Canvas` and every border and
-     text colour to `CanvasText`. On a phone with the OS "Increase Contrast"
-     switch on, that is what the reader actually got: all eight background
-     steps (void, base, surface, muted, container, overlay, raised, pitch)
-     collapsed into ONE flat system colour, and every card, chip and the nav
-     pill outlined in stark white on black. The card no longer read as a card,
-     because the only thing separating it from the page — its fill — was gone;
-     the borders were the sole remaining structure, so the product looked like
-     a wireframe.
-
-     That was the wrong reading of the query. `prefers-contrast: more` means
-     "make the difference between things easier to see", not "throw away the
-     palette" — that is `forced-colors`, which is a separate block below and
-     already does exactly that. The Mzizi scale is not low contrast; it is
-     eight deliberately distinct steps, and it is the thing carrying the
-     structure.
-
-     So: keep every surface, turn outlines on (they stop being optional here —
-     see the doctrine note in CLAUDE.md), lift the two dimmer text roles to
-     full foreground, and give the border a genuinely visible value taken from
-     the palette rather than from the system. */
-  :root,
-  .dark,
-  .light {
-    --outline: var(--border);
-  }
 
   /* Dark, including the bare `:root` defaults. `--border` takes the value
      `--text-tertiary` normally holds — a measured, on-palette step (APCA
-     Lc 80.3 on the card) that reads clearly as an edge without the
-     wireframe look of a pure-white hairline. */
-  :root,
-  .dark {
-    --text-secondary: #ffffff;
-    --text-tertiary: #ffffff;
-    --border: #d4d4cf;
-    --control: #d4d4cf;
-  }
+     Lc 80.3 on the card) that reads clearly as an edge without the wireframe
+     look of a pure-white hairline. */
+  --text-secondary: #ffffff;
+  --text-tertiary: #ffffff;
+  --border: #d4d4cf;
+  --control: #d4d4cf;
+}
 
-  .light {
-    --text-secondary: #000000;
-    --text-tertiary: #000000;
-    --border: #474139;
-    --control: #474139;
-  }
+:root[data-contrast='more'].light {
+  --text-secondary: #000000;
+  --text-tertiary: #000000;
+  --border: #474139;
+  --control: #474139;
 }
 
 @media (forced-colors: active) {
@@ -756,46 +779,75 @@ textarea {
   border-color: rgba(255, 255, 255, 0.15);
 }
 
-/* Five African Minerals vertical stripe (4px on left edge) */
+/* The seven African Minerals, as a 4px stripe.
+   --------------------------------------------------------------------------
+   THEME-AWARE, and it was not (owner report 2026-09-11). Every stop was a
+   hard-coded LIGHT mineral hex — `#0047AB`, `#4B0082`, `#004D40`, `#5D4037`,
+   `#A0522D` — so in dark mode the one piece of chrome whose entire job is to
+   carry the brand rendered five deep, muddy bands against a near-black page,
+   at exactly the moment the palette has light steps that would sing there.
+   The tokens already swap per theme; the stripe simply never asked for them.
+
+   It was also FIVE minerals, not seven. The doctrine is the Seed of Life —
+   one centre cell ringed by six — and sodalite and copper were missing from
+   the one surface that claims to show the whole palette, so `--stripe-step`
+   is now 100/7 and every mineral has a band.
+
+   `--color-*` rather than the bare aliases: those exist for three minerals
+   only (`--tanzanite`, `--cobalt`, `--gold`), and reaching for a
+   `var(--malachite)` that is not defined is what silently killed two chart
+   marks — see the dangling-reference test. */
+.minerals-stripe,
+.minerals-stripe-horizontal {
+  /* One list, shared by both orientations. Two copies drifted once already:
+     a mineral added to one and not the other is a stripe that disagrees with
+     itself depending on which way round it is drawn. */
+  --stripe-step: 14.2857%;
+  --stripe-stops:
+    var(--color-cobalt) 0%,
+    var(--color-cobalt) var(--stripe-step),
+    var(--color-tanzanite) var(--stripe-step),
+    var(--color-tanzanite) calc(var(--stripe-step) * 2),
+    var(--color-malachite) calc(var(--stripe-step) * 2),
+    var(--color-malachite) calc(var(--stripe-step) * 3),
+    var(--color-gold) calc(var(--stripe-step) * 3),
+    var(--color-gold) calc(var(--stripe-step) * 4),
+    var(--color-terracotta) calc(var(--stripe-step) * 4),
+    var(--color-terracotta) calc(var(--stripe-step) * 5),
+    var(--color-sodalite) calc(var(--stripe-step) * 5),
+    var(--color-sodalite) calc(var(--stripe-step) * 6),
+    var(--color-copper) calc(var(--stripe-step) * 6),
+    var(--color-copper) 100%;
+}
+
 .minerals-stripe {
+  /* RIGHT edge, not left (owner direction 2026-09-11 — *"it needs to be on the
+     page border not the site border; right now it's left of the sidebar, it
+     will look better on the right"*).
+     ------------------------------------------------------------------------
+     On the left it ran down the SHELL's edge, which is where the sidebar
+     lives: docked, the stripe sat outside the panel and the page it belongs
+     to was two columns away, so it read as a bar stuck to the browser rather
+     than as the page's own edge. The right-hand edge has no chrome on it at
+     any width, so the stripe is always the page's border — and it stays clear
+     of the sidebar toggle, the panel and the push transform.
+
+     8px rather than 4: at 4 the seven bands were a hairline nobody could
+     resolve into colours, which is the whole point of showing the palette. */
   position: fixed;
-  left: 0;
+  right: 0;
   top: 0;
   bottom: 0;
-  width: 4px;
+  width: 8px;
   z-index: 100;
-  background: linear-gradient(
-    to bottom,
-    #0047AB 0%,      /* Cobalt */
-    #0047AB 20%,
-    #4B0082 20%,     /* Tanzanite */
-    #4B0082 40%,
-    #004D40 40%,     /* Malachite */
-    #004D40 60%,
-    #5D4037 60%,     /* Gold */
-    #5D4037 80%,
-    #A0522D 80%,     /* Terracotta */
-    #A0522D 100%
-  );
+  background: linear-gradient(to bottom, var(--stripe-stops));
 }
 
 /* Horizontal version for mobile bottom or accents */
 .minerals-stripe-horizontal {
   height: 4px;
   width: 100%;
-  background: linear-gradient(
-    to right,
-    #0047AB 0%,      /* Cobalt */
-    #0047AB 20%,
-    #4B0082 20%,     /* Tanzanite */
-    #4B0082 40%,
-    #004D40 40%,     /* Malachite */
-    #004D40 60%,
-    #5D4037 60%,     /* Gold */
-    #5D4037 80%,
-    #A0522D 80%,     /* Terracotta */
-    #A0522D 100%
-  );
+  background: linear-gradient(to right, var(--stripe-stops));
 }
 
 /* Hide scrollbar for horizontal ticker embeds */
@@ -825,6 +877,17 @@ textarea {
 @media (min-width: 1024px) {
   html[data-sidebar='open'] .app-shell {
     padding-left: var(--sidebar-width);
+  }
+
+  /* The island centres on the CONTENT COLUMN, not the viewport (owner decision
+     2026-09-11). The shell's inset is padding, and padding on an ancestor does
+     nothing to a `position: fixed` child — so the island needs the offset
+     itself or it would centre on the whole window and straddle the sidebar's
+     edge. Keyed off the same attribute as the shell inset, and for the same
+     reason: a reload with the sidebar open must paint in the right place
+     rather than jump there once React hydrates. */
+  html[data-sidebar='open'] #bottom-island {
+    left: calc(var(--sidebar-width) + 1rem);
   }
 }
 
@@ -868,8 +931,13 @@ textarea {
     transform 200ms ease-out;
 }
 
+#bottom-island {
+  transition: left 200ms ease-out;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .app-shell {
+  .app-shell,
+  #bottom-island {
     transition: none;
   }
 }

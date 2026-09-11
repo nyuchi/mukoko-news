@@ -56,7 +56,7 @@ export default function CategoriesPage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-[var(--width-wide)] px-[var(--page-gutter)] sm:px-[var(--page-gutter-sm)] py-8">
+    <div className="mx-auto w-full max-w-[var(--width-wide)] px-[var(--page-gutter)] sm:px-[var(--page-gutter-sm)] py-[var(--page-block)]">
       <div className="mb-8">
         <h1 className="font-serif text-3xl font-bold mb-2">Categories</h1>
         <p className="text-text-secondary">

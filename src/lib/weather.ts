@@ -16,14 +16,37 @@
  * IP path: a per-visitor response must never be shared-cached, and a browser
  * fetch is the only place that header means anything.
  *
- * We deliberately send NO params. The alternative — pinning `?slug=` from the
- * reader's country preference (`PreferencesContext`) — is worse on three
- * counts: the preference is a COUNTRY code (`ZW`) while the endpoint wants a
- * location slug (a city), so it would need a country-to-capital guess; the
- * preference is per-device localStorage, not per-account, so it does not
- * follow the reader anyway; and an unknown slug silently falls back to Harare,
- * which would present a guess as a fact. IP geo is at least the reader's real
- * network location, and it is what the endpoint was purpose-built to do.
+ * ── IP geo is a guess, and on mobile it is often a bad one ───────────────
+ * Owner report 2026-09-11: *"the weather is not location aware, it's pulling a
+ * random place not actually where the user currently is."* Measured on a
+ * Zimbabwean handset, the strip read **"Opposite Carrier Singapore"** — a
+ * carrier-NAT egress, which is what mobile networks routinely present to IP
+ * geolocation. The endpoint was doing its job; the input was wrong.
+ *
+ * So the endpoint's `?lat=`/`?lon=` path is used when, and only when, the
+ * reader has granted the browser's Geolocation permission. Verified against
+ * the live endpoint: no params returns `{"name":"Your location","lat":37.751,
+ * "lon":-97.822}` (the US centroid, from this datacenter's IP), while
+ * `?lat=-17.8252&lon=31.0335` returns `{"name":"Harare","country":"ZW"}`.
+ *
+ * Three rules on that, none of them optional:
+ *
+ *  1. **Never prompt on load.** `requestCoords()` is called on mount only when
+ *     `navigator.permissions` already reports `granted`. Otherwise the strip
+ *     shows a "Use my location" control and nothing happens until it is
+ *     pressed. A news site that throws a location prompt at a first-time
+ *     reader has spent trust it did not have.
+ *  2. **Coarsen before sending.** Coordinates are rounded to 2dp (~1.1 km)
+ *     before they leave the device. Weather does not vary at street level, and
+ *     a precise fix is the reader's home address; the coarse one answers the
+ *     same question.
+ *  3. **Fail back to IP, never to a guess.** No permission, a denial, a
+ *     timeout, a malformed fix — every one of them falls through to the
+ *     param-less call. The old alternative considered here, pinning `?slug=`
+ *     from the reader's COUNTRY preference, stays rejected: the preference is
+ *     a country code (`ZW`) and the endpoint wants a city slug, an unknown
+ *     slug silently falls back to Harare, and presenting that guess as a fact
+ *     is the failure this whole module exists to avoid.
  *
  * Every export here is pure or fail-soft. Nothing in this module ever throws:
  * the weather strip is decoration on a news site, and decoration must not be
@@ -38,6 +61,134 @@ export const WEATHER_REQUEST_TIMEOUT_MS = 6000;
 
 /** Third-party text lands in our chrome — cap it so it cannot blow out the row. */
 const MAX_TEXT_LENGTH = 48;
+
+/** Give up on a position fix rather than leave the strip waiting on it. */
+export const GEOLOCATION_TIMEOUT_MS = 8000;
+
+/**
+ * Where the reader's last granted fix is remembered, so a second visit does
+ * not need the permission round-trip before the weather is right.
+ */
+export const COORDS_STORAGE_KEY = 'mukoko-news-coords';
+
+/** A position, already coarsened — see rule 2 in the module docblock. */
+export interface Coords {
+  lat: number;
+  lon: number;
+}
+
+/**
+ * Round to ~1.1 km and reject anything that is not a real position.
+ *
+ * Returns null rather than clamping: a latitude of 800 is not a reader near
+ * the pole, it is a bug or a hostile value, and sending a clamped version of
+ * it would turn nonsense into a plausible-looking place name.
+ */
+export function coarsenCoords(lat: unknown, lon: unknown): Coords | null {
+  const la = finiteNumber(lat);
+  const lo = finiteNumber(lon);
+  if (la === null || lo === null) return null;
+  if (la < -90 || la > 90 || lo < -180 || lo > 180) return null;
+  return { lat: Math.round(la * 100) / 100, lon: Math.round(lo * 100) / 100 };
+}
+
+/** Parse a stored pair. Anything unexpected reads as "nothing stored". */
+export function parseStoredCoords(raw: string | null | undefined): Coords | null {
+  if (!raw) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!isRecord(parsed)) return null;
+    return coarsenCoords(parsed.lat, parsed.lon);
+  } catch {
+    return null;
+  }
+}
+
+/** Read the remembered fix. Never throws — blocked storage returns null. */
+export function readStoredCoords(): Coords | null {
+  try {
+    return parseStoredCoords(window.localStorage.getItem(COORDS_STORAGE_KEY));
+  } catch {
+    return null;
+  }
+}
+
+/** Remember a fix, or forget it when passed null. Never throws. */
+export function storeCoords(coords: Coords | null): void {
+  try {
+    if (coords) window.localStorage.setItem(COORDS_STORAGE_KEY, JSON.stringify(coords));
+    else window.localStorage.removeItem(COORDS_STORAGE_KEY);
+  } catch {
+    /* private mode, blocked storage — this visit still uses the fix in memory */
+  }
+}
+
+export type GeolocationAvailability = 'granted' | 'prompt' | 'denied' | 'unsupported';
+
+/**
+ * What the browser will do if asked — WITHOUT asking.
+ *
+ * This is the whole reason the strip can use a real position without ever
+ * springing a permission dialog on a first-time reader: `granted` means the
+ * reader has already said yes, so the fix can be taken silently; anything else
+ * means the control has to be pressed first. `navigator.permissions` is not
+ * universally implemented, and Safari in particular has shipped without
+ * geolocation in it, so an unanswerable query reads as `prompt` — offer the
+ * control, do not act unilaterally.
+ */
+export async function geolocationAvailability(): Promise<GeolocationAvailability> {
+  if (typeof navigator === 'undefined' || !navigator.geolocation) return 'unsupported';
+  try {
+    const permissions = navigator.permissions;
+    if (!permissions?.query) return 'prompt';
+    const status = await permissions.query({ name: 'geolocation' as PermissionName });
+    if (status.state === 'granted' || status.state === 'denied') return status.state;
+    return 'prompt';
+  } catch {
+    return 'prompt';
+  }
+}
+
+/**
+ * Ask the browser for a position. Resolves to null on any problem — no
+ * permission, a denial, a timeout, an unusable fix — and never rejects.
+ *
+ * `maximumAge` lets the browser hand back a cached fix: the reader has not
+ * moved far enough in five minutes to change the weather, and a cached fix
+ * avoids waking the radio.
+ */
+export async function requestCoords(): Promise<Coords | null> {
+  if (typeof navigator === 'undefined' || !navigator.geolocation) return null;
+  return new Promise<Coords | null>((resolve) => {
+    let settled = false;
+    const done = (value: Coords | null) => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
+    try {
+      navigator.geolocation.getCurrentPosition(
+        (position) => done(coarsenCoords(position.coords?.latitude, position.coords?.longitude)),
+        () => done(null),
+        { enableHighAccuracy: false, timeout: GEOLOCATION_TIMEOUT_MS, maximumAge: 5 * 60_000 }
+      );
+    } catch {
+      done(null);
+    }
+  });
+}
+
+/**
+ * The URL to call for a reading. With coordinates it names the reader's actual
+ * place; without them the endpoint falls back to its IP lookup.
+ */
+export function weatherEndpointUrl(coords: Coords | null): string {
+  if (!coords) return WEATHER_EMBED_ENDPOINT;
+  const url = new URL(WEATHER_EMBED_ENDPOINT);
+  url.searchParams.set('lat', String(coords.lat));
+  url.searchParams.set('lon', String(coords.lon));
+  return url.toString();
+}
 
 export type ConditionIconKey = 'clear' | 'cloudy' | 'drizzle' | 'rain' | 'snow' | 'storm' | 'fog';
 
@@ -153,7 +304,9 @@ export function conditionIconKey(code: number | null): ConditionIconKey {
  * offline, DNS failure, CORS rejection, non-2xx, timeout, malformed JSON, or a
  * payload with nothing renderable in it. It never rejects and never throws.
  */
-export async function fetchCurrentWeather(): Promise<WeatherSnapshot | null> {
+export async function fetchCurrentWeather(
+  coords: Coords | null = null
+): Promise<WeatherSnapshot | null> {
   if (typeof fetch !== 'function') return null;
 
   const controller = typeof AbortController === 'function' ? new AbortController() : null;
@@ -163,7 +316,7 @@ export async function fetchCurrentWeather(): Promise<WeatherSnapshot | null> {
       : null;
 
   try {
-    const response = await fetch(WEATHER_EMBED_ENDPOINT, {
+    const response = await fetch(weatherEndpointUrl(coords), {
       method: 'GET',
       headers: { accept: 'application/json' },
       // No cookies cross-origin; the endpoint is public and takes no auth.

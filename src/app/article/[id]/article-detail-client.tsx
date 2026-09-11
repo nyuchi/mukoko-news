@@ -1,9 +1,19 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ChevronLeft, AlertCircle, Tag, RefreshCw, ExternalLink } from "lucide-react";
+import {
+  ChevronLeft,
+  AlertCircle,
+  Tag,
+  RefreshCw,
+  ExternalLink,
+  Heart,
+  Bookmark,
+  Share2,
+  Check,
+} from "lucide-react";
 import { Markdown, decodeHtmlEntities } from "@/components/ui/markdown";
 import { type Article } from "@/lib/api";
 import { getArticleAction } from "@/lib/actions/feed";
@@ -18,10 +28,10 @@ import { ArticleReadingMeta, ArticleMetricsPanel } from "@/components/article/ar
 import { ArticleByline } from "@/components/article/article-byline";
 import { ArticleSummary } from "@/components/article/article-summary";
 import { ArticleTrustPanel } from "@/components/article/article-trust";
-import { ArticleActionBar } from "@/components/article/article-action-bar";
 import { RelatedArticles } from "@/components/article/related-articles";
 import { ReadProgress } from "@/components/article/read-progress";
 import { PageContainer, PageBleed } from "@/components/layout/page-container";
+import { useIslandActions, type IslandAction } from "@/contexts/island-context";
 
 /**
  * True when the article body is just the description again — excerpt-only RSS
@@ -215,6 +225,83 @@ export default function ArticleDetailClient({
       return "Recently";
     }
   };
+
+  /**
+   * The article's contribution to the floating island.
+   *
+   * These used to be a separate pinned bar of their own, which on a desktop
+   * meant two pieces of furniture competing for the bottom edge — and the bar
+   * shipped left-anchored with an invisible Share button because nobody was
+   * looking at the one breakpoint it rendered at. The island is the only thing
+   * down there now, and on an article it carries the article's actions between
+   * its two fixed ends.
+   *
+   * Registered ABOVE the loading and error returns, because hooks cannot be
+   * called conditionally. `null` while there is no article yet leaves the
+   * island as plain navigation, which is the right thing to show on a skeleton.
+   *
+   * `useMemo` over exactly the state the handlers close over: the hook
+   * re-registers on that same state, so a tap always runs a closure that can
+   * see the current like/save values rather than the ones from first paint.
+   */
+  const islandActions = useMemo<IslandAction[] | null>(() => {
+    if (!article) return null;
+
+    const originalHref =
+      article.original_url && isValidImageUrl(article.original_url)
+        ? article.original_url
+        : undefined;
+
+    const actions: IslandAction[] = [
+      {
+        id: "like",
+        label: "Like",
+        icon: Heart,
+        onSelect: handleLike,
+        active: isLiked,
+        count: likesCount,
+        ariaLabel: isLiked ? "Remove like" : "Like this article",
+      },
+      {
+        id: "save",
+        label: isSaved ? "Saved" : "Save",
+        icon: Bookmark,
+        onSelect: handleSave,
+        active: isSaved,
+        ariaLabel: isSaved ? "Remove from saved" : "Save this article",
+      },
+    ];
+
+    if (originalHref) {
+      actions.push({
+        id: "original",
+        label: "Original",
+        icon: ExternalLink,
+        href: originalHref,
+        external: true,
+        ariaLabel: article.source
+          ? `Read the original at ${article.source}`
+          : "Read the original article",
+      });
+    }
+
+    actions.push({
+      id: "share",
+      label: copySuccess ? "Copied" : "Share",
+      icon: copySuccess ? Check : Share2,
+      onSelect: handleShare,
+      emphasis: copySuccess ? "success" : "primary",
+      ariaLabel: "Share this article",
+    });
+
+    return actions;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the handlers are
+    // re-created every render; the STATE they close over is what belongs here,
+    // and it is exactly what `signatureOf` in the island keys re-registration
+    // on. Adding the handlers would rebuild this every render for no gain.
+  }, [article, isLiked, likesCount, isSaved, copySuccess]);
+
+  useIslandActions(islandActions);
 
   if (loading) {
     return <ArticlePageSkeleton />;
@@ -431,17 +518,6 @@ export default function ArticleDetailClient({
         </article>
       </PageContainer>
 
-      <ArticleActionBar
-        isLiked={isLiked}
-        likesCount={likesCount}
-        isSaved={isSaved}
-        copySuccess={copySuccess}
-        originalUrl={originalUrl}
-        sourceName={article.source}
-        onLike={handleLike}
-        onSave={handleSave}
-        onShare={handleShare}
-      />
     </ErrorBoundary>
   );
 }

@@ -1,16 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
 import { Check } from 'lucide-react'
 
 import { useTheme, type Theme } from '@/components/theme-provider'
 import { AppearancePreview } from '@/components/profile/appearance-preview'
-import {
-  applyOutlinePreference,
-  readOutlinePreference,
-  storeOutlinePreference,
-  type OutlinePreference,
-} from '@/lib/appearance'
+import { type ContrastPreference } from '@/lib/appearance'
 
 /**
  * Appearance: theme and component outlines, both picked by looking.
@@ -35,12 +29,16 @@ import {
  * on the device, and gating an accessibility control behind a sign-in makes it
  * unreachable for the readers most likely to need it.
  *
- * ## The one-frame question
+ * ## Both come from `useTheme()`
  *
- * Both values are read in an effect, which is a paint too late — but the
- * pre-paint bootstrap in `layout.tsx` has already set the class and the
- * attribute, so the PAGE is never wrong. This only syncs the controls to it,
- * from the same helpers the bootstrap mirrors.
+ * Contrast is part of the theme (owner direction 2026-09-11), so the provider
+ * owns reading, storing and applying it and this component only renders the
+ * choice. It used to hold its own state and write the document itself, which
+ * meant nothing else in the app could ask what the setting was.
+ *
+ * The provider reads both in an effect, a paint too late — but the pre-paint
+ * bootstrap in `layout.tsx` has already set the class and the attribute, so
+ * the PAGE is never wrong; that read only syncs these controls to it.
  */
 
 const THEMES: { value: Theme; label: string; hint: string }[] = [
@@ -50,20 +48,19 @@ const THEMES: { value: Theme; label: string; hint: string }[] = [
 ]
 
 export function ProfileAppearance() {
-  const { theme, setTheme } = useTheme()
-  const [outlines, setOutlines] = useState<OutlinePreference>('off')
+  // BOTH come from the theme, which is the point — contrast is part of the
+  // theme, not a preference sitting beside it (owner direction 2026-09-11).
+  // This component now only renders the choice; the provider owns reading it,
+  // storing it and applying it to the document.
+  const { theme, setTheme, contrast, resolvedContrast, setContrast } = useTheme()
+  const outlines: ContrastPreference = contrast
 
-  useEffect(() => {
-    setOutlines(readOutlinePreference())
-  }, [])
-
-  function chooseOutlines(next: OutlinePreference) {
-    setOutlines(next)
-    storeOutlinePreference(next)
-    applyOutlinePreference(next, document.documentElement)
-  }
-
-  const outlined = outlines === 'on'
+  // What the THEME previews draw an edge with: the RESOLVED value, so on a
+  // device that is asking for more contrast the `system` choice shows the
+  // treatment the reader is actually getting rather than a guess. The provider
+  // resolves it; this component never reads a media query of its own.
+  const outlined = resolvedContrast === 'more'
+  const previewTheme = theme === 'light' ? 'light' : 'dark'
 
   return (
     <div className="mb-6 overflow-hidden rounded-2xl border border-outline bg-surface">
@@ -93,28 +90,45 @@ export function ProfileAppearance() {
       </fieldset>
 
       <fieldset className="px-4 py-4">
-        <legend className="mb-1 text-sm font-medium">Component outlines</legend>
+        <legend className="mb-1 text-sm font-medium">Contrast</legend>
         <p className="mb-3 text-xs text-text-secondary">
-          A card is separated from the page by its background. Turn this on to draw an edge
-          around cards, panels and chips as well. Your device switches it on by itself if you
-          have asked your system for more contrast.
+          Draws an edge around cards, panels and chips and brightens the smaller text.
+          Choose System to follow your device&rsquo;s own contrast setting.
         </p>
-        <div className="grid grid-cols-2 gap-3">
+        {/* Three options, mirroring the theme row above, and resolved the same
+            way: the provider combines this choice with
+            `matchMedia('(prefers-contrast: more)')` and stamps one attribute,
+            so the site's setting wins in BOTH directions.
+
+            It was two values under an unconditional media query, which meant a
+            reader with the OS switch on got the treatment whatever the control
+            said — "Off" was not off. A first pass made the query a third choice
+            but only for the edges, so the text lift still ignored it. The whole
+            treatment is behind this control now. */}
+        <div className="grid grid-cols-3 gap-3">
           <Option
             label="Off"
-            hint="Separated by fill"
-            selected={!outlined}
-            onSelect={() => chooseOutlines('off')}
+            hint="Standard palette"
+            selected={outlines === 'off'}
+            onSelect={() => setContrast('off')}
           >
-            <AppearancePreview theme={theme === 'light' ? 'light' : 'dark'} />
+            <AppearancePreview theme={previewTheme} />
           </Option>
           <Option
             label="On"
-            hint="Draw an edge"
-            selected={outlined}
-            onSelect={() => chooseOutlines('on')}
+            hint="Higher contrast"
+            selected={outlines === 'on'}
+            onSelect={() => setContrast('on')}
           >
-            <AppearancePreview theme={theme === 'light' ? 'light' : 'dark'} outlined />
+            <AppearancePreview theme={previewTheme} outlined />
+          </Option>
+          <Option
+            label="System"
+            hint="Follows your device"
+            selected={outlines === 'system'}
+            onSelect={() => setContrast('system')}
+          >
+            <AppearancePreview theme={previewTheme} outlined="split" />
           </Option>
         </div>
       </fieldset>

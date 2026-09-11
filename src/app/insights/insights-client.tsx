@@ -397,7 +397,7 @@ export default function InsightsClient({
         <div className="p-8 text-center text-text-secondary">Failed to render insights</div>
       }
     >
-      <div className="mx-auto w-full max-w-[var(--width-wide)] px-[var(--page-gutter)] sm:px-[var(--page-gutter-sm)] py-8">
+      <div className="mx-auto w-full max-w-[var(--width-wide)] px-[var(--page-gutter)] sm:px-[var(--page-gutter-sm)] py-[var(--page-block)]">
         {/* Header */}
         <header className="mb-8">
           <div className="flex items-center gap-3 mb-2">
@@ -440,7 +440,23 @@ export default function InsightsClient({
           </div>
         </header>
 
-        {isEmpty ? (
+        {/* A FAILED read and an EMPTY corpus are different things, and telling
+            a reader the second when the first happened is how this page came
+            to announce "No data available yet" over 65,203 articles. `ok` is
+            the difference; zero is a number, a failure is not. */}
+        {!summary.ok ? (
+          <div className="text-center py-16" role="status">
+            <span className="text-6xl mb-4 block" aria-hidden="true">
+              ⚠️
+            </span>
+            <h3 className="text-lg font-semibold text-foreground mb-2">
+              We couldn&rsquo;t load these figures
+            </h3>
+            <p className="text-text-secondary">
+              The corpus is there — this page could not read it just now. Try again in a moment.
+            </p>
+          </div>
+        ) : isEmpty ? (
           <div className="text-center py-16" role="status">
             <span className="text-6xl mb-4 block" aria-hidden="true">
               📊
@@ -479,8 +495,19 @@ export default function InsightsClient({
               <StatTile
                 icon={Gauge}
                 label="Avg quality"
-                value={summary.avgQualityScore > 0 ? summary.avgQualityScore.toFixed(2) : '—'}
-                caption="0–1 quality score"
+                // `—` and a caption that says WHY, rather than a `0.00` that
+                // would read as "this corpus scores zero on quality". The
+                // average needs a full scan of every article (27s+ on the live
+                // cluster, measured) and is not computed until `qualityScore`
+                // is either indexed for Atlas Search or rolled up upstream.
+                value={
+                  summary.avgQualityScore !== null && summary.avgQualityScore > 0
+                    ? summary.avgQualityScore.toFixed(2)
+                    : '—'
+                }
+                caption={
+                  summary.avgQualityScore === null ? 'not computed yet' : '0–1 quality score'
+                }
               />
               <StatTile
                 icon={CalendarRange}

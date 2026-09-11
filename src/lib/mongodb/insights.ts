@@ -20,10 +20,57 @@ import { COUNTRIES } from '@/lib/constants'
 
 // Base visibility filter — mirrors the article read layer (articles.ts): hide
 // rejected/removed documents so public analytics reflect the live catalogue.
+//
+// ⚠️ MEASURED 2026-09-11, and the reason this page was showing "No data
+// available yet" on a corpus of 65,203 articles.
+//
+// `$ne` is never index-selective, so every pipeline that opens with this filter
+// is a COLLSCAN of a 1.5 GB collection. Explained on the live cluster, a
+// two-branch `$facet` behind it took **27,529 ms** and examined all 65,203
+// documents — and that was the CHEAPEST of the seven reads this module runs.
+// A Vercel function is killed long before that, `getCorpusSummary` fell into
+// its catch, and the fail-soft empty result rendered as a statement that the
+// corpus is empty. A failure presented to a reader as a fact.
+//
+// It also excludes nothing. An Atlas Search facet over `status` (milliseconds,
+// because the search index is a real inverted index) reports ONE bucket:
+// `approved`, 65,203 of 65,203. Not one article has ever been `rejected`.
+//
+// So the reads that can be served by an index or by Atlas Search no longer
+// carry it — see `searchMeta` below. It remains only on the pipelines that
+// must touch documents anyway, where it costs nothing extra.
 const BASE_MATCH = {
   status: { $ne: 'rejected' },
   moderationStatus: { $ne: 'removed' },
 } as const
+
+/**
+ * Every aggregation in this module is bounded.
+ *
+ * Without it a slow read does not fail — it HANGS, holding the serverless
+ * function until the platform kills the whole request, which the reader sees
+ * as a blank page rather than as a degraded one. Five seconds is well beyond
+ * any read here that is working correctly and well inside the function's own
+ * budget, so a read that exceeds it lands in the catch, flips `ok` to false,
+ * and the page says so.
+ */
+const AGGREGATE_TIMEOUT_MS = 5000
+const AGG_OPTS = { maxTimeMS: AGGREGATE_TIMEOUT_MS } as const
+
+/** The Atlas Search index on `news.articles`. Kept in one place — a typo here
+ *  is a silent full-collection fallback, not an error. */
+const SEARCH_INDEX = 'articles_text_search'
+
+/**
+ * Everything in the corpus, as a Search operator.
+ *
+ * `exists` on a field every article carries is the Search equivalent of "match
+ * all". The index maps `status`, `countryCode`, `feedSourceId`, `datePublished`,
+ * `inLanguage`, `articleSection`, `categoryIds` and `tagIds` as tokens/dates —
+ * which is exactly the set of questions this dashboard asks most often, and why
+ * those reads now go through `$searchMeta` instead of scanning documents.
+ */
+const MATCH_ALL = { exists: { path: 'status' } } as const
 
 const COUNTRY_NAMES: Record<string, string> = Object.fromEntries(
   COUNTRIES.map((c) => [c.code, c.name])
@@ -106,7 +153,7 @@ export async function getPublishingVolume({
               count: { $sum: 1 },
             },
           },
-        ])
+        ], AGG_OPTS)
         .toArray(),
       col
         .aggregate<{ _id: string; count: number; name?: string }>([
@@ -117,7 +164,7 @@ export async function getPublishingVolume({
           { $lookup: { from: 'feedSources', localField: '_id', foreignField: '_id', as: 'source' } },
           { $addFields: { name: { $ifNull: [{ $arrayElemAt: ['$source.name', 0] }, '$_id'] } } },
           { $project: { count: 1, name: 1 } },
-        ])
+        ], AGG_OPTS)
         .toArray(),
     ])
 
@@ -215,7 +262,7 @@ export async function getSourceLeaderboard({
             as: 'org',
           },
         },
-      ])
+      ], AGG_OPTS)
       .toArray()
 
     return rows.map((r) => {
@@ -284,7 +331,7 @@ export async function getCategoryDistribution(): Promise<CategoryDistribution> {
             totals: [{ $group: { _id: null, total: { $sum: '$count' } } }],
           },
         },
-      ])
+      ], AGG_OPTS)
       .toArray()
 
     const facet = rows[0] as unknown as
@@ -324,38 +371,64 @@ const EMPTY_COUNTRY: CountryCoverage = { total: 0, countries: [] }
 /**
  * Article counts per `countryCode`, mapped to display names via COUNTRIES.
  * Share is expressed against the total number of articles carrying a country.
+ *
+ * An Atlas Search string facet, not a `$group`: `countryCode` is a mapped token
+ * in `articles_text_search`, so the counts come out of the inverted index in
+ * milliseconds. The `$group` this replaced opened with `BASE_MATCH`, whose
+ * `$ne` pair forced a scan of all 65,203 documents — 27s+ on this cluster,
+ * i.e. longer than the request it was serving was allowed to live.
+ *
+ * `numBuckets` is 54 + headroom: the scope is the 54 African Union member
+ * states, and truncating the tail would silently under-report the countries
+ * this project exists to cover. A code with no entry in COUNTRIES keeps its
+ * code as its name rather than being dropped — an unmapped country is a gap in
+ * our table, not an absence of journalism.
  */
 export async function getCountryCoverage(): Promise<CountryCoverage> {
   try {
     const db = await getDb()
     const rows = await db
       .collection('articles')
-      .aggregate<{ _id: string; count: number }>([
-        { $match: BASE_MATCH },
-        { $group: { _id: '$countryCode', count: { $sum: 1 } } },
-        { $match: { _id: { $type: 'string', $ne: '' } } },
-        { $sort: { count: -1 } },
-        { $limit: 60 },
-      ])
+      .aggregate<{ facet?: { country?: { buckets?: Array<{ _id: unknown; count: unknown }> } } }>(
+        [
+          {
+            $searchMeta: {
+              index: SEARCH_INDEX,
+              facet: {
+                operator: MATCH_ALL,
+                facets: { country: { type: 'string', path: 'countryCode', numBuckets: 60 } },
+              },
+            },
+          },
+        ],
+        AGG_OPTS
+      )
       .toArray()
 
-    const total = rows.reduce((s, r) => s + r.count, 0)
-    if (total === 0) return EMPTY_COUNTRY
+    const buckets = rows[0]?.facet?.country?.buckets ?? []
+    const counted = buckets
+      .map((b) => ({
+        code: typeof b._id === 'string' ? b._id.trim() : '',
+        count: Math.max(0, Math.trunc(Number(b.count ?? 0))),
+      }))
+      .filter((b) => b.code.length > 0 && b.count > 0)
+
+    const total = counted.reduce((sum, b) => sum + b.count, 0)
+
     return {
       total,
-      countries: rows.map((r) => {
-        const code = String(r._id).trim().toUpperCase()
-        return {
-          code,
-          name: COUNTRY_NAMES[code] || code,
-          count: r.count,
-          share: round((r.count / total) * 100, 1),
-        }
-      }),
+      countries: counted
+        .sort((a, b) => b.count - a.count)
+        .map((b) => ({
+          code: b.code,
+          name: COUNTRY_NAMES[b.code] ?? b.code,
+          count: b.count,
+          share: total > 0 ? round((b.count / total) * 100, 1) : 0,
+        })),
     }
   } catch (error) {
     console.error('[insights.getCountryCoverage]', error)
-    return EMPTY_COUNTRY
+    return { ...EMPTY_COUNTRY, countries: [] }
   }
 }
 
@@ -388,7 +461,7 @@ export async function getSentimentBreakdown(): Promise<SentimentBreakdown> {
           { $match: { ...BASE_MATCH, aiProcessed: true, aiSentiment: { $type: 'string', $ne: '' } } },
           { $group: { _id: '$aiSentiment', count: { $sum: 1 } } },
           { $sort: { count: -1 } },
-        ])
+        ], AGG_OPTS)
         .toArray(),
       col.countDocuments(BASE_MATCH),
     ])
@@ -415,90 +488,119 @@ export async function getSentimentBreakdown(): Promise<SentimentBreakdown> {
 // ---------------------------------------------------------------------------
 
 export interface CorpusSummary {
+  /**
+   * Did the read succeed?
+   *
+   * This exists because its absence was the bug. Every figure below is zero
+   * both when the corpus is genuinely empty and when the read failed, and the
+   * page rendered the second case as the first: "No data available yet", on a
+   * corpus of 65,203 articles. Zero is a number; a failure is not. Callers must
+   * check this before saying anything about the corpus.
+   */
+  ok: boolean
   totalArticles: number
   sources: number
   organizations: number
   countries: number
   /** Percentage of articles with aiProcessed=true. */
   aiEnrichedPct: number
-  /** Average qualityScore (0..1) over scored articles. */
-  avgQualityScore: number
+  /**
+   * Average qualityScore (0..1) over scored articles, or **null when it could
+   * not be computed** — which is currently always.
+   *
+   * There is no index on `qualityScore` and no Atlas Search mapping for it, so
+   * averaging it means reading all 65,203 documents: 27s+ on this cluster,
+   * measured. `0` would read as "the corpus scores zero on quality", which is
+   * a far worse answer than "we do not know". It comes back when the field is
+   * either added to the search index or rolled up by the pipeline.
+   */
+  avgQualityScore: number | null
   earliest: string | null
   latest: string | null
 }
 
 const EMPTY_SUMMARY: CorpusSummary = {
+  ok: false,
   totalArticles: 0,
   sources: 0,
   organizations: 0,
   countries: 0,
   aiEnrichedPct: 0,
-  avgQualityScore: 0,
+  avgQualityScore: null,
   earliest: null,
   latest: null,
 }
 
-/** Headline totals across the corpus for the stat-tile row. */
+/**
+ * Headline totals across the corpus for the stat-tile row.
+ *
+ * Rebuilt 2026-09-11 to stop scanning the collection. Every figure now comes
+ * from an index or from Atlas Search, and the whole function is four cheap
+ * reads instead of one 27-second one:
+ *
+ * | figure | how | measured |
+ * | --- | --- | --- |
+ * | `totalArticles` | `$searchMeta` count, `type: 'total'` (exact, not a bound) | ms |
+ * | `countries` | `$group` on `countryCode` → `DISTINCT_SCAN` on `countryCode_1_feedSourceId_1`, 43 keys, **0 documents** | 90 ms |
+ * | `aiEnrichedPct` | `countDocuments({aiProcessed:true})` on `aiProcessed_createdAt` | ms |
+ * | `earliest`/`latest` | one document off each end of `{datePublished:-1, status:1}` | ms |
+ *
+ * The `countries` read deliberately carries NO filter: adding `BASE_MATCH`
+ * turns that same query from a 90 ms covered index scan into the 27-second
+ * collection scan, to exclude a set of documents that is measurably empty.
+ */
 export async function getCorpusSummary(): Promise<CorpusSummary> {
   try {
     const db = await getDb()
     const col = db.collection('articles')
 
-    const [facet, sources, organizations, countries] = await Promise.all([
-      col
-        .aggregate<{
-          totalArticles: Array<{ n: number }>
-          aiEnriched: Array<{ n: number }>
-          quality: Array<{ avg: number | null }>
-          range: Array<{ earliest: Date | null; latest: Date | null }>
-        }>([
-          { $match: BASE_MATCH },
-          {
-            $facet: {
-              totalArticles: [{ $count: 'n' }],
-              aiEnriched: [{ $match: { aiProcessed: true } }, { $count: 'n' }],
-              quality: [
-                { $match: { qualityScore: { $type: 'number' } } },
-                { $group: { _id: null, avg: { $avg: '$qualityScore' } } },
-                { $project: { _id: 0, avg: 1 } },
-              ],
-              range: [
-                { $match: { datePublished: { $type: 'date' } } },
-                {
-                  $group: {
-                    _id: null,
-                    earliest: { $min: '$datePublished' },
-                    latest: { $max: '$datePublished' },
-                  },
-                },
-                { $project: { _id: 0, earliest: 1, latest: 1 } },
-              ],
-            },
-          },
-        ])
-        .toArray(),
-      db.collection('feedSources').countDocuments({}),
-      db.collection('newsMediaOrganizations').countDocuments({}),
-      col.distinct('countryCode', BASE_MATCH),
-    ])
+    const [searchMeta, countryIds, aiEnriched, sources, organizations, oldest, newest] =
+      await Promise.all([
+        col
+          .aggregate<{ count?: { total?: number } }>(
+            [{ $searchMeta: { index: SEARCH_INDEX, count: { type: 'total' }, ...MATCH_ALL } }],
+            AGG_OPTS
+          )
+          .toArray(),
+        col.aggregate<{ _id: unknown }>([{ $group: { _id: '$countryCode' } }], AGG_OPTS).toArray(),
+        col.countDocuments({ aiProcessed: true }, AGG_OPTS),
+        db.collection('feedSources').countDocuments({}, AGG_OPTS),
+        db.collection('newsMediaOrganizations').countDocuments({}, AGG_OPTS),
+        col
+          .find({ datePublished: { $type: 'date' } }, { projection: { datePublished: 1 } })
+          .sort({ datePublished: 1 })
+          .limit(1)
+          .maxTimeMS(AGGREGATE_TIMEOUT_MS)
+          .toArray(),
+        col
+          .find({ datePublished: { $type: 'date' } }, { projection: { datePublished: 1 } })
+          .sort({ datePublished: -1 })
+          .limit(1)
+          .maxTimeMS(AGGREGATE_TIMEOUT_MS)
+          .toArray(),
+      ])
 
-    const f = facet[0]
-    const totalArticles = f?.totalArticles?.[0]?.n ?? 0
-    const aiEnriched = f?.aiEnriched?.[0]?.n ?? 0
-    const range = f?.range?.[0]
-    const distinctCountries = (countries as unknown[]).filter(
-      (c): c is string => typeof c === 'string' && c.trim().length > 0
-    )
+    const totalArticles = Math.max(0, Math.trunc(Number(searchMeta[0]?.count?.total ?? 0)))
+    const countries = countryIds.filter(
+      (row) => typeof row._id === 'string' && row._id.trim().length > 0
+    ).length
+
+    const asIso = (rows: Array<Record<string, unknown>>): string | null => {
+      const value = rows[0]?.datePublished
+      return value instanceof Date ? value.toISOString() : null
+    }
 
     return {
+      ok: true,
       totalArticles,
       sources,
       organizations,
-      countries: distinctCountries.length,
+      countries,
       aiEnrichedPct: totalArticles > 0 ? round((aiEnriched / totalArticles) * 100, 1) : 0,
-      avgQualityScore: round(f?.quality?.[0]?.avg, 3),
-      earliest: range?.earliest ? new Date(range.earliest).toISOString() : null,
-      latest: range?.latest ? new Date(range.latest).toISOString() : null,
+      // Deliberately not computed — see the field's own note.
+      avgQualityScore: null,
+      earliest: asIso(oldest),
+      latest: asIso(newest),
     }
   } catch (error) {
     console.error('[insights.getCorpusSummary]', error)
@@ -590,7 +692,7 @@ export async function getTopTopics({
         { $sort: { count: -1 } },
         // Over-fetch so the stopword filter cannot leave the list short.
         { $limit: max * 4 },
-      ])
+      ], AGG_OPTS)
       .toArray()
 
     return rows

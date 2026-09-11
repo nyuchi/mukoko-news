@@ -65,7 +65,7 @@ export default async function AdminAnalyticsPage() {
   const maxCategory = categories[0]?.count ?? 1
 
   return (
-    <div className="mx-auto w-full max-w-[var(--width-wide)] px-[var(--page-gutter)] sm:px-[var(--page-gutter-sm)] py-8">
+    <div className="mx-auto w-full max-w-[var(--width-wide)] px-[var(--page-gutter)] sm:px-[var(--page-gutter-sm)] py-[var(--page-block)]">
       {/* Header */}
       <div className="flex items-center gap-4 mb-8">
         <Link
