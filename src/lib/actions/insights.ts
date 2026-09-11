@@ -22,7 +22,6 @@
  */
 
 import { unstable_cache } from 'next/cache'
-import { requireViewer } from '@/lib/auth/guard'
 import {
   getPublishingVolume,
   getSourceLeaderboard,
@@ -40,28 +39,37 @@ import {
   type TopTopic,
 } from '@/lib/mongodb/insights'
 
+/**
+ * The per-panel reads. All PUBLIC, as of the owner's 2026-09-11 reversal —
+ * *"open data behind a login is not correct"*.
+ *
+ * Every one of these carried `requireViewer()` and none does now. They are the
+ * same aggregate counts the dashboard and the open-data export publish, so a
+ * gate here would have contradicted the page while adding nothing: a Server
+ * Action is a public RPC surface, and the figures it returns are already on the
+ * page that calls it. Abuse is handled where it can be — at the edge cache and
+ * the export's rate limit — not by asking a scraper to sign in.
+ *
+ * Inputs are still clamped in `@/lib/mongodb/insights`: public does not mean
+ * unbounded, and an unclamped `limit` is a denial-of-service parameter.
+ */
 export async function getPublishingVolumeAction(days = 30): Promise<PublishingVolume> {
-  await requireViewer()
   return getPublishingVolume({ days })
 }
 
 export async function getSourceLeaderboardAction(limit = 20): Promise<SourceLeaderboardRow[]> {
-  await requireViewer()
   return getSourceLeaderboard({ limit })
 }
 
 export async function getCategoryDistributionAction(): Promise<CategoryDistribution> {
-  await requireViewer()
   return getCategoryDistribution()
 }
 
 export async function getCountryCoverageAction(): Promise<CountryCoverage> {
-  await requireViewer()
   return getCountryCoverage()
 }
 
 export async function getSentimentBreakdownAction(): Promise<SentimentBreakdown> {
-  await requireViewer()
   return getSentimentBreakdown()
 }
 
@@ -70,7 +78,6 @@ export async function getCorpusSummaryAction(): Promise<CorpusSummary> {
 }
 
 export async function getTopTopicsAction(limit = 10): Promise<TopTopic[]> {
-  await requireViewer()
   return getTopTopics({ limit })
 }
 
@@ -78,11 +85,6 @@ export async function getTopTopicsAction(limit = 10): Promise<TopTopic[]> {
  * Aggregate everything the dashboard + open-data export need in one call, so
  * the page and the route share exactly one data contract.
  */
-/** The slice anyone may read: corpus scale and span, nothing per-source. */
-export interface PublicInsights {
-  summary: CorpusSummary
-  generatedAt: string
-}
 
 /**
  * Cached so the dashboard keeps its old ISR cost profile now that the page must
@@ -109,10 +111,6 @@ const cachedDetail = unstable_cache(
   { revalidate: 600, tags: ['insights'] }
 )
 
-/** Public teaser — no auth. */
-export async function getPublicInsightsAction(): Promise<PublicInsights> {
-  return { summary: await cachedSummary(), generatedAt: new Date().toISOString() }
-}
 
 export interface InsightsBundle {
   summary: CorpusSummary
@@ -125,8 +123,21 @@ export interface InsightsBundle {
   generatedAt: string
 }
 
+/**
+ * The whole open-data bundle, PUBLIC.
+ *
+ * It carried `requireViewer()` from 2026-09-01 until 2026-09-11, when the owner
+ * reversed it: *"open data behind a login is not correct... that is not to gate
+ * free data, but those should not be able to be mined by bots — have a security
+ * layer, it's public data."* Both halves of that matter. A login is the wrong
+ * instrument here — this project publishes the dashboard as open data and links
+ * a download from it, and a sign-in wall contradicts the claim it is making.
+ * Bulk extraction is a real concern, but it is an ABUSE problem, and the answer
+ * is upstream of this function: the page and the export are edge-cached, so a
+ * scraper is served by the CDN and never reaches MongoDB, and the uncached path
+ * is rate-limited per IP. See `app/api/insights/export/route.ts`.
+ */
 export async function getInsightsBundleAction(): Promise<InsightsBundle> {
-  await requireViewer()
   const [summary, [volume, leaderboard, categories, countries, sentiment, topics]] =
     await Promise.all([cachedSummary(), cachedDetail()])
   return {

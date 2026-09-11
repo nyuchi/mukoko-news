@@ -119,7 +119,7 @@ describe('pure helpers', () => {
 
 describe('InsightsClient', () => {
   it('renders the corpus summary, sections and open-data links', () => {
-    render(<InsightsClient summary={bundle.summary} detail={bundle} signedIn />)
+    render(<InsightsClient summary={bundle.summary} detail={bundle} />)
 
     expect(screen.getByRole('heading', { name: /Open Data/i })).toBeInTheDocument()
     expect(screen.getByText('18,081')).toBeInTheDocument()
@@ -135,12 +135,12 @@ describe('InsightsClient', () => {
   })
 
   it('labels sentiment with its coverage percentage (honest thin-data caveat)', () => {
-    render(<InsightsClient summary={bundle.summary} detail={bundle} signedIn />)
+    render(<InsightsClient summary={bundle.summary} detail={bundle} />)
     expect(screen.getByText(/Coverage: 25% of the corpus/i)).toBeInTheDocument()
   })
 
   it('sorts the leaderboard when a column header is clicked', () => {
-    render(<InsightsClient summary={bundle.summary} detail={bundle} signedIn />)
+    render(<InsightsClient summary={bundle.summary} detail={bundle} />)
     const table = screen.getByRole('table')
     const rowNames = () =>
       within(table)
@@ -164,14 +164,14 @@ describe('InsightsClient', () => {
     // Avg quality, avg words and last-published are null for every row now — a
     // facet counts documents, it cannot average a field across them. A sort
     // button over a column of nulls is a control that does nothing.
-    render(<InsightsClient summary={bundle.summary} detail={bundle} signedIn />)
+    render(<InsightsClient summary={bundle.summary} detail={bundle} />)
     expect(screen.queryByRole('button', { name: /Sort by Avg words/i })).toBeNull()
     expect(screen.queryByRole('button', { name: /Sort by Avg quality/i })).toBeNull()
     expect(screen.queryByRole('button', { name: /Sort by Last published/i })).toBeNull()
   })
 
   it('renders the empty state when the corpus has no data', () => {
-    render(<InsightsClient summary={emptyBundle.summary} detail={emptyBundle} signedIn />)
+    render(<InsightsClient summary={emptyBundle.summary} detail={emptyBundle} />)
     expect(screen.getByText('No data available yet')).toBeInTheDocument()
     // Download affordances remain available even when empty.
     expect(screen.getByRole('link', { name: /Download open data \(JSON\)/i })).toBeInTheDocument()

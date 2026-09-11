@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
@@ -108,5 +108,139 @@ describe('what is deliberately NOT gated', () => {
     ['the insights dashboard', 'insights'],
   ])('has no gate for %s', (_label, name) => {
     expect(ACCESS).not.toMatch(new RegExp(`['"]${name}['"]\\s*:`))
+  })
+
+  /**
+   * The check above is necessary and was NOT sufficient, and the gap cost ten
+   * days of the wrong product.
+   *
+   * `/insights` was gated from 2026-09-01 to 2026-09-11 — anonymous visitors got
+   * the corpus summary and a "Sign in for the full picture" card, and the export
+   * 401'd — while this suite went on passing, because the gate was never in
+   * `access.ts`. It was a direct `isViewerSignedIn()` in the page and a
+   * `requireViewer()` in every action. A test that only reads the access map
+   * cannot see a gate written any other way, so it certified as open a surface
+   * that was closed.
+   *
+   * The owner's reversal — *"open data behind a login is not correct... that is
+   * not to gate free data, but those should not be able to be mined by bots —
+   * have a security layer, it's public data"* — is enforced here at the
+   * surfaces themselves. Abuse is handled by the edge cache and the export's
+   * rate limit; see `app/api/insights/export/route.ts`.
+   */
+  describe('the open-data surfaces, by any mechanism', () => {
+    const SURFACES = [
+      'src/app/insights/page.tsx',
+      'src/app/insights/insights-client.tsx',
+      'src/lib/actions/insights.ts',
+      'src/app/api/insights/export/route.ts',
+    ]
+
+    /** Comments stripped: these files EXPLAIN the withdrawn gate at length. */
+    function code(rel: string): string {
+      return readFileSync(join(process.cwd(), rel), 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, ' ')
+        .replace(/\/\/[^\n]*/g, ' ')
+    }
+
+    it('strips comments but still sees code', () => {
+      const page = code('src/app/insights/page.tsx')
+      expect(page).not.toMatch(/owner/i) // prose, gone
+      expect(page).toMatch(/InsightsPage/) // code, kept
+    })
+
+    it.each(SURFACES)('%s reads no session', (rel) => {
+      expect(code(rel)).not.toMatch(
+        /isViewerSignedIn|requireViewer|withAuth\(|useAuth\(|planFor|canAccess/
+      )
+    })
+  })
+})
+
+/**
+ * The trust score was withdrawn from every READER-facing surface on 2026-09-11
+ * after it was measured against the live cluster:
+ *
+ *  - it is `(avgQuality*0.7 + volume*0.3)*100` over 7 days, so it ranks recent
+ *    volume and fluency, not trustworthiness;
+ *  - **200 of the 201 sources it rates "Established" sit on a feed the platform
+ *    records as broken**, and exactly one is healthy;
+ *  - `src-malawivoice-mw`, carrying 45+ casino-affiliate pages, scores 85.8;
+ *  - `news.sourceScoreHistory`, which the code claimed audited every change to
+ *    it, holds zero rows.
+ *
+ * Gating it behind a login would not have fixed any of that — it would have
+ * published the same wrong verdict to a smaller audience. This suite stops it
+ * drifting back.
+ */
+describe('the withdrawn trust score', () => {
+  /**
+   * Reader-facing code only.
+   *
+   * `src/lib/mongodb/` and `src/lib/api.ts` may NAME the fields, because that is
+   * where the decision not to read them is written down and a reader of that
+   * code needs to know why. `src/{lib,components}/publisher/` is out of scope
+   * for a different and substantive reason: it is a verified publisher's
+   * ownership-gated view of THEIR OWN source, which is not the platform
+   * publishing a verdict about a third party. That surface still shows the same
+   * unsound figures and wants the same treatment — tracked separately rather
+   * than changed here under a request about readers.
+   */
+  const EXCLUDED = /src[/\\](lib[/\\]mongodb|lib[/\\]publisher|components[/\\]publisher|lib[/\\]api\.ts)/
+
+  function walk(dir: string): string[] {
+    return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+      const full = join(dir, e.name)
+      if (e.isDirectory()) return e.name === '__tests__' ? [] : walk(full)
+      return /\.tsx?$/.test(e.name) && !/\.(test|spec)\./.test(e.name) ? [full] : []
+    })
+  }
+
+  /**
+   * Comments stripped before scanning.
+   *
+   * Without this the check fails on its own explanation: the components that
+   * deliberately do NOT read these fields say so at length in their doc blocks,
+   * and a detector that cannot tell prose from code would force the reasoning to
+   * be deleted to make the build pass. `design-tokens.test.ts` learned the same
+   * lesson on the dangling-`var()` check.
+   */
+  function code(file: string): string {
+    return readFileSync(file, 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, ' ')
+      .replace(/\/\/[^\n]*/g, ' ')
+  }
+
+  const FILES = walk(join(process.cwd(), 'src')).filter((f) => !EXCLUDED.test(f))
+
+  it('walks a real tree, so a passing run means something', () => {
+    expect(FILES.length).toBeGreaterThan(100)
+  })
+
+  it('strips comments but still sees code', () => {
+    const panel = join(process.cwd(), 'src/components/article/source-provenance.tsx')
+    expect(code(panel)).not.toMatch(/casino-affiliate/) // prose, gone
+    expect(code(panel)).toMatch(/SourceProvenancePanel/) // code, kept
+  })
+
+  it('is rendered to no reader', () => {
+    const offenders = FILES.filter((f) => /\b(source_trust|trustScore)\b/.test(code(f)))
+    expect(offenders).toEqual([])
+  })
+
+  /**
+   * `sourceHealth` / `consecutiveFailures` / `lastFetchError` are a separate
+   * trap, and a tempting one — they look exactly like the reliability signal a
+   * provenance panel wants. Measured the same day, **351 of the 387 active
+   * sources in an error state carry the platform's OWN MongoDB read timeout**
+   * as the publisher's fetch error, so rendering them tells a reader a newsroom
+   * is failing when what failed was our database. `lastSuccessfulFetchAt` is
+   * the one signal that cannot make that mistake.
+   */
+  it('renders no feed-health verdict to a reader', () => {
+    const offenders = FILES.filter((f) =>
+      /\b(sourceHealth|consecutiveFailures)\b/.test(code(f))
+    )
+    expect(offenders).toEqual([])
   })
 })

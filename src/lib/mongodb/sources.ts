@@ -17,6 +17,27 @@ interface MongoFeedSource {
   consecutiveFailures?: number
   lastFetchStatus?: string
   lastFetchError?: string
+  /**
+   * When the pipeline last SUCCESSFULLY read this feed.
+   *
+   * The honest reliability signal, and deliberately not `sourceHealth` /
+   * `consecutiveFailures` / `lastFetchError`. Measured 2026-09-11: of the 387
+   * active sources in `lastFetchStatus: 'error'`, **351 carry the platform's own
+   * MongoDB read timeout** as the source's fetch error — so those fields mark a
+   * newsroom `critical` when what failed was our database. On the same read 138
+   * sources had succeeded within 24h and 238 within a week, i.e. the feeds are
+   * fine and the health field is wrong.
+   */
+  lastSuccessfulFetchAt?: Date
+  createdAt?: Date
+  /** `declared` | `tld` | `assumed` — how the country was established. */
+  countryCodeSource?: string
+  /**
+   * NOT surfaced. `(avgQuality*0.7 + volume*0.3)*100` over 7 days — it measures
+   * recent volume and fluency, not trust, and it rates a casino-affiliate source
+   * 85.8 ("Established"). Withdrawn from every reader-facing surface on
+   * 2026-09-11; see `resolveSourceSignals` in `./articles` for the measurement.
+   */
   trustScore?: number
 }
 
@@ -62,6 +83,12 @@ export async function getSources(): Promise<Array<{
    */
   newsroom_id?: string
   newsroom_name?: string
+  /** When the feed was last read successfully, ISO-8601. */
+  last_successful_fetch_at?: string
+  /** When the source was first registered, ISO-8601. */
+  delivering_since?: string
+  /** How the country was established — `declared` | `tld` | `assumed`. */
+  country_code_source?: 'declared' | 'tld' | 'assumed'
 }>> {
   const db = await getDb()
   // $lookup the publisher (newsMediaOrganizations) so the directory can badge
@@ -99,6 +126,17 @@ export async function getSources(): Promise<Array<{
     publisher_tier: d.org?.publisherTier || undefined,
     newsroom_id: d.mediaOrganizationId || undefined,
     newsroom_name: d.org?.name || undefined,
+    last_successful_fetch_at: d.lastSuccessfulFetchAt?.toISOString(),
+    delivering_since: d.createdAt?.toISOString(),
+    // A closed set: the field is pipeline-written and Mongo's validators accept
+    // unknown values, so an unrecognised string is dropped rather than rendered
+    // as a provenance the platform recognises.
+    country_code_source:
+      d.countryCodeSource === 'declared' ||
+      d.countryCodeSource === 'tld' ||
+      d.countryCodeSource === 'assumed'
+        ? d.countryCodeSource
+        : undefined,
   }))
 }
 

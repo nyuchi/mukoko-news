@@ -18,6 +18,15 @@ vi.mock("next/link", () => ({
   ),
 }));
 
+// The directory reads `useAuth()` to decide whether to show Mukoko's own record
+// of each source (feed last read, delivering since, country provenance). Mocked
+// at the components entry point like every other suite that gates on a session —
+// importing it for real drags in the AuthKit server module and `next/cache`.
+const mockUseAuth = vi.fn(() => ({ user: null, loading: false }));
+vi.mock("@workos-inc/authkit-nextjs/components", () => ({
+  useAuth: () => mockUseAuth(),
+}));
+
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
   useSearchParams: () => new URLSearchParams(),

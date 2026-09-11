@@ -2,6 +2,37 @@
 // Set to external URL only for the Cloudflare widget/resale API.
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
+/**
+ * The source-provenance fields the article payload carries.
+ *
+ * Every field is optional and an absent one renders as nothing rather than as a
+ * zero or a placeholder — the rule the pipeline's country backfill states: a
+ * null is a known gap, a wrong value is a silent error every reader takes as
+ * fact.
+ */
+interface SourceSignals {
+  /** How many articles the platform holds from this source. */
+  article_count?: number;
+  /**
+   * When the pipeline last SUCCESSFULLY read this feed, ISO-8601.
+   *
+   * Deliberately not the source's `sourceHealth`/`consecutiveFailures`: measured
+   * 2026-09-11, 351 of the 387 active sources in an error state carried the
+   * platform's OWN MongoDB read timeout as the publisher's fetch error, so those
+   * fields blame newsrooms for our outages. A success timestamp cannot.
+   */
+  last_successful_fetch_at?: string;
+  /** When the source was first registered with the platform, ISO-8601. */
+  delivering_since?: string;
+  /**
+   * How the source's country was established — `declared` | `tld` | `assumed`.
+   *
+   * Shown BECAUSE `assumed` is unflattering: 217 of 414 active sources are
+   * `assumed`, which is where `theguardian.com` sits filed as Zimbabwean.
+   */
+  country_code_source?: 'declared' | 'tld' | 'assumed';
+}
+
 interface Article {
   id: string;
   title: string;
@@ -55,15 +86,18 @@ interface Article {
    */
   source_url?: string;
   /**
-   * The publisher's trust score, 0-100, resolved on read from its feed-source
-   * record. DERIVED, never stored — see `source_url` above for why.
+   * What the platform can honestly say about the SOURCE behind this article.
    *
-   * `undefined` means the publisher-verification flow has never scored this
-   * source. That is NOT a score of zero, and must never be rendered as one:
-   * an unassessed publisher shown at 0/100 is an accusation the platform did
-   * not make. Render the panel only when this is a number.
+   * DERIVED, never stored — see `source_url` above for why. Gated behind
+   * `source-transparency` in `@/lib/access`: it is the platform's own
+   * operational record of a named third party.
+   *
+   * This replaced `source_trust` (a 0-100 composite) on 2026-09-11. Every field
+   * here is a count or a timestamp of something that demonstrably happened;
+   * nothing here is a judgement. See `resolveSourceSignals` in
+   * `@/lib/mongodb/articles` for the measurement that withdrew the score.
    */
-  source_trust?: number;
+  source_signals?: SourceSignals;
   slug: string;
   category?: string;
   category_id?: string;  // API returns category_id
@@ -452,4 +486,4 @@ export const api = {
   },
 };
 
-export type { Article, ArticlesResponse, Category, StoryCluster, CategorySection, SectionedFeedResponse };
+export type { Article, SourceSignals, ArticlesResponse, Category, StoryCluster, CategorySection, SectionedFeedResponse };

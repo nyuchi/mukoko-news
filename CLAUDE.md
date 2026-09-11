@@ -328,8 +328,52 @@ FLY_TRIGGER_TOKEN=...                              # must match the fly secret
 | `analytics-export` | `free` | the export route |
 | `saved-articles` | `free` | account-scoped by the engagement subject |
 | `publisher-dashboard` | `free` | ownership-gated |
+| `source-transparency` | `free` | `source-provenance.tsx` + the `/sources` directory |
 
-**What is deliberately public, and why it must stay so.** Article bodies, the home feed, `/search`, `/discover`, `/categories`, `/sources`, `/topic`, `/author` — these are what search engines index, and for an aggregator that traffic *is* the asset; gating them hides the product from the people who would pay for it. And **`/insights` stays open**: it is the published open-data dashboard this project is partly known for, with a public export endpoint, and a login on it contradicts the claim. `access.test.ts` asserts no gate exists for any of them, so adding one is a deliberate act with a failing test in front of it.
+### The source trust score was WITHDRAWN, not gated (owner decision 2026-09-11)
+
+The ask was *"source trust is really good information... make that public, good data for users and researchers, only visible if you are logged in."* Measured against the live cluster before building on it, the score does not survive:
+
+- `feedSources.trustScore` is `(avgQuality*0.7 + volume*0.3)*100` over a 7-day window — it ranks **recent volume and fluency**, and neither verification nor feed reliability is in it, though the panel rendering it claimed all three.
+- **200 of the 201 active sources it rates ≥70 "Established" sit on a feed the platform records as broken**; exactly ONE is healthy, and all 23 genuinely healthy scored sources sit in the LOWEST band. The score is inverted against the thing a reader would take it to mean.
+- `src-malawivoice-mw` — 45+ foreign-language casino-affiliate pages — scores **85.8 → "Established"**, because a fluent SEO page scores *well* on `content_depth`. The platform was publishing "Established" over a spam farm.
+- `news.sourceScoreHistory`, which `articles.ts` and this file both described as auditing every change to the score, holds **zero rows**. There has never been a trail.
+
+So it was not gated, it was withdrawn: gating a wrong verdict publishes it to a smaller audience. `ArticleTrustPanel` is deleted. It comes back when the pipeline folds feed reliability into the score — a `nyuchi/mukoko-news-pipeline` change, not one this repo can make.
+
+**`sourceHealth` / `consecutiveFailures` / `lastFetchError` are the second trap, and the sharper one.** They look exactly like the reliability signal a provenance panel wants. Measured the same day: of the 387 active sources sitting in `lastFetchStatus: 'error'`, **351 (91%) carry the platform's OWN MongoDB read timeout** — `…mongodb.net:27017: The read operation timed out` — as the *source's* fetch error. Only 28 carry a real publisher-side HTTP status. The platform had marked 351 named newsrooms `critical`/`failing` because our database was slow, and that is what the directory's status dot was rendering. **`lastSuccessfulFetchAt` is used instead**: a timestamp of something that demonstrably happened, which cannot blame anyone for an outage. On the same read 138 sources had succeeded within 24h and 238 within a week — the feeds are overwhelmingly fine and the health field was simply wrong.
+
+**What IS published** (`SourceProvenancePanel`, `components/article/source-provenance.tsx`, and the `/sources` rows) is every signal that survived: articles held, feed last successfully read, delivering since, and country **with its provenance** — `declared` / `tld` / `assumed`, shown BECAUSE `assumed` is unflattering. 217 of 414 active sources are `assumed`, the bucket where `theguardian.com` sits filed as Zimbabwean, because `newsdata_collector` registers an outlet under the country it *queried* rather than the country it is in. A country shown bare reads as a fact; shown as unverified it reads as what it is. Every field is a count or a timestamp — nothing is a judgement — and the panel says so in as many words: *"not a rating of the newsroom."*
+
+`access.test.ts` holds the structural guard: no reader-facing file may read `source_trust`/`trustScore` or `sourceHealth`/`consecutiveFailures`, with comments stripped first so the components explaining why they do not read them are not caught by their own reasoning. ⚠️ `src/{lib,components}/publisher/` is scoped OUT and still renders `Trust {score}` and a health dot to a verified publisher about their own source — a publisher seeing their own number is not the platform publishing a verdict about a third party, but it is the same unsound figure and wants the same treatment.
+
+**What is deliberately public, and why it must stay so.** Article bodies, the home feed, `/search`, `/discover`, `/categories`, `/sources`, `/topic`, `/author` — these are what search engines index, and for an aggregator that traffic *is* the asset; gating them hides the product from the people who would pay for it. And **`/insights` stays open**: it is the published open-data dashboard this project is partly known for, with a public export endpoint, and a login on it contradicts the claim.
+
+### Open data is defended by CACHING, not by a login (owner decision 2026-09-11)
+
+> *"Open data behind a login is not correct — that is not to gate free data, but those should not be able to be mined by bots, and have a security layer. It's public data."*
+
+This **reverses the 2026-09-01 gate**, under which an anonymous visitor to `/insights` got the corpus summary and a *"Sign in for the full picture"* card over everything else, `getInsightsBundleAction` and all six panel actions called `requireViewer()`, and `/api/insights/export` answered `401`. All of it is gone.
+
+A login was the wrong instrument twice over. It contradicted the product — the page links a *"Download open data"* button, and open data you must authenticate for is not open data. And it did not solve the problem it was there for: **a scraper can sign up.** An auth wall stops researchers, journalists and the answer engines this repo's `robots.txt` deliberately courts; it does not stop a determined miner.
+
+**The threat to public data is not that someone reads it — that is the point — it is that reading it repeatedly costs US something.** So the defence makes it cost nothing:
+
+| control | what it does |
+| --- | --- |
+| **`/insights` is `revalidate = 600`** | it is now a **prerendered static page** (`○` in the build manifest, 10m). A scraper is served a file from the CDN and never reaches MongoDB. |
+| **the export sends `public, s-maxage=600, stale-while-revalidate=1800`** | a thousand scraped requests in ten minutes reach the function at most once; `stale-while-revalidate` keeps that true through the refresh, so no thundering herd. |
+| **rate limit on the export** (20/min/IP) | guards the **origin path** — the cache misses that do get through. Deliberately fail-open (`@/lib/rate-limit`): a limiter outage must not take a public endpoint down, and with the cache in front the blast radius is small. |
+| **`robots.txt` disallows `/api/`** | well-behaved crawlers never pull the export incidentally. Courtesy, not enforcement — not relied on. |
+| **clamped inputs** (`@/lib/mongodb/insights`) | public does not mean unbounded; an unclamped `limit` is a denial-of-service parameter. |
+
+⚠️ **The shared cache is safe only because the response no longer varies by session.** The comment it replaced was right on its own terms — a shared cache in front of an authenticated response lets the CDN store one signed-in caller's payload and hand it to the next anonymous one, a gate that leaks being worse than no gate. That hazard is gone *with* the gate, not in spite of it. **If any per-caller field is ever added to these responses, the cache must come off in the same commit** — the tests are ordered so the "reads no session" assertion fails first. A `429` and a `500` are `private, no-store`: a shared 429 would hand one abuser's rejection to every reader behind the same CDN node, and a cached 500 would outlive the outage that caused it.
+
+⚠️ **No licence is asserted yet.** Published open data should carry one — CC BY 4.0 is the usual choice for aggregate datasets like this — and choosing it is an owner decision, so the export says nothing about reuse terms rather than inventing permissive ones on publishers' behalf. Worth closing.
+
+**The test gap that let this happen for ten days is closed too.** `access.test.ts` asserted "no gate for `insights`" throughout the entire gated period and passed, because it only read `access.ts` — and the gate was never there. It was a direct `isViewerSignedIn()` in the page plus `requireViewer()` in the actions. **A test that reads only the access map cannot see a gate written any other way**, and it certified as open a surface that was closed. It now also asserts, against the four open-data surfaces themselves (page, client, actions, export route), that none of them reads a session by ANY mechanism — `isViewerSignedIn`, `requireViewer`, `withAuth`, `useAuth`, `planFor` or `canAccess` — with comments stripped first, since those files explain the withdrawn gate at length. Verified non-vacuous: all three pre-reversal files fail it.
+
+`access.test.ts` asserts no gate exists for any of the public surfaces, so adding one is a deliberate act with a failing test in front of it.
 
 ⚠️ **The AI-summary gate is a CONVERSION gate, not a confidentiality one.** It is enforced client-side from `useAuth()`, and the summary text still travels in the article payload — a determined reader can find it in the network tab. That is the deliberate trade: enforcing it server-side means making `getArticleAction` session-aware, which makes the article route dynamic and gives up ISR on the most-visited surface in the app. If the text must genuinely not leave the server, the fix is a separate session-gated action for the summary alone, not dynamic rendering of the whole article.
 
