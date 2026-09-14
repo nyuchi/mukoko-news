@@ -10,6 +10,8 @@ import { NavSidebar } from '@/components/layout/nav-sidebar';
 import { SidebarProvider } from '@/contexts/sidebar-context';
 import { IslandProvider } from '@/contexts/island-context';
 import { OnboardingModal } from '@/components/onboarding-modal';
+import { LegalProvider } from '@/contexts/legal-context';
+import { WelcomeGate } from '@/components/legal/welcome-gate';
 import { ServiceWorkerRegister } from '@/components/pwa/sw-register';
 import { WebMcpProvider } from '@/components/agent/webmcp-provider';
 import { OrganizationJsonLd, WebSiteJsonLd } from '@/components/ui/json-ld';
@@ -188,6 +190,7 @@ export default async function RootLayout({
       </head>
       <body className="font-sans antialiased min-h-screen flex flex-col">
         <AuthKitProvider>
+        <LegalProvider>
         <CoverageProvider value={coverage}>
         <ThemeProvider defaultTheme="system" storageKey="mukoko-news-theme">
           <PreferencesProvider>
@@ -242,8 +245,15 @@ export default async function RootLayout({
             </IslandProvider>
             </SidebarProvider>
 
-            {/* Onboarding Modal */}
+            {/* Onboarding Modal — suppressed until the terms are accepted, so
+                a first visit shows one dialog rather than two stacked. */}
             <OnboardingModal />
+
+            {/* The first-run terms screen. Last in the tree and on the highest
+                z-index because it covers everything, and CLIENT-ONLY: the page
+                under it is server-rendered and cached exactly as before, so a
+                crawler is served the news rather than a consent dialog. */}
+            <WelcomeGate />
 
             {/* PWA: registers /sw.js (production only) + update banner */}
             <ServiceWorkerRegister />
@@ -253,6 +263,7 @@ export default async function RootLayout({
           </PreferencesProvider>
         </ThemeProvider>
         </CoverageProvider>
+        </LegalProvider>
         </AuthKitProvider>
       </body>
     </html>

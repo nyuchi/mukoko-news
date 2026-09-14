@@ -5,6 +5,7 @@ import { Clock, Layers, ChevronRight } from "lucide-react";
 import type { StoryCluster as StoryClusterType } from "@/lib/api";
 import { isValidImageUrl, safeCssUrl, formatTimeAgo } from "@/lib/utils";
 import { imageProxyUrl } from "@/lib/image";
+import { ImageCredit } from "@/components/ui/image-credit";
 import { SourceIcon, sourceIconProps } from "@/components/ui/source-icon";
 
 interface StoryClusterProps {
@@ -35,6 +36,7 @@ export function StoryCluster({ cluster }: StoryClusterProps) {
                 {primaryArticle.category_id || primaryArticle.category}
               </div>
             )}
+            <ImageCredit article={primaryArticle} variant="overlay" />
           </div>
         )}
 
@@ -147,6 +149,8 @@ export function StoryClusterCompact({ cluster }: StoryClusterProps) {
               {articleCount}
             </div>
           )}
+          {/* Top-right: the story-count chip already owns the bottom corner. */}
+          <ImageCredit article={primaryArticle} variant="overlay" place="top-right" />
         </div>
       )}
 

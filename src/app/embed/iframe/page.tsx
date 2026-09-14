@@ -8,6 +8,7 @@ import { getArticlesAction } from "@/lib/actions/feed";
 import { getArticleUrl, BASE_URL, COUNTRIES } from "@/lib/constants";
 import { isValidImageUrl, formatTimeAgo, safeCssUrl } from "@/lib/utils";
 import { imageProxyUrl } from "@/lib/image";
+import { ImageCredit } from "@/components/ui/image-credit";
 import { SourceIcon, sourceIconProps } from "@/components/ui/source-icon";
 
 const REFRESH_INTERVAL = 5 * 60 * 1000; // 5 minutes
@@ -75,6 +76,9 @@ function HeroEmbed({ article }: { article: Article }) {
               {timeAgo}
             </time>
           </div>
+          {/* This markup runs inside somebody else's page, which makes naming
+              whose photograph it is more important here, not less. */}
+          {hasImage && <ImageCredit article={article} variant="inline" className="mt-1" />}
         </div>
       </article>
     </a>
@@ -92,9 +96,11 @@ function CardEmbed({ article }: { article: Article }) {
       <article className="rounded-xl overflow-hidden bg-surface border border-outline hover:border-primary/40 transition-all hover:-translate-y-0.5 hover:shadow-lg">
         {hasImage && (
           <div
-            className="h-[120px] bg-elevated bg-cover bg-center"
+            className="relative h-[120px] bg-elevated bg-cover bg-center"
             style={{ backgroundImage: safeCssUrl(imageProxyUrl(article.image_url!, { width: 600 })) }}
-          />
+          >
+            <ImageCredit article={article} variant="overlay" />
+          </div>
         )}
         <div className="p-3">
           {category && (

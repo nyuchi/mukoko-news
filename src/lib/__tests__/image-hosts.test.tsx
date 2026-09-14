@@ -121,7 +121,12 @@ describe('every next/image in the tree stays inside the allowlist', () => {
   // A raw `<Image src={publisherUrl}>` on the default loader would throw at
   // render time. Each usage must therefore be one of: a custom `loader`, an
   // `unoptimized` image, a local `/…` asset, or an already-proxied URL.
-  const files = walk(SRC_DIR).filter((f) => readFileSync(f, 'utf8').includes('<Image'));
+  // Selection uses the SAME word-boundary pattern the extraction below does.
+  // A plain `.includes('<Image')` also selected every file rendering
+  // `<ImageCredit …>`, where the extractor then found zero elements and the
+  // "not silently vacuous" guard failed the file — a green test turned red by
+  // an unrelated component whose name merely starts with the same six letters.
+  const files = walk(SRC_DIR).filter((f) => /<Image\b/.test(readFileSync(f, 'utf8')));
 
   it('finds the next/image call sites (guard is not silently vacuous)', () => {
     expect(files.length).toBeGreaterThan(0);

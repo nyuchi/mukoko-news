@@ -33,6 +33,12 @@ import { cn } from "@/lib/utils";
    - optional `href` renders the card as a next/link (whole-card nav)
    - `sourceSlot` / `footer` ReactNode slots so apps can inject a
      richer source badge (favicon) and engagement row
+   - `imageCredit` ReactNode slot, rendered INSIDE the image well on the
+     hero and compact variants so an app can name whoever supplied the
+     photograph. Deliberately NOT rendered on the `row` variant: its
+     thumbnail is 64px square and a credit chip on it would be either
+     unreadable or wider than the picture, and the row's source badge
+     already sits immediately beside it.
    - images are expected pre-proxied (imageProxyUrl) + lazy
    ═══════════════════════════════════════════════════════════════ */
 
@@ -52,6 +58,11 @@ interface NyuchiArticleCardProps {
   excerpt?: string;
   /** Image URL — pass an already-proxied URL (imageProxyUrl) */
   image?: string;
+  /**
+   * Rendered inside the image well (hero + compact variants). Intended for an
+   * absolutely-positioned credit; the well is `relative` so it can anchor.
+   */
+  imageCredit?: React.ReactNode;
   sourceName?: string;
   sourceVerified?: boolean;
   authorName?: string;
@@ -78,6 +89,7 @@ function NyuchiArticleCard({
   title,
   excerpt,
   image,
+  imageCredit,
   sourceName,
   sourceVerified,
   authorName,
@@ -178,6 +190,7 @@ function NyuchiArticleCard({
           <img src={image} alt="" className="absolute inset-0 size-full object-cover" />
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent" />
+        {image && imageCredit}
         <div className="relative z-10">
           {category && (
             <span className="mb-2 inline-flex rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-white">
@@ -206,7 +219,7 @@ function NyuchiArticleCard({
     return wrap(
       <>
         {image && (
-          <div className="aspect-video overflow-hidden bg-muted">
+          <div className="relative aspect-video overflow-hidden bg-muted">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={image}
@@ -214,6 +227,7 @@ function NyuchiArticleCard({
               loading="lazy"
               className="size-full object-cover transition-transform duration-300 group-hover/article:scale-105"
             />
+            {imageCredit}
           </div>
         )}
         <div className="p-4">
