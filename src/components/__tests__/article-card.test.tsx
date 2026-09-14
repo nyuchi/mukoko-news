@@ -230,4 +230,26 @@ describe('ArticleCard', () => {
       expect(screen.queryByText('Test article description')).not.toBeInTheDocument();
     });
   });
+
+  describe('image credit', () => {
+    /**
+     * End-to-end rather than structural, because the credit reaches the card
+     * through the brand component's `imageCredit` SLOT. A source-text check on
+     * this file would keep passing if nyuchi-article-card stopped rendering the
+     * slot — the image would go uncredited while every test stayed green, and
+     * /terms tells publishers it never does.
+     */
+    it('credits the supplier under the card image', () => {
+      const article = { ...baseArticle, image_url: 'https://cdn.example.com/p.jpg' };
+      render(<ArticleCard article={article} />);
+
+      expect(screen.getByText('Image via The Herald')).toBeInTheDocument();
+    });
+
+    it('shows no credit when the card has no image to credit', () => {
+      render(<ArticleCard article={baseArticle} />);
+
+      expect(screen.queryByText(/Image via/)).not.toBeInTheDocument();
+    });
+  });
 });

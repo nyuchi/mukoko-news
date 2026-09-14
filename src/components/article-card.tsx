@@ -6,6 +6,7 @@ import { imageProxyUrl } from "@/lib/image";
 import { NyuchiArticleCard } from "@/components/brand/nyuchi-article-card";
 import { SourceBadge, sourceIconProps } from "@/components/ui/source-icon";
 import { InlineEngagement } from "@/components/ui/engagement-bar";
+import { ImageCredit } from "@/components/ui/image-credit";
 
 interface ArticleCardProps {
   article: Article;
@@ -32,6 +33,7 @@ export function ArticleCard({ article, index }: ArticleCardProps) {
       title={article.title}
       excerpt={article.description}
       image={hasImage ? imageProxyUrl(article.image_url!, { width: 600 }) : undefined}
+      imageCredit={<ImageCredit article={article} variant="overlay" />}
       category={category}
       publishedAt={formatTimeAgo(article.published_at)}
       index={index}

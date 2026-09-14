@@ -8,6 +8,7 @@ import type { Article } from "@/lib/api";
 import { formatTimeAgo, isValidImageUrl } from "@/lib/utils";
 import { mukokoImageLoader } from "@/lib/image";
 import { SourceIcon, sourceIconProps } from "@/components/ui/source-icon";
+import { ImageCredit } from "@/components/ui/image-credit";
 
 interface HeroCardProps {
   article: Article;
@@ -48,7 +49,11 @@ export function HeroCard({ article }: HeroCardProps) {
               />
               {/* Gradient overlay for text readability */}
               <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-black/20" aria-hidden="true" />
+              {/* Top-right, because the bottom of this image is the headline
+                  block and the top-left is the category chip. */}
+              <ImageCredit article={article} variant="overlay" place="top-right" />
             </>
+
           ) : (
             <div className="absolute inset-0 bg-gradient-to-br from-primary to-secondary" aria-hidden="true" />
           )}
