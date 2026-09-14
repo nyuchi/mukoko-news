@@ -6,6 +6,12 @@ node_modules/
 /.pnp
 .pnp.js
 
+# pnpm-lock.yaml is the only lockfile; npm and yarn would resolve a tree that
+# does not deploy. CI's `Single lockfile` job also fails if one is force-added.
+package-lock.json
+npm-shrinkwrap.json
+yarn.lock
+
 # Next.js
 .next/
 out/
