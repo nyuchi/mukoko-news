@@ -94,7 +94,12 @@ describe('the failed-read guard actually collapses onto the fallback', () => {
     // the fallback set and a non-zero count.
     const { vi } = await import('vitest');
     vi.resetModules();
-    vi.doMock('@/lib/mongodb/coverage', () => ({ getLiveCountries: async () => [] }));
+    // `getWindowCountries` is the unfiltered read the action now calls; the
+    // threshold it filters with is re-exported from the same module.
+    vi.doMock('@/lib/mongodb/coverage', () => ({
+      getWindowCountries: async () => [],
+      LIVE_COUNTRY_MIN_RECENT_ARTICLES: 500,
+    }));
     vi.doMock('next/cache', () => ({
       unstable_cache: (fn: (...a: unknown[]) => unknown) => fn,
     }));
@@ -117,11 +122,15 @@ describe('the failed-read guard actually collapses onto the fallback', () => {
     const { vi } = await import('vitest');
     vi.resetModules();
     vi.doMock('@/lib/mongodb/coverage', () => ({
-      getLiveCountries: async () => [
-        { code: 'NG', recent: 11019 },
-        { code: 'ZA', recent: 5663 },
-        { code: 'ZW', recent: 3520 },
+      getWindowCountries: async () => [
+        { code: 'NG', recent: 11019, sources: 71, newsrooms: 70 },
+        { code: 'ZA', recent: 5663, sources: 60, newsrooms: 58 },
+        { code: 'ZW', recent: 3520, sources: 37, newsrooms: 35 },
+        // Below the bar: absent from the CLAIM, present in `allCountries` so a
+        // card can still report what the corpus holds.
+        { code: 'SO', recent: 487, sources: 3, newsrooms: 3 },
       ],
+      LIVE_COUNTRY_MIN_RECENT_ARTICLES: 500,
     }));
     vi.doMock('next/cache', () => ({
       unstable_cache: (fn: (...a: unknown[]) => unknown) => fn,
@@ -134,6 +143,9 @@ describe('the failed-read guard actually collapses onto the fallback', () => {
     expect(coverage.codes).toEqual(['NG', 'ZA', 'ZW']);
     expect(coverage.stale).toBe(false);
     expect(coverage.fragment).toContain('live in 3 African countries');
+    // The claim filters on the bar; the grid's list does not.
+    expect(coverage.countries.map((c) => c.code)).toEqual(['NG', 'ZA', 'ZW']);
+    expect(coverage.allCountries.map((c) => c.code)).toEqual(['NG', 'ZA', 'ZW', 'SO']);
 
     vi.doUnmock('@/lib/mongodb/coverage');
     vi.doUnmock('next/cache');

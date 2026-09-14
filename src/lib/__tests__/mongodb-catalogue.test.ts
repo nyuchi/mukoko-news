@@ -360,51 +360,77 @@ describe('getStats', () => {
 // ───────────────────────────────────────────────────────────────────────────
 
 describe('getTopCountriesByRecentVolume', () => {
+  /** One `$searchMeta` row shaped like the pipeline's. */
+  function metaRow(country: Array<{ _id: string; count: number }>) {
+    return {
+      facet: {
+        country: { buckets: country },
+        src: { buckets: [{ _id: 's1', count: 1 }] },
+      },
+    };
+  }
+
+  function useCoverageDb(country: Array<{ _id: string; count: number }>) {
+    const articles = collectionStub({ aggregate: [[metaRow(country)]] });
+    const feedSources = collectionStub({
+      find: [[{ _id: 's1', countryCode: 'NG', mediaOrganizationId: 'org-1' }]],
+    });
+    useDb({ articles, feedSources });
+    return articles;
+  }
+
   it('ranks by RECENT volume, not all-time', async () => {
     // Ranking all-time would offer a country whose sources have since gone
     // dark — promising a feed the platform cannot fill. The onboarding modal
     // previously offered `COUNTRIES.slice(0, 4)`, which meant a new reader was
     // offered Tanzania (368 articles in 30 days) while Nigeria (8,648) was not
     // on the list at all.
-    const articles = collectionStub({ aggregate: [[{ _id: 'ng', recent: 8648 }]] });
-    useDb({ articles });
+    const articles = useCoverageDb([{ _id: 'ng', count: 8648 }]);
 
     const result = await getTopCountriesByRecentVolume(6, 30);
 
-    const match = stage<{ $match: { datePublished: { $gte: Date } } }>(
-      articles.aggregateCalls[0].pipeline,
-      '$match'
-    );
-    const ageDays = (Date.now() - match!.$match.datePublished.$gte.getTime()) / 86_400_000;
+    const searchStage = articles.aggregateCalls[0].pipeline[0] as {
+      $searchMeta: { facet: { operator: { compound: { filter: Array<{ range: { gte: Date } }> } } } };
+    };
+    const gte = searchStage.$searchMeta.facet.operator.compound.filter[0].range.gte;
+    const ageDays = (Date.now() - gte.getTime()) / 86_400_000;
     expect(ageDays).toBeGreaterThan(29);
     expect(ageDays).toBeLessThan(31);
     // Normalised: `countryCode` is written by two collectors and casing drifts.
-    expect(result).toEqual([{ code: 'NG', recent: 8648 }]);
+    expect(result).toEqual([{ code: 'NG', recent: 8648, sources: 1, newsrooms: 1 }]);
   });
 
   it('ignores articles with no country rather than bucketing them', async () => {
-    // 10,620 articles carried no countryCode for a 33-day window. A `null`
-    // bucket would have ranked first and offered readers a country called
-    // "null".
-    const articles = collectionStub({ aggregate: [[]] });
-    useDb({ articles });
+    // 10,620 articles carried no countryCode for a 33-day window. A blank
+    // bucket would rank first and offer readers a country with no name.
+    useCoverageDb([
+      { _id: '', count: 99_999 },
+      { _id: 'NG', count: 8648 },
+    ]);
 
-    await getTopCountriesByRecentVolume();
-
-    const match = stage<{ $match: Record<string, unknown> }>(
-      articles.aggregateCalls[0].pipeline,
-      '$match'
-    );
-    expect(match?.$match.countryCode).toEqual({ $type: 'string', $ne: '' });
+    const result = await getTopCountriesByRecentVolume();
+    expect(result.map((r) => r.code)).toEqual(['NG']);
   });
 
   it('clamps absurd limits and windows', async () => {
-    const articles = collectionStub({ aggregate: [[]] });
-    useDb({ articles });
+    // The clamp is applied in the caller now rather than as a `$limit` stage,
+    // because the facet returns one bucket per country — at most a few dozen —
+    // and slicing that is cheaper than a second round trip.
+    const rows = Array.from({ length: 40 }, (_, i) => ({
+      _id: `C${String(i).padStart(2, '0')}`,
+      count: 100 - i,
+    }));
+    const articles = useCoverageDb(rows);
 
-    await getTopCountriesByRecentVolume(9999, 9999);
+    const result = await getTopCountriesByRecentVolume(9999, 9999);
 
-    expect(stage(articles.aggregateCalls[0].pipeline, '$limit')).toEqual({ $limit: 24 });
+    expect(result).toHaveLength(24);
+    // The window is clamped too: 9,999 days would be the whole corpus.
+    const searchStage = articles.aggregateCalls[0].pipeline[0] as {
+      $searchMeta: { facet: { operator: { compound: { filter: Array<{ range: { gte: Date } }> } } } };
+    };
+    const gte = searchStage.$searchMeta.facet.operator.compound.filter[0].range.gte;
+    expect((Date.now() - gte.getTime()) / 86_400_000).toBeLessThanOrEqual(366);
   });
 
   it('returns an empty list rather than throwing when the cluster is unreachable', async () => {
