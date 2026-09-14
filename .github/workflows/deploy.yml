@@ -54,6 +54,38 @@ jobs:
   # stronger (prettier covered only "**/*.json" here, and markdownlint used a
   # floating action).
 
+  # ── Lockfile parity ────────────────────────────────────────────────────────
+  # Every job below installs with `npm ci` from package-lock.json. Vercel
+  # installs with pnpm from pnpm-lock.yaml. Those are two dependency trees, and
+  # nothing checked they were the same one: measured 2026-09-10 they disagreed
+  # on 144 packages, `npm audit` said 0 vulnerabilities while `pnpm audit` said
+  # 4 high + 2 moderate, and Vercel's in-build ESLint was failing on a package
+  # npm hoisted and pnpm did not. A green run here was not evidence about the
+  # tree that deploys.
+  #
+  # Two checks, because each misses what the other catches:
+  #   1. the parity script — both lockfiles resolve identical name@version sets;
+  #   2. a frozen pnpm install — pnpm-lock.yaml is in date with package.json,
+  #      which is the ERR_PNPM_OUTDATED_LOCKFILE that failed PR #161's Vercel
+  #      deploy while all 14 GitHub checks were green.
+  # `corepack enable` makes `pnpm` the exact version in package.json's
+  # `packageManager` field, so this runs the pnpm Vercel runs.
+  lockfile-parity:
+    runs-on: ubuntu-latest
+    name: Lockfile parity
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+    - name: Both lockfiles resolve the same versions
+      run: node scripts/check-lockfile-parity.mjs
+    - name: pnpm-lock.yaml is in date with package.json
+      run: |
+        corepack enable
+        pnpm --version
+        pnpm install --frozen-lockfile --lockfile-only
+
   # ── Frontend pipeline ──────────────────────────────────────────────────────
   # These four ran chained — ESLint -> Typecheck -> Test -> Build, each `needs:`
   # the last. The chain was not buying ordering that anything relied on: none of

@@ -30,7 +30,22 @@ This repo (`nyuchi/mukoko-news`) is the **Next.js frontend only**. It deploys to
 
 ## Commands
 
-The repo ships **both** a `package-lock.json` and a `pnpm-lock.yaml`. The human-facing docs (`README.md`, `CONTRIBUTING.md`) use **pnpm**, but **CI (`deploy.yml`) and the Husky pre-commit hook use `npm`**. Either works locally; if you change dependencies, update **both** lockfiles to keep them consistent (or CI's `npm ci` will drift from local `pnpm install`).
+The repo ships **both** a `package-lock.json` and a `pnpm-lock.yaml`, and they install **two different consumers**: **CI (`deploy.yml`) and the Husky pre-commit hook run `npm ci`**, while **Vercel installs with pnpm** — the version pinned in `package.json#packageManager` (`pnpm@10.28.0`, the version Vercel's build log reported when it was chosen by project creation date). So the tree CI tests is only the tree that deploys if the two lockfiles agree, and that is now **enforced**, not advised.
+
+**`package-lock.json` is the source; `pnpm-lock.yaml` is derived from it.** To change a dependency:
+
+```bash
+npm install <package>                # or edit package.json, then: npm install
+npm dedupe                           # pnpm always dedupes; npm must match it
+rm pnpm-lock.yaml && pnpm import     # regenerate pnpm-lock.yaml from package-lock.json
+node scripts/check-lockfile-parity.mjs
+```
+
+Never `pnpm add` / `pnpm update` directly (that moves only one lockfile) and never hand-edit either. The **`Lockfile parity`** CI job fails on any drift: `scripts/check-lockfile-parity.mjs` compares every resolved `name@version` in both files, and `pnpm install --frozen-lockfile --lockfile-only` (via corepack, so the pinned pnpm) catches the `ERR_PNPM_OUTDATED_LOCKFILE` that once failed a Vercel deploy behind 14 green GitHub checks (PR #161).
+
+> **Measured 2026-09-10, before the job existed:** the lockfiles disagreed on **144** packages. `npm audit` reported 0 vulnerabilities; `pnpm audit` over the same `package.json` reported **4 high + 2 moderate** (`brace-expansion` 5.0.5 under `@typescript-eslint/typescript-estree` → `minimatch` 10, and `ws` 8.20.0 under `jsdom`) — all dev-only, `pnpm audit --prod` was clean either way, but it is why Dependabot kept reporting advisories `npm audit` could not see. The sharper consequence: **Vercel's in-build ESLint had been failing** — `Cannot find package '@typescript-eslint/parser' imported from eslint.config.js` — because the config imports a package that was never declared; npm's flat `node_modules` hoisted it into reach and pnpm's strict layout did not, and `next build` logs an ESLint failure and carries on. It is now a declared devDependency.
+>
+> **Overrides live twice** — top-level `overrides` (npm) and `pnpm.overrides` (pnpm) — and must stay identical. pnpm ≥ 11 no longer reads the `pnpm` field of `package.json` at all (pnpm 12.4.1 warns _"The following keys were ignored: pnpm.overrides"_), which is one reason pnpm is pinned: an unpinned upgrade would silently drop every security override from the deployed tree.
 
 ```bash
 # pnpm (documented dev workflow) / npm equivalents both shown
@@ -50,9 +65,10 @@ pnpm vitest run src/lib/__tests__/utils.test.ts
 # Run tests matching a pattern (-t = test name)
 pnpm vitest run -t "formatTimeAgo"
 
-# Install dependencies / add a package
-pnpm install          # or: npm ci  (CI uses npm ci)
-pnpm add <package>    # or: npm install <package>
+# Install dependencies (either works; both lockfiles resolve the same tree)
+npm ci                # what CI and Husky run
+pnpm install --frozen-lockfile   # what Vercel runs
+# Add or change a package: npm first, then regenerate pnpm-lock.yaml — see above
 ```
 
 ## Architecture

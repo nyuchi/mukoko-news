@@ -17,7 +17,7 @@ The platform runs one MongoDB Atlas cluster with many **domain-separated databas
 
 ## Rule 2 — Keep both lockfiles in sync
 
-The repo ships **both** `package-lock.json` and `pnpm-lock.yaml`. CI and the Husky hook use **npm**; the docs use pnpm. If you change dependencies, update **both** lockfiles or CI's `npm ci` will drift from local installs.
+The repo ships **both** `package-lock.json` and `pnpm-lock.yaml`. CI and the Husky hook install with **npm**; **Vercel installs with pnpm** (pinned in `package.json#packageManager`). `package-lock.json` is the source and `pnpm-lock.yaml` is derived: change dependencies with npm, run `npm dedupe`, then `rm pnpm-lock.yaml && pnpm import`. Never `pnpm add`/`pnpm update` directly or hand-edit a lockfile. The `Lockfile parity` CI job (`scripts/check-lockfile-parity.mjs` + a frozen pnpm install) fails on any drift — see `CLAUDE.md` → Commands for why.
 
 ## Rule 3 — The pre-commit gate is real
 

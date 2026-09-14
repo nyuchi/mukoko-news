@@ -44,7 +44,7 @@ The Husky pre-commit hook runs `vitest related` → `typecheck` → `build` on s
 
 - [ ] New/changed pages mock `@/lib/actions/feed` (not `@/lib/api`) and match the documented return shapes.
 - [ ] Coverage stays above thresholds (60% statements/functions/lines, 50% branches).
-- [ ] Dependency changes update **both** `package-lock.json` and `pnpm-lock.yaml`.
+- [ ] Dependency changes update **both** lockfiles — `pnpm-lock.yaml` regenerated from `package-lock.json` with `pnpm import`, and the `Lockfile parity` check is green.
 - [ ] Conventional-commit message; PR opened as **draft**.
 
 ## Reviewing an automated PR (claude[bot] / CI autofix)
