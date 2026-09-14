@@ -18,6 +18,7 @@ import {
   getCoverageConcentration,
   getQueryFacets,
   MAX_WINDOW_DAYS,
+  ENRICHMENT_SCAN_LIMIT,
 } from '../mongodb/analytics';
 import { getDb } from '../mongodb/client';
 import { collectionStub, dbStub, type CollectionStub } from './helpers/mongo';
@@ -32,10 +33,33 @@ function useDb(collections: Record<string, CollectionStub>) {
   return collections;
 }
 
-/** A `$facet` output row shaped like the pipeline's, with only the parts a test cares about. */
-function facetRow(over: Record<string, unknown> = {}) {
-  return { total: [{ n: 100 }], ...over };
+/** One `$searchMeta` row, with only the facets a test cares about filled in. */
+function metaRow(over: Record<string, unknown> = {}) {
+  return {
+    count: { total: 200 },
+    facet: {
+      day: { buckets: [] },
+      source: { buckets: [] },
+      country: { buckets: [] },
+      category: { buckets: [] },
+      keyword: { buckets: [] },
+      sentiment: { buckets: [] },
+      ...over,
+    },
+  };
 }
+
+/** One `$facet` row from the bounded deep pass. */
+function deepRow(over: Record<string, unknown> = {}) {
+  return { read: [{ n: 200 }], ...over };
+}
+
+/** The shape the compound builder produces, as the assertions read it. */
+type SearchCompound = {
+  filter: Array<Record<string, { path: string; gte?: Date; lt?: Date; value?: string[] }>>;
+  mustNot: Array<{ text: { path: string; query: string } }>;
+  must?: Array<{ text: { query: string; path: string[] } }>;
+};
 
 beforeEach(() => {
   vi.mocked(getDb).mockReset();
@@ -90,165 +114,238 @@ describe('runCorpusQuery — fail-soft contract', () => {
   });
 
   it('returns the empty shape — not a half-populated one — when nothing matches', async () => {
-    useDb({ articles: collectionStub({ aggregate: [[facetRow({ total: [] })]] }) });
+    // A zero total short-circuits: every panel is empty by construction rather
+    // than by each one happening to be, so a half-built result cannot leak out.
+    const empty = { ...metaRow(), count: { total: 0 } };
+    useDb({ articles: collectionStub({ aggregate: [[empty], [deepRow({ read: [] })]] }) });
 
     const result = await runCorpusQuery({});
 
     expect(result.total).toBe(0);
     expect(result.series).toEqual([]);
+    expect(result.bySource).toEqual([]);
+    expect(result.sample).toEqual([]);
   });
 
   it('survives an aggregation that returns no rows at all', async () => {
-    useDb({ articles: collectionStub({ aggregate: [[]] }) });
+    useDb({ articles: collectionStub({ aggregate: [[], []] }) });
     expect((await runCorpusQuery({})).total).toBe(0);
   });
 });
 
-describe('runCorpusQuery — the text-search path', () => {
-  it('leads with Atlas Search and says so', async () => {
-    const articles = collectionStub({ aggregate: [[facetRow()]] });
+describe('runCorpusQuery — where the filters go', () => {
+  // This is the suite that exists because of the 2026-09-14 outage. Every
+  // query on the console timed out, and the cause was placement, not logic:
+  // the filters sat in a `$match` AFTER `$search`, so Atlas scored the whole
+  // index and fetched every hit before anything narrowed it (10,321 ms on a
+  // real query), while the no-term path fetched 42,061 documents to evaluate
+  // one unindexed field (18,971 ms). Both are past ANALYTICS_TIMEOUT_MS, so
+  // both rendered the fail-soft empty result. A filter that drifts back out of
+  // the compound reintroduces exactly that, silently and only at scale — which
+  // is why this is asserted structurally rather than left to a timing test.
+
+  function compoundFor(params: Parameters<typeof runCorpusQuery>[0]) {
+    const articles = collectionStub({ aggregate: [[metaRow()], [deepRow()]] });
     useDb({ articles });
-
-    const result = await runCorpusQuery({ q: 'cyclone' });
-
-    const pipeline = articles.aggregateCalls[0].pipeline as Array<Record<string, unknown>>;
-    expect(pipeline[0]).toHaveProperty('$search');
-    expect(result.usedSearchIndex).toBe(true);
-  });
-
-  it('degrades to a regex scan and reports usedSearchIndex: false', async () => {
-    // The index can be missing or still building. Reporting `true` regardless
-    // would have the UI claim stemmed, fuzzy relevance it did not get — the
-    // caption is the only way a reader can tell the results are cruder.
-    const articles = collectionStub({
-      aggregate: [new Error('index not found'), [facetRow()]],
+    return runCorpusQuery(params).then(() => {
+      const stage = (articles.aggregateCalls[0].pipeline as Array<{
+        $searchMeta: { facet: { operator: { compound: SearchCompound } } };
+      }>)[0];
+      return stage.$searchMeta.facet.operator.compound;
     });
-    useDb({ articles });
-
-    const result = await runCorpusQuery({ q: 'cyclone' });
-
-    expect(result.usedSearchIndex).toBe(false);
-    expect(result.total).toBe(100);
-    const fallback = articles.aggregateCalls[1].pipeline as Array<{ $match: { $or: unknown[] } }>;
-    expect(fallback[0].$match.$or).toHaveLength(2);
-  });
-
-  it('escapes regex metacharacters in the fallback', async () => {
-    // The term arrives from a query string on a public page. `.*` unescaped
-    // matches everything; an unbalanced `(` throws a SyntaxError mid-request.
-    const articles = collectionStub({ aggregate: [new Error('no index'), [facetRow({ total: [] })]] });
-    useDb({ articles });
-
-    await runCorpusQuery({ q: 'a.*b(' });
-
-    const fallback = articles.aggregateCalls[1].pipeline as Array<{
-      $match: { $or: Array<{ headline?: RegExp }> };
-    }>;
-    expect(fallback[0].$match.$or[0].headline?.source).toBe('a\\.\\*b\\(');
-  });
-
-  it('skips the search stage entirely when there is no term', async () => {
-    const articles = collectionStub({ aggregate: [[facetRow()]] });
-    useDb({ articles });
-
-    const result = await runCorpusQuery({});
-
-    const pipeline = articles.aggregateCalls[0].pipeline as Array<Record<string, unknown>>;
-    expect(pipeline[0]).not.toHaveProperty('$search');
-    expect(result.usedSearchIndex).toBe(false);
-  });
-});
-
-describe('runCorpusQuery — the $match it builds', () => {
-  function matchFor(params: Parameters<typeof runCorpusQuery>[0]) {
-    const articles = collectionStub({ aggregate: [[facetRow({ total: [] })]] });
-    useDb({ articles });
-    return runCorpusQuery(params).then(
-      () =>
-        (articles.aggregateCalls[0].pipeline as Array<{ $match: Record<string, unknown> }>)[0].$match
-    );
   }
 
-  it('always hides rejected and removed articles', async () => {
-    expect(await matchFor({})).toMatchObject({
-      status: { $ne: 'rejected' },
-      moderationStatus: { $ne: 'removed' },
-    });
+  it('puts the date window in the compound filter, never in a later $match', async () => {
+    const { filter } = await compoundFor({ from: '2026-08-01', to: '2026-08-10' });
+    const range = filter.find((f) => 'range' in f)?.range;
+    expect(range?.path).toBe('datePublished');
+    // `to` is an inclusive calendar day: an exclusive upper bound silently
+    // drops the most recent day from every chart.
+    expect(range?.gte?.toISOString()).toBe('2026-08-01T00:00:00.000Z');
+    expect(range?.lt?.toISOString()).toBe('2026-08-11T00:00:00.000Z');
   });
 
-  it('treats `to` as an inclusive calendar day', async () => {
-    // An exclusive upper bound silently drops the most recent day from every
-    // chart — the day a reader is most likely to be looking for.
-    const match = (await matchFor({ from: '2026-08-01', to: '2026-08-10' })) as {
-      datePublished: { $gte: Date; $lt: Date };
-    };
-    expect(match.datePublished.$gte.toISOString()).toBe('2026-08-01T00:00:00.000Z');
-    expect(match.datePublished.$lt.toISOString()).toBe('2026-08-11T00:00:00.000Z');
+  it('hides rejected and removed articles with mustNot, which is what $ne means', async () => {
+    // `mustNot` excludes the value AND keeps documents where the field is
+    // absent. A `filter` clause would drop every article that has never been
+    // moderated — which is all of them.
+    const { mustNot } = await compoundFor({});
+    expect(mustNot.map((m) => m.text.path)).toEqual(['status', 'moderationStatus']);
+    expect(mustNot.map((m) => m.text.query)).toEqual(['rejected', 'removed']);
   });
 
   it('filters country on the article’s own countryCode, with no feedSources join', async () => {
-    // `countryCode` is written by both collectors at ingestion. Joining
-    // feedSources here (as the older article list path still must) would add a
-    // round trip for a field the document already carries.
-    expect(await matchFor({ countries: ['zw', 'NG'] })).toMatchObject({
-      countryCode: { $in: ['ZW', 'NG'] },
-    });
+    const { filter } = await compoundFor({ countries: ['zw', 'NG'] });
+    expect(filter).toContainEqual({ in: { path: 'countryCode', value: ['ZW', 'NG'] } });
   });
 
-  it('applies source, sentiment and quality filters', async () => {
-    const match = await matchFor({
+  it('carries source, category, sentiment and quality into the compound', async () => {
+    const { filter } = await compoundFor({
       sources: ['src-1'],
+      categories: ['Health'],
       sentiments: ['positive'],
       minQuality: 0.5,
     });
-    expect(match).toMatchObject({
-      feedSourceId: { $in: ['src-1'] },
-      aiSentiment: { $in: ['positive'] },
-      qualityScore: { $gte: 0.5 },
+    expect(filter).toContainEqual({ in: { path: 'feedSourceId', value: ['src-1'] } });
+    expect(filter).toContainEqual({
+      in: { path: 'engagement.interest_categories', value: ['health'] },
     });
-  });
-
-  it('matches categories case-insensitively and anchored', async () => {
-    const match = (await matchFor({ categories: ['Health'] })) as Record<string, { $in: RegExp[] }>;
-    expect(match['engagement.interest_categories'].$in).toEqual([/^health$/i]);
+    expect(filter).toContainEqual({ in: { path: 'aiSentiment', value: ['positive'] } });
+    expect(filter).toContainEqual({ range: { path: 'qualityScore', gte: 0.5 } });
   });
 
   it('omits a filter entirely when it was not asked for', async () => {
-    // A `$in: []` matches nothing, so an empty filter that is still emitted
-    // turns "no filter" into "no results".
-    const match = await matchFor({});
-    expect(match).not.toHaveProperty('countryCode');
-    expect(match).not.toHaveProperty('feedSourceId');
-    expect(match).not.toHaveProperty('qualityScore');
-    expect(match).not.toHaveProperty('engagement.interest_categories');
+    // An `in` with an empty value list matches nothing, so an empty filter that
+    // is still emitted turns "no filter" into "no results".
+    const { filter } = await compoundFor({});
+    expect(filter.map((f) => Object.values(f)[0].path)).toEqual(['datePublished']);
+  });
+
+  it('puts the term in must, against the analyzed paths, with no fuzzy expansion', async () => {
+    // Fuzzy matching was removed, not forgotten. On the live index it expanded
+    // "accidents in Zimbabwe" into junk terms — `accio`, `accis`, `accèd`, and
+    // soft-hyphen `zim­babw` — that matched noise and cost most of the 10 s.
+    const { must } = await compoundFor({ q: 'cyclone' });
+    expect(must).toEqual([
+      { text: { query: 'cyclone', path: ['headline', 'description', 'articleBodyProcessed'] } },
+    ]);
+  });
+});
+
+describe('runCorpusQuery — index selection', () => {
+  function callsFor(params: Parameters<typeof runCorpusQuery>[0]) {
+    const articles = collectionStub({ aggregate: [[metaRow()], [deepRow()]] });
+    useDb({ articles });
+    return runCorpusQuery(params).then((result) => ({ result, calls: articles.aggregateCalls }));
+  }
+
+  it('counts on articles_insights when there is no term', async () => {
+    const { calls, result } = await callsFor({});
+    const stage = (calls[0].pipeline as Array<{ $searchMeta: { index: string } }>)[0];
+    expect(stage.$searchMeta.index).toBe('articles_insights');
+    expect(result.exact).toBe(true);
+    expect(result.usedSearchIndex).toBe(false);
+  });
+
+  it('counts on articles_text_search when there is a term, and says so', async () => {
+    const { calls, result } = await callsFor({ q: 'cyclone' });
+    const stage = (calls[0].pipeline as Array<{ $searchMeta: { index: string } }>)[0];
+    expect(stage.$searchMeta.index).toBe('articles_text_search');
+    expect(result.exact).toBe(true);
+    expect(result.usedSearchIndex).toBe(true);
+  });
+
+  it('asks for an exact total, not the default lower bound', async () => {
+    // An approximate headline figure printed beside exact per-bucket counts
+    // reads as a bug, and the two would not add up.
+    const { calls } = await callsFor({});
+    const stage = (calls[0].pipeline as Array<{ $searchMeta: { count: unknown } }>)[0];
+    expect(stage.$searchMeta.count).toEqual({ type: 'total' });
+  });
+
+  it('gives the day facet one more boundary than the window has days', async () => {
+    // A date facet keys each bucket by its LOWER boundary, so N days need N+1
+    // edges. One short and the last day of every chart is missing.
+    const { calls } = await callsFor({ from: '2026-08-01', to: '2026-08-10' });
+    const stage = (calls[0].pipeline as Array<{
+      $searchMeta: { facet: { facets: { day: { boundaries: Date[] } } } };
+    }>)[0];
+    expect(stage.$searchMeta.facet.facets.day.boundaries).toHaveLength(11);
+  });
+
+  it('skips the facet pass entirely when no index can express the query', async () => {
+    // A term needs the analyzed text; a category needs the enrichment fields;
+    // no single index has both. Rather than silently dropping whichever filter
+    // does not fit, the deep pass answers alone and the result says it is not
+    // counted over the whole match.
+    const articles = collectionStub({ aggregate: [[deepRow({ read: [{ n: 7 }] })]] });
+    useDb({ articles });
+
+    const result = await runCorpusQuery({ q: 'cyclone', categories: ['health'] });
+
+    expect(articles.aggregateCalls).toHaveLength(1);
+    expect(articles.aggregateCalls[0].pipeline[0]).toHaveProperty('$search');
+    expect(result.exact).toBe(false);
+    expect(result.total).toBe(7);
+  });
+});
+
+describe('runCorpusQuery — the bounded deep pass', () => {
+  function deepPipelineFor(params: Parameters<typeof runCorpusQuery>[0] = {}) {
+    const articles = collectionStub({ aggregate: [[metaRow()], [deepRow()]] });
+    useDb({ articles });
+    return runCorpusQuery(params).then(
+      () => articles.aggregateCalls[1].pipeline as Array<Record<string, unknown>>
+    );
+  }
+
+  it('bounds the id lookup immediately after $search', async () => {
+    // `$limit` placed after the `$match` would not help: Atlas materialises
+    // every `$search` hit before any later stage sees it, and that fetch is
+    // what took 17.6 of the 19 seconds. The bound has to come first.
+    const pipeline = await deepPipelineFor();
+    expect(pipeline[0]).toHaveProperty('$search');
+    expect(pipeline[1]).toEqual({ $limit: ENRICHMENT_SCAN_LIMIT });
+  });
+
+  it('still applies the query in MQL, so a sampled article passed every filter', async () => {
+    // The compound is a fast approximation; this `$match` is the query's truth,
+    // and it is what keeps a removed article out of the sample list — the one
+    // place a human would actually be shown one.
+    const pipeline = await deepPipelineFor({ categories: ['health'] });
+    const match = (pipeline[2] as { $match: Record<string, unknown> }).$match;
+    expect(match).toMatchObject({
+      status: { $ne: 'rejected' },
+      moderationStatus: { $ne: 'removed' },
+    });
+    expect((match as Record<string, { $in: RegExp[] }>)['engagement.interest_categories'].$in)
+      .toEqual([/^health$/i]);
+  });
+
+  it('clamps the sample limit before it reaches the pipeline', async () => {
+    const articles = collectionStub({ aggregate: [[metaRow()], [deepRow()]] });
+    useDb({ articles });
+
+    await runCorpusQuery({ sampleLimit: 100_000 });
+
+    expect(JSON.stringify(articles.aggregateCalls[1].pipeline)).toContain('"$limit":100');
   });
 });
 
 describe('runCorpusQuery — result shaping', () => {
-  const fullFacets = facetRow({
-    total: [{ n: 200 }],
-    series: [{ _id: '2026-08-02', count: 3 }],
-    bySource: [{ _id: 'src-1', count: 120, country: 'ZW' }],
-    byCountry: [
-      { _id: 'ZW', count: 120, sources: 4 },
-      { _id: '', count: 5, sources: 1 },
-    ],
-    byCategory: [{ _id: 'politics', count: 50 }],
-    byKeyword: [
-      { _id: 'load shedding', count: 30 },
-      { _id: 'zimbabwe', count: 29 },
-      { _id: 'a', count: 28 },
-    ],
+  const meta = metaRow({
+    day: { buckets: [{ _id: new Date('2026-08-02T00:00:00.000Z'), count: 3 }] },
+    source: { buckets: [{ _id: 'src-1', count: 120 }] },
+    country: {
+      buckets: [
+        { _id: 'ZW', count: 120 },
+        { _id: '', count: 5 },
+      ],
+    },
+    category: { buckets: [{ _id: 'politics', count: 50 }] },
+    keyword: {
+      buckets: [
+        { _id: 'load shedding', count: 30 },
+        { _id: 'zimbabwe', count: 29 },
+        { _id: 'a', count: 28 },
+      ],
+    },
+    sentiment: {
+      buckets: [
+        { _id: 'positive', count: 10 },
+        { _id: 'negative', count: 30 },
+      ],
+    },
+  });
+
+  const deep = deepRow({
+    read: [{ n: 150 }],
     byEntity: [
       { _id: { name: 'ZESA', type: 'ORGANIZATION' }, count: 12 },
       { _id: { name: 'news', type: 'ORGANIZATION' }, count: 11 },
     ],
     byAuthor: [{ _id: 'Herald Reporter', count: 8 }],
-    bylineCovered: [{ n: 40 }],
-    sentiment: [
-      { _id: 'positive', count: 10 },
-      { _id: 'negative', count: 30 },
-    ],
+    bylineCovered: [{ n: 30 }],
     quality: [{ avg: 0.76543, n: 90 }],
     sample: [
       {
@@ -265,15 +362,22 @@ describe('runCorpusQuery — result shaping', () => {
     ],
   });
 
-  async function run(over: Record<string, unknown> = {}) {
+  async function run(overMeta: Record<string, unknown> = {}, overDeep: Record<string, unknown> = {}) {
     useDb({
-      articles: collectionStub({ aggregate: [[{ ...fullFacets, ...over }]] }),
-      feedSources: collectionStub({ find: [[{ _id: 'src-1', name: 'The Herald' }]] }),
+      articles: collectionStub({
+        // `overMeta` names FACETS, which live under `.facet` — spreading it at
+        // the top level silently left the original facet in place.
+        aggregate: [
+          [{ ...meta, facet: { ...meta.facet, ...overMeta } }],
+          [{ ...deep, ...overDeep }],
+        ],
+      }),
+      feedSources: collectionStub({ find: [[{ _id: 'src-1', name: 'The Herald', countryCode: 'ZW' }]] }),
     });
     return runCorpusQuery({ from: '2026-08-01', to: '2026-08-03' });
   }
 
-  it('zero-fills the daily series so a quiet day reads as 0, not as a gap', async () => {
+  it('reads the daily series off the date facet and zero-fills the quiet days', async () => {
     // A gap in a time series is read as "we have no data"; a zero is read as
     // "nothing was published". They are different editorial facts, and a line
     // chart that skips the day draws a slope through it.
@@ -291,9 +395,15 @@ describe('runCorpusQuery — result shaping', () => {
     expect(result.sample[0].source).toBe('The Herald');
   });
 
+  it('takes a source’s country from the source record, not from one article', async () => {
+    // The old pipeline used `$first: '$countryCode'` over the grouped
+    // articles — the same answer, reached by reading every document.
+    expect((await run()).bySource[0].country).toBe('ZW');
+  });
+
   it('falls back to the raw id when a source row has gone', async () => {
     useDb({
-      articles: collectionStub({ aggregate: [[fullFacets]] }),
+      articles: collectionStub({ aggregate: [[meta], [deep]] }),
       feedSources: collectionStub({ find: [[]] }),
     });
     const result = await runCorpusQuery({ from: '2026-08-01', to: '2026-08-03' });
@@ -301,50 +411,44 @@ describe('runCorpusQuery — result shaping', () => {
   });
 
   it('drops a blank country bucket rather than labelling it', async () => {
-    // ~23% of the corpus carried no countryCode for a month. An empty bucket
-    // would render as a nameless bar sitting near the top of the chart.
     const result = await run();
     expect(result.byCountry.map((c) => c.code)).toEqual(['ZW']);
-    expect(result.byCountry[0].name).toBe('Zimbabwe');
   });
 
   it('drops boilerplate and country tokens from the topic ranking', async () => {
-    // Feed-supplied keywords are polluted with section names and the
-    // publication's own country, which otherwise dominate a "top topics" panel
-    // with entries that carry no information at all.
     const result = await run();
     expect(result.byKeyword.map((k) => k.term)).toEqual(['load shedding']);
-    expect(result.byEntity.map((e) => e.name)).toEqual(['ZESA']);
   });
 
-  it('reports coverage alongside every metric computed on an enriched subset', async () => {
-    // Sentiment and quality only exist on enriched articles. Presenting the
-    // average without the coverage would state a figure derived from 45% of the
-    // match as though it described all of it.
+  it('reports enriched-subset coverage against what it actually read, not the total', async () => {
+    // The facets counted the whole match (200); the deep pass read 150
+    // documents. Reporting 90 quality scores as a share of 200 would understate
+    // coverage by whatever the scan bound cut off — on a 42,000-article window
+    // that is the difference between "96% of what we read" and "4%".
     const result = await run();
-    expect(result.sentiment).toEqual({
-      positive: 10,
-      neutral: 0,
-      negative: 30,
-      mixed: 0,
-      covered: 40,
-      coverage: 20,
-    });
-    expect(result.quality).toEqual({ avg: 0.765, covered: 90, coverage: 45 });
-    expect(result.bylineCoverage).toEqual({ covered: 40, coverage: 20 });
+    expect(result.deepScanned).toBe(150);
+    expect(result.quality).toMatchObject({ avg: 0.765, covered: 90, coverage: 60 });
+    expect(result.bylineCoverage).toEqual({ covered: 30, coverage: 20 });
+  });
+
+  it('reports sentiment against the full total when the facet counted it', async () => {
+    // Sentiment comes from the index on this path, so it covers the whole
+    // match and its denominator is the total — unlike quality, which cannot be
+    // averaged by a facet at all.
+    const result = await run();
+    expect(result.sentiment).toMatchObject({ positive: 10, negative: 30, covered: 40, coverage: 20 });
   });
 
   it('reports zero coverage — not a missing key — when nothing is enriched', async () => {
-    const result = await run({ sentiment: [], quality: [], bylineCovered: [] });
-    expect(result.sentiment.coverage).toBe(0);
+    const result = await run({ sentiment: { buckets: [] } }, { quality: [], bylineCovered: [] });
+    expect(result.sentiment).toMatchObject({ covered: 0, coverage: 0 });
     expect(result.quality).toEqual({ avg: 0, covered: 0, coverage: 0 });
-    expect(result.bylineCoverage).toEqual({ covered: 0, coverage: 0 });
   });
 
   it('normalises a sample row that is missing every optional field', async () => {
-    // An un-enriched, image-less, dateless article is the common case for
-    // anything ingested in the last few minutes; the sample table must render it.
-    const result = await run({ sample: [{ _id: 'bare' }] });
+    // Enrichment lands minutes after ingestion, so the newest articles carry
+    // none of it; the sample table must render them rather than throw.
+    const result = await run({}, { sample: [{ _id: 'bare' }] });
     expect(result.sample[0]).toEqual({
       id: 'bare',
       headline: '(untitled)',
@@ -361,26 +465,17 @@ describe('runCorpusQuery — result shaping', () => {
   it('skips the feedSources round trip when there are no ids to resolve', async () => {
     const feedSources = collectionStub({ find: [[]] });
     useDb({
-      articles: collectionStub({ aggregate: [[facetRow({ bySource: [], sample: [] })]] }),
+      articles: collectionStub({
+        aggregate: [[metaRow({ source: { buckets: [] } })], [deepRow({ sample: [] })]],
+      }),
       feedSources,
     });
+
     await runCorpusQuery({});
-    expect(feedSources.find).not.toHaveBeenCalled();
-  });
 
-  it('clamps the sample limit before it reaches the pipeline', async () => {
-    const articles = collectionStub({ aggregate: [[facetRow({ total: [] })]] });
-    useDb({ articles });
-
-    await runCorpusQuery({ sampleLimit: 100_000 });
-
-    expect(JSON.stringify(articles.aggregateCalls[0].pipeline)).toContain('"$limit":100');
+    expect(feedSources.findCalls).toHaveLength(0);
   });
 });
-
-// ───────────────────────────────────────────────────────────────────────────
-// getCoverageConcentration
-// ───────────────────────────────────────────────────────────────────────────
 
 describe('getCoverageConcentration', () => {
   const rows = [

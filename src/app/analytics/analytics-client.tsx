@@ -589,6 +589,9 @@ export default function AnalyticsClient({
     startTransition(() => router.push(`/analytics?${sp.toString()}`))
   }
 
+  /** True when the document-backed panels saw less than the whole match. */
+  const deepIsPartial = result.deepScanned > 0 && result.deepScanned < result.total
+
   const exportHref = useMemo(() => {
     const sp = buildParams()
     sp.set('format', 'csv')
@@ -753,6 +756,22 @@ export default function AnalyticsClient({
                 </span>
               )}
             </p>
+            {/*
+              A sampled count rendered as a corpus count is the exact failure
+              this console is built to avoid, so the one query shape that cannot
+              be counted exactly says so where the number is, not in a footnote.
+              A term needs the analyzed text index; a category, sentiment or
+              quality filter needs the enrichment index; no single index has
+              both.
+            */}
+            {!result.exact && result.total > 0 && (
+              <p className="mt-1 text-xs text-warning">
+                Counted over the {formatNumber(result.deepScanned)} best-matching article
+                {result.deepScanned === 1 ? '' : 's'}, not the whole corpus — a text search
+                combined with a category filter has no single index that can count it exactly.
+                Drop one of the two for exact figures.
+              </p>
+            )}
           </div>
           {result.total > 0 && (
             <a
@@ -813,7 +832,7 @@ export default function AnalyticsClient({
                     key: c.code,
                     label: c.name,
                     value: c.count,
-                    meta: `${c.sources} source${c.sources === 1 ? '' : 's'}`,
+                    meta: `${c.share}%`,
                     href: `/analytics?${query.q ? `q=${encodeURIComponent(query.q)}&` : ''}country=${c.code}`,
                   }))}
                 />
@@ -829,7 +848,11 @@ export default function AnalyticsClient({
 
               <Section
                 title="Named entities"
-                caption="People, organizations and places the enrichment model identified. Click to pivot the query."
+                caption={
+                  deepIsPartial
+                    ? `People, organizations and places the enrichment model identified, counted over the ${formatNumber(result.deepScanned)} best-matching articles. Click to pivot the query.`
+                    : 'People, organizations and places the enrichment model identified. Click to pivot the query.'
+                }
               >
                 <EntityGroups entities={result.byEntity} />
               </Section>
@@ -854,10 +877,20 @@ export default function AnalyticsClient({
                         value: a.count,
                       }))}
                     />
+                    {/*
+                      The denominator is what the deep pass READ, not the match
+                      total. Bylines come from the documents (no Search mapping
+                      carries `author.name`), so quoting the total here would
+                      divide a scanned numerator by a corpus denominator and
+                      report a real 96% as 4%.
+                    */}
                     <p className="mt-3 text-[11px] text-text-tertiary">
-                      Only {formatNumber(result.bylineCoverage.covered)} of{' '}
-                      {formatNumber(result.total)} matching articles ({result.bylineCoverage.coverage}
-                      %) carry a byline, so this ranks a small slice — not the newsroom.
+                      Only {formatNumber(result.bylineCoverage.covered)} of the{' '}
+                      {formatNumber(result.deepScanned)} article
+                      {result.deepScanned === 1 ? '' : 's'} read for this panel (
+                      {result.bylineCoverage.coverage}%) carry a byline, so this ranks a small
+                      slice — not the newsroom.
+                      {deepIsPartial && ' Read from the best-matching articles in the window.'}
                     </p>
                   </>
                 ) : (

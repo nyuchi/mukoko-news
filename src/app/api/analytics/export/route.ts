@@ -89,6 +89,15 @@ function toCsv(data: Result): string {
   lines.push(`# to,${q.to}`)
   lines.push(`# total_articles,${data.total}`)
   lines.push(`# text_match,${data.usedSearchIndex ? 'atlas_search' : 'substring_fallback'}`)
+  // A downloaded file outlives the page that explains it, so the two figures
+  // that qualify every number below travel with it. `counted_over` is `exact`
+  // when the totals were counted across the whole match in the Search index,
+  // and `sampled` when they could not be (a text term plus an enrichment
+  // filter). `documents_read` is the denominator for the byline and named
+  // entity sections, which are read from documents rather than counted by a
+  // facet — dividing those by total_articles gives a wrong coverage figure.
+  lines.push(`# counted_over,${data.exact ? 'exact' : 'sampled'}`)
+  lines.push(`# documents_read,${data.deepScanned}`)
   lines.push('')
 
   lines.push('## daily_volume')
@@ -104,9 +113,14 @@ function toCsv(data: Result): string {
   lines.push('')
 
   lines.push('## countries')
-  lines.push(csvRow(['country_code', 'country_name', 'article_count', 'share_pct', 'distinct_sources']))
+  // No `distinct_sources` column: the country breakdown is now counted by an
+  // Atlas Search facet, and a facet counts documents per value — it cannot also
+  // count the distinct sources behind them. `## coverage_concentration` in the
+  // Insights export answers that question properly; a column that can never
+  // hold a value is worse than an absent one.
+  lines.push(csvRow(['country_code', 'country_name', 'article_count', 'share_pct']))
   for (const c of data.byCountry) {
-    lines.push(csvRow([c.code, c.name, c.count, c.share, c.sources]))
+    lines.push(csvRow([c.code, c.name, c.count, c.share]))
   }
   lines.push('')
 

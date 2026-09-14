@@ -182,8 +182,6 @@ export interface CountryRow {
   name: string
   count: number
   share: number
-  /** Distinct sources contributing to this country within the query window. */
-  sources: number
 }
 
 export interface TermRow {
@@ -236,8 +234,24 @@ export interface CorpusQueryResult {
   query: NormalizedQuery
   /** Total articles matching the query. */
   total: number
-  /** True when the text term ran through Atlas Search rather than the regex fallback. */
+  /** True when the text term ran through Atlas Search. */
   usedSearchIndex: boolean
+  /**
+   * Whether `total` and the breakdowns were counted over the WHOLE match.
+   *
+   * True on every path but one: a text term combined with a category, sentiment
+   * or quality filter has no single Search index that can express it (see
+   * `chooseIndex`), so those figures come from the highest-scoring
+   * `deepScanned` matches instead. The UI must say so — a sampled count
+   * rendered as a corpus count is the failure this module is built to avoid.
+   */
+  exact: boolean
+  /**
+   * Documents actually read for the panels no Search mapping carries — named
+   * entities, bylines, the quality average. Their `coverage` is a share of
+   * THIS, not of `total`.
+   */
+  deepScanned: number
   series: SeriesPoint[]
   bySource: SourceRow[]
   byCountry: CountryRow[]
@@ -258,6 +272,8 @@ function emptyResult(query: NormalizedQuery): CorpusQueryResult {
     query,
     total: 0,
     usedSearchIndex: false,
+    exact: true,
+    deepScanned: 0,
     series: [],
     bySource: [],
     byCountry: [],
@@ -346,7 +362,15 @@ export function normalizeQuery(params: CorpusQueryParams): NormalizedQuery {
   }
 }
 
-/** Build the structured `$match` shared by every stage of the query. */
+/** Build the structured `$match` that is the QUERY'S TRUTH.
+ *
+ * Every filter the caller asked for, in MQL, with no regard for what an index
+ * can serve. The deep pass below applies it verbatim, so a document that
+ * reaches the sample list or an entity count has passed every filter. The
+ * Search compound is a fast approximation OF this; where the two can diverge
+ * (see `chooseIndex`) the result says so rather than quietly reporting the
+ * looser one.
+ */
 function buildMatch(query: NormalizedQuery): Filter<Document> {
   const filter: Filter<Document> = { ...BASE_MATCH }
 
@@ -371,17 +395,190 @@ function buildMatch(query: NormalizedQuery): Filter<Document> {
   return filter
 }
 
-/**
- * The one aggregation that produces every panel.
- *
- * `$facet` keeps this to a single round trip over the matched set — the
- * breakdowns all read the same documents, so computing them separately would
- * re-scan the corpus once per panel.
- */
-function buildFacets(sampleLimit: number): Document {
-  return {
-    total: [{ $count: 'n' }],
+// ---------------------------------------------------------------------------
+// Atlas Search: the counting half
+// ---------------------------------------------------------------------------
 
+/**
+ * Why this module no longer counts by reading documents.
+ *
+ * Measured on the live cluster 2026-09-14, the console answered NOTHING — every
+ * query, including every suggested question, rendered the fail-soft empty
+ * result. Both of its paths were past `ANALYTICS_TIMEOUT_MS`:
+ *
+ *   - No term. A bare `$count` over a default 30-day window took **18,971 ms**.
+ *     The index scan was fine (42,062 keys, 975 ms); the cost was the FETCH —
+ *     42,061 individual document seeks, 17,663 ms, taken purely to evaluate
+ *     `moderationStatus`, which no index carries. At ~25 KB per document that
+ *     is ~1 GB read to answer a single integer, and the eleven-branch `$facet`
+ *     behind it read the same documents again.
+ *
+ *   - With a term. The user's own query, "accidents in Zimbabwe", took
+ *     **10,321 ms**. `$search` ran with `"filter": []` — the date range sat in a
+ *     `$match` AFTER it — so it scored all 67,532 indexed documents across 17
+ *     segments and id-looked-up every hit before anything narrowed it. The
+ *     `fuzzy` expansion made that worse for nothing, generating junk terms
+ *     (`accio`, `accis`, `accèd`, and soft-hyphen `zim­babw`) that matched
+ *     noise; it is gone.
+ *
+ * The replacement counts in the index instead. The same 30-day window through
+ * `$searchMeta` returns the identical total — 42,061 — in milliseconds, and
+ * `count: {type: 'total'}` makes it exact rather than the default lower bound.
+ * This is the same move `insights.ts` made for the same reason on the same
+ * collection; the console simply had not had it yet.
+ */
+const TEXT_PATHS = ['headline', 'description', 'articleBodyProcessed']
+
+type SearchIndexName = 'articles_text_search' | 'articles_insights'
+
+/**
+ * How many matched documents the deep pass may read.
+ *
+ * Anything a facet can count is counted by a facet, exactly, over the whole
+ * match. This bound applies only to the panels no Search mapping can serve —
+ * named entities, bylines, and the quality AVERAGE (a facet counts documents
+ * per value; it cannot average a field across them). The result carries
+ * `deepScanned`, so a partial pass is captioned rather than presented as the
+ * whole corpus.
+ *
+ * 2,000 documents is ~1 s against this collection, well inside the timeout.
+ */
+export const ENRICHMENT_SCAN_LIMIT = 2000
+
+/**
+ * Which Search index can express this query — or `null` when none can.
+ *
+ * The two indexes are deliberately disjoint and neither is a superset:
+ * `articles_text_search` has the analyzed text but none of the enrichment
+ * fields; `articles_insights` has every enrichment field but no text (that is
+ * the point of it — no bodies, so a mapping change here can never take search
+ * down). A query needing both at once therefore has no exact index, and rather
+ * than silently dropping whichever filter does not fit, that case falls to the
+ * deep pass and is reported as `exact: false`.
+ *
+ * Making it exact means putting the analyzed text into `articles_insights`,
+ * which is a second full-body Lucene index — not affordable on an M20 whose
+ * search nodes are the same nodes ingestion is already contending for.
+ */
+function chooseIndex(query: NormalizedQuery): SearchIndexName | null {
+  const needsEnrichmentFilter =
+    query.categories.length > 0 || query.sentiments.length > 0 || query.minQuality !== null
+  if (!query.q) return 'articles_insights'
+  return needsEnrichmentFilter ? null : 'articles_text_search'
+}
+
+/** UTC day edges for the window: `days + 1` boundaries produce `days` buckets. */
+function dayBoundaries(query: NormalizedQuery): Date[] {
+  const start = new Date(`${query.from}T00:00:00.000Z`).getTime()
+  return Array.from({ length: query.days + 1 }, (_, i) => new Date(start + i * 86_400_000))
+}
+
+/**
+ * The Search compound for this query against `index`.
+ *
+ * Every filter goes in the compound, never in a following `$match`: that
+ * placement is the whole difference between 10 seconds and 10 milliseconds,
+ * because a filter inside `$search` narrows before Lucene scores and before
+ * Atlas fetches a single document.
+ *
+ * `mustNot` is the exact semantics of `$ne` — it excludes the named value AND
+ * keeps documents where the field is absent, which is what `BASE_MATCH` means.
+ * `moderationStatus` is NOT mapped in either index, so that clause is currently
+ * inert (verified: Atlas accepts an unmapped path in `mustNot` without error).
+ * It is written anyway because it costs nothing and becomes live the moment the
+ * field is mapped — and because it is true today regardless: measured
+ * 2026-09-14, `moderationStatus` is `removed` on 0 of 65,813 articles and
+ * `flagged` on 0, so the moderation path has never once been exercised. The
+ * deep pass applies it in MQL for real, which is what keeps a removed article
+ * out of the sample list — the only place one would be shown to a person.
+ */
+function buildCompound(query: NormalizedQuery, index: SearchIndexName): Document {
+  const { $gte: gte, $lt: lt } = buildMatch(query).datePublished as { $gte: Date; $lt: Date }
+
+  const filter: Document[] = [{ range: { path: 'datePublished', gte, lt } }]
+  if (query.countries.length) filter.push({ in: { path: 'countryCode', value: query.countries } })
+  if (query.sources.length) filter.push({ in: { path: 'feedSourceId', value: query.sources } })
+
+  if (index === 'articles_insights') {
+    if (query.categories.length) {
+      filter.push({ in: { path: 'engagement.interest_categories', value: query.categories } })
+    }
+    if (query.sentiments.length) filter.push({ in: { path: 'aiSentiment', value: query.sentiments } })
+    if (query.minQuality !== null) {
+      filter.push({ range: { path: 'qualityScore', gte: query.minQuality } })
+    }
+  }
+
+  const compound: Document = {
+    filter,
+    mustNot: [
+      { text: { path: 'status', query: 'rejected' } },
+      { text: { path: 'moderationStatus', query: 'removed' } },
+    ],
+  }
+  if (query.q) compound.must = [{ text: { query: query.q, path: TEXT_PATHS } }]
+  return compound
+}
+
+/** The facets `index` can answer, keyed to the panels that consume them. */
+function buildMetaFacets(query: NormalizedQuery, index: SearchIndexName): Document {
+  const facets: Document = {
+    day: { type: 'date', path: 'datePublished', boundaries: dayBoundaries(query) },
+    source: { type: 'string', path: 'feedSourceId', numBuckets: 25 },
+    // 54 member states plus whatever provenance has mis-stamped; 60 leaves room
+    // rather than truncating the tail into a wrong denominator.
+    country: { type: 'string', path: 'countryCode', numBuckets: 60 },
+  }
+
+  if (index === 'articles_insights') {
+    // 200 because `engagement.interest_categories` carries 52 distinct values,
+    // not the platform's 40 — the pipeline's pre-rebuild vocabulary is still in
+    // the corpus. Truncating the tail would also make every share wrong, since
+    // the denominator is the sum of the buckets returned.
+    facets.category = { type: 'string', path: 'engagement.interest_categories', numBuckets: 200 }
+    // Over-fetched: the stopword filter runs after the counts.
+    facets.keyword = { type: 'string', path: 'aiKeywords', numBuckets: 80 }
+    facets.sentiment = { type: 'string', path: 'aiSentiment', numBuckets: 10 }
+  }
+  return facets
+}
+
+type MetaBucket = { _id: unknown; count: number }
+type SearchMetaResult = {
+  count?: { total?: number }
+  facet?: Record<string, { buckets?: MetaBucket[] }>
+}
+
+const bucketsOf = (meta: SearchMetaResult | undefined, name: string): MetaBucket[] =>
+  meta?.facet?.[name]?.buckets ?? []
+
+/** Facet buckets → `TermRow[]`, dropping empties and anything not a string. */
+function termRows(buckets: MetaBucket[]): TermRow[] {
+  return buckets
+    .filter((b): b is { _id: string; count: number } => typeof b._id === 'string' && b._id.length > 0)
+    .map((b) => ({ term: b._id, count: Number(b.count) }))
+}
+
+/**
+ * The panels no Search mapping can serve, read from the documents themselves.
+ *
+ * Bounded by `ENRICHMENT_SCAN_LIMIT`. The `$limit` sits immediately after
+ * `$search` on purpose: it bounds the id lookup, which is the stage that made
+ * the old pipeline unservable. When the compound could not carry every filter
+ * (`chooseIndex` returned null) the remaining ones are applied here in MQL, so
+ * what this pass reports is always the query the caller actually asked for —
+ * over the highest-scoring `ENRICHMENT_SCAN_LIMIT` matches rather than all of
+ * them, which is what `deepScanned` exists to disclose.
+ */
+function buildDeepFacets(sampleLimit: number): Document {
+  return {
+    read: [{ $count: 'n' }],
+
+    // These three duplicate facets the index answers exactly. They are here for
+    // the one case that has no exact index — a text term combined with an
+    // enrichment filter — where this pass IS the query. On every other path the
+    // facet values win and these are ignored; computing them costs nothing,
+    // since the documents are already in the pipeline.
     series: [
       {
         $group: {
@@ -393,42 +590,14 @@ function buildFacets(sampleLimit: number): Document {
     ],
 
     bySource: [
-      { $group: { _id: '$feedSourceId', count: { $sum: 1 }, country: { $first: '$countryCode' } } },
+      { $group: { _id: '$feedSourceId', count: { $sum: 1 } } },
       { $sort: { count: -1 } },
       { $limit: 25 },
     ],
 
     byCountry: [
-      {
-        $group: {
-          _id: '$countryCode',
-          count: { $sum: 1 },
-          sources: { $addToSet: '$feedSourceId' },
-        },
-      },
-      { $project: { count: 1, sources: { $size: '$sources' } } },
+      { $group: { _id: '$countryCode', count: { $sum: 1 } } },
       { $sort: { count: -1 } },
-    ],
-
-    byCategory: [
-      { $unwind: '$engagement.interest_categories' },
-      { $group: { _id: '$engagement.interest_categories', count: { $sum: 1 } } },
-      { $match: { _id: { $type: 'string', $ne: '' } } },
-      { $sort: { count: -1 } },
-      { $limit: 20 },
-    ],
-
-    // Ranked from `aiKeywords` (enrichment output), NOT `engagement.tags`:
-    // tags carry the raw RSS <category> terms, whose top entries are feed
-    // boilerplate. Over-fetched so the stopword filter can drop entries
-    // without leaving the list short.
-    byKeyword: [
-      { $match: { aiKeywords: { $type: 'array' } } },
-      { $unwind: '$aiKeywords' },
-      { $group: { _id: '$aiKeywords', count: { $sum: 1 } } },
-      { $match: { _id: { $type: 'string', $ne: '' } } },
-      { $sort: { count: -1 } },
-      { $limit: 80 },
     ],
 
     byEntity: [
@@ -457,14 +626,37 @@ function buildFacets(sampleLimit: number): Document {
 
     bylineCovered: [{ $match: { 'author.name': { $type: 'string', $ne: '' } } }, { $count: 'n' }],
 
+    quality: [
+      { $match: { qualityScore: { $type: 'number', $gt: 0 } } },
+      { $group: { _id: null, avg: { $avg: '$qualityScore' }, n: { $sum: 1 } } },
+    ],
+
+    // Only needed when the term forced `articles_text_search`, which maps no
+    // enrichment field. Computing it unconditionally costs nothing — the
+    // documents are already in the pipeline — and keeps one code path.
     sentiment: [
       { $match: { aiSentiment: { $type: 'string' } } },
       { $group: { _id: '$aiSentiment', count: { $sum: 1 } } },
     ],
 
-    quality: [
-      { $match: { qualityScore: { $type: 'number', $gt: 0 } } },
-      { $group: { _id: null, avg: { $avg: '$qualityScore' }, n: { $sum: 1 } } },
+    byCategory: [
+      { $unwind: '$engagement.interest_categories' },
+      { $group: { _id: '$engagement.interest_categories', count: { $sum: 1 } } },
+      { $match: { _id: { $type: 'string', $ne: '' } } },
+      { $sort: { count: -1 } },
+      { $limit: 20 },
+    ],
+
+    // Ranked from `aiKeywords` (enrichment output), NOT `engagement.tags`:
+    // tags carry the raw RSS <category> terms, whose top entries are feed
+    // boilerplate.
+    byKeyword: [
+      { $match: { aiKeywords: { $type: 'array' } } },
+      { $unwind: '$aiKeywords' },
+      { $group: { _id: '$aiKeywords', count: { $sum: 1 } } },
+      { $match: { _id: { $type: 'string', $ne: '' } } },
+      { $sort: { count: -1 } },
+      { $limit: 80 },
     ],
 
     sample: [
@@ -486,37 +678,12 @@ function buildFacets(sampleLimit: number): Document {
   }
 }
 
-interface FacetOutput {
-  total?: Array<{ n: number }>
-  series?: Array<{ _id: string; count: number }>
-  bySource?: Array<{ _id: string; count: number; country: string | null }>
-  byCountry?: Array<{ _id: string; count: number; sources: number }>
-  byCategory?: Array<{ _id: string; count: number }>
-  byKeyword?: Array<{ _id: string; count: number }>
-  byEntity?: Array<{ _id: { name: string; type: string }; count: number }>
-  byAuthor?: Array<{ _id: string; count: number }>
-  bylineCovered?: Array<{ n: number }>
-  sentiment?: Array<{ _id: string; count: number }>
-  quality?: Array<{ avg: number; n: number }>
-  sample?: Array<{
-    _id: string
-    headline?: string
-    description?: string
-    feedSourceId?: string
-    countryCode?: string
-    datePublished?: Date
-    externalUrl?: string
-    aiSentiment?: string
-    qualityScore?: number
-  }>
-}
-
 /** Zero-fill the daily series so a quiet day reads as 0, not as a gap. */
 function fillSeries(rows: Array<{ _id: string; count: number }>, from: string, to: string): SeriesPoint[] {
   const counts = new Map(rows.map((r) => [r._id, r.count]))
-  const out: SeriesPoint[] = []
   const start = new Date(`${from}T00:00:00.000Z`)
   const end = new Date(`${to}T00:00:00.000Z`)
+  const out: SeriesPoint[] = []
   for (let t = start.getTime(); t <= end.getTime(); t += 86_400_000) {
     const day = isoDay(new Date(t))
     out.push({ date: day, count: counts.get(day) ?? 0 })
@@ -524,13 +691,43 @@ function fillSeries(rows: Array<{ _id: string; count: number }>, from: string, t
   return out
 }
 
+/** A `date` facet keys each bucket by its LOWER boundary. */
+function seriesFromDayFacet(buckets: MetaBucket[], query: NormalizedQuery): SeriesPoint[] {
+  const rows = buckets
+    .filter((b) => b._id instanceof Date || typeof b._id === 'string')
+    .map((b) => ({ _id: isoDay(new Date(b._id as string | Date)), count: Number(b.count) }))
+  return fillSeries(rows, query.from, query.to)
+}
+
+type DeepOutput = {
+  read?: Array<{ n: number }>
+  series?: Array<{ _id: string; count: number }>
+  bySource?: Array<{ _id: string; count: number }>
+  byCountry?: Array<{ _id: string; count: number }>
+  byCategory?: Array<{ _id: string; count: number }>
+  byKeyword?: Array<{ _id: string; count: number }>
+  byEntity?: Array<{ _id: { name: string; type?: string }; count: number }>
+  byAuthor?: Array<{ _id: string; count: number }>
+  bylineCovered?: Array<{ n: number }>
+  sentiment?: Array<{ _id: string; count: number }>
+  quality?: Array<{ avg: number; n: number }>
+  sample?: Document[]
+}
+
 /**
  * Run a corpus query and return every panel the console renders.
  *
- * When `q` is set the pipeline leads with Atlas Search (`articles_text_search`,
- * the same index the site search uses) and falls back to a headline/description
- * regex if the index is unavailable — the caller can tell which ran from
- * `usedSearchIndex`, so the UI never implies stemmed relevance it didn't get.
+ * Two bounded round trips, run together:
+ *
+ *   1. `$searchMeta` counts the WHOLE match in the index — total, daily series,
+ *      sources, countries, and (when no text term forces the other index)
+ *      categories, keywords and sentiment. Exact, and milliseconds.
+ *   2. One `$search` capped at `ENRICHMENT_SCAN_LIMIT` reads documents for the
+ *      panels no Search mapping carries: named entities, bylines, and the
+ *      quality average.
+ *
+ * Both begin with the same compound, so both narrow inside Lucene rather than
+ * after it. See the comment above `TEXT_PATHS` for what this replaced and why.
  */
 export async function runCorpusQuery(params: CorpusQueryParams): Promise<CorpusQueryResult> {
   const query = normalizeQuery(params)
@@ -539,59 +736,78 @@ export async function runCorpusQuery(params: CorpusQueryParams): Promise<CorpusQ
   try {
     const db = await getDb()
     const col = db.collection('articles')
-    const match = buildMatch(query)
-    const facets = buildFacets(sampleLimit)
 
-    let rows: FacetOutput[] = []
-    let usedSearchIndex = false
+    const facetIndex = chooseIndex(query)
+    // With no exact index the deep pass carries the query alone; it still needs
+    // the text term, so it runs against the index that has the analyzed fields.
+    const searchIndex: SearchIndexName = facetIndex ?? 'articles_text_search'
+    const compound = buildCompound(query, searchIndex)
 
-    if (query.q) {
-      try {
-        rows = await col
-          .aggregate<FacetOutput>([
-            {
-              $search: {
-                index: 'articles_text_search',
-                text: {
-                  query: query.q,
-                  path: ['headline', 'description', 'articleBodyProcessed'],
-                  fuzzy: { maxEdits: 1, prefixLength: 3 },
+    const [meta, deep] = await Promise.all([
+      facetIndex
+        ? col
+            .aggregate<SearchMetaResult>(
+              [
+                {
+                  $searchMeta: {
+                    index: facetIndex,
+                    facet: {
+                      operator: { compound },
+                      facets: buildMetaFacets(query, facetIndex),
+                    },
+                    // Not the default lower bound — an approximate headline
+                    // figure beside exact per-bucket counts reads as a bug.
+                    count: { type: 'total' },
+                  },
                 },
-              },
-            },
-            { $match: match },
-            { $facet: facets },
-          ], AGG_OPTS)
-          .toArray()
-        usedSearchIndex = true
-      } catch (searchError) {
-        // Index missing or still building — degrade to regex rather than 500.
-        console.warn('[analytics.runCorpusQuery] Atlas Search unavailable, using regex', searchError)
-        const re = new RegExp(escapeRegex(query.q), 'i')
-        rows = await col
-          .aggregate<FacetOutput>([
-            { $match: { ...match, $or: [{ headline: re }, { description: re }] } },
-            { $facet: facets },
-          ], AGG_OPTS)
-          .toArray()
-      }
-    } else {
-      rows = await col
-        .aggregate<FacetOutput>([{ $match: match }, { $facet: facets }], AGG_OPTS)
+              ],
+              AGG_OPTS
+            )
+            .toArray()
+            .then((rows) => rows[0])
+        : Promise.resolve(undefined),
+      col
+        .aggregate<DeepOutput>(
+          [
+            { $search: { index: searchIndex, compound } },
+            // Immediately after `$search`, so it bounds the id lookup — the
+            // stage whose unbounded cost made the old pipeline unservable.
+            { $limit: ENRICHMENT_SCAN_LIMIT },
+            // The query's truth, including the filters the compound could not
+            // carry and the moderation exclusion no index maps.
+            { $match: buildMatch(query) },
+            { $facet: buildDeepFacets(sampleLimit) },
+          ],
+          AGG_OPTS
+        )
         .toArray()
+        .then((rows) => rows[0] ?? {}),
+    ])
+
+    const deepScanned = deep.read?.[0]?.n ?? 0
+    const exact = Boolean(meta)
+    const total = exact ? Number(meta?.count?.total ?? 0) : deepScanned
+
+    if (total === 0) {
+      return { ...emptyResult(query), usedSearchIndex: Boolean(query.q), exact, deepScanned }
     }
 
-    const f = rows[0] ?? {}
-    const total = f.total?.[0]?.n ?? 0
-    if (total === 0) return { ...emptyResult(query), usedSearchIndex }
+    // Which denominator each panel is honestly a share OF. The facets counted
+    // the whole match; the deep pass counted only what it read, and reporting
+    // its coverage against `total` would render 96%-of-what-we-saw as 4%.
+    const facetDenominator = total
+    const deepDenominator = deepScanned || total
+
+    const sourceBuckets = exact ? bucketsOf(meta, 'source') : (deep.bySource ?? [])
+    const countryBuckets = exact ? bucketsOf(meta, 'country') : (deep.byCountry ?? [])
 
     // Resolve source ids → display names in one round trip.
     const sourceIds = [
       ...new Set([
-        ...(f.bySource ?? []).map((r) => r._id),
-        ...(f.sample ?? []).map((d) => d.feedSourceId).filter((s): s is string => !!s),
+        ...sourceBuckets.map((b) => String(b._id)),
+        ...(deep.sample ?? []).map((d) => d.feedSourceId).filter((s): s is string => !!s),
       ]),
-    ]
+    ].filter(Boolean)
     const sourceDocs = sourceIds.length
       ? await db
           .collection<{ _id: string; name?: string; countryCode?: string }>('feedSources')
@@ -599,58 +815,85 @@ export async function runCorpusQuery(params: CorpusQueryParams): Promise<CorpusQ
           .toArray()
       : []
     const sourceNames = new Map(sourceDocs.map((s) => [s._id, s.name ?? s._id]))
+    const sourceCountries = new Map(sourceDocs.map((s) => [s._id, s.countryCode ?? null]))
 
-    const sentimentCounts = new Map((f.sentiment ?? []).map((r) => [r._id, r.count]))
+    const sentimentBuckets = exact && meta?.facet?.sentiment
+      ? bucketsOf(meta, 'sentiment')
+      : (deep.sentiment ?? [])
+    const sentimentFromFacet = Boolean(exact && meta?.facet?.sentiment)
+    const sentimentCounts = new Map(
+      sentimentBuckets.map((b) => [String(b._id), Number(b.count)])
+    )
     const sentimentCovered = [...sentimentCounts.values()].reduce((a, b) => a + b, 0)
-    const bylineCovered = f.bylineCovered?.[0]?.n ?? 0
-    const qualityRow = f.quality?.[0]
+    const sentimentDenominator = sentimentFromFacet ? facetDenominator : deepDenominator
+
+    const categoryRows = exact && meta?.facet?.category
+      ? termRows(bucketsOf(meta, 'category'))
+      : termRows(deep.byCategory ?? [])
+    const keywordRows = exact && meta?.facet?.keyword
+      ? termRows(bucketsOf(meta, 'keyword'))
+      : termRows(deep.byKeyword ?? [])
+
+    const bylineCovered = deep.bylineCovered?.[0]?.n ?? 0
+    const qualityRow = deep.quality?.[0]
 
     return {
       query,
       total,
-      usedSearchIndex,
-      series: fillSeries(f.series ?? [], query.from, query.to),
-      bySource: (f.bySource ?? []).map((r) => ({
-        sourceId: r._id,
-        name: sourceNames.get(r._id) ?? r._id,
-        country: r.country ?? null,
-        count: r.count,
-        share: share(r.count, total),
-      })),
-      byCountry: (f.byCountry ?? [])
-        .filter((r) => typeof r._id === 'string' && r._id.length > 0)
-        .map((r) => ({
-          code: r._id,
-          name: COUNTRY_NAMES[r._id] ?? r._id,
-          count: r.count,
-          share: share(r.count, total),
-          sources: r.sources,
-        })),
-      byCategory: (f.byCategory ?? []).map((r) => ({ term: r._id, count: r.count })),
-      byKeyword: (f.byKeyword ?? [])
-        .filter((r) => isMeaningfulTopic(r._id))
+      exact,
+      deepScanned,
+      usedSearchIndex: Boolean(query.q),
+      series: exact
+        ? seriesFromDayFacet(bucketsOf(meta, 'day'), query)
+        : fillSeries(deep.series ?? [], query.from, query.to),
+      bySource: sourceBuckets
+        .filter((b) => typeof b._id === 'string' && b._id.length > 0)
         .slice(0, 25)
-        .map((r) => ({ term: r._id, count: r.count })),
-      byEntity: (f.byEntity ?? [])
+        .map((b) => {
+          const id = String(b._id)
+          return {
+            sourceId: id,
+            name: sourceNames.get(id) ?? id,
+            // The source's own registered country. The old pipeline took the
+            // first article's, which is the same answer far more expensively.
+            country: sourceCountries.get(id) ?? null,
+            count: Number(b.count),
+            share: share(Number(b.count), facetDenominator),
+          }
+        }),
+      byCountry: countryBuckets
+        .filter((b) => typeof b._id === 'string' && b._id.length > 0)
+        .map((b) => ({
+          code: String(b._id),
+          name: COUNTRY_NAMES[String(b._id)] ?? String(b._id),
+          count: Number(b.count),
+          share: share(Number(b.count), facetDenominator),
+        })),
+      byCategory: categoryRows.slice(0, 20),
+      byKeyword: keywordRows.filter((r) => isMeaningfulTopic(r.term)).slice(0, 25),
+      byEntity: (deep.byEntity ?? [])
         .filter((r) => r._id?.name && isMeaningfulTopic(r._id.name))
         .slice(0, 25)
         .map((r) => ({ name: r._id.name, type: r._id.type ?? 'UNKNOWN', count: r.count })),
-      byAuthor: (f.byAuthor ?? []).map((r) => ({ name: r._id, count: r.count })),
-      bylineCoverage: { covered: bylineCovered, coverage: share(bylineCovered, total) },
+      byAuthor: (deep.byAuthor ?? []).map((r) => ({ name: r._id, count: r.count })),
+      bylineCoverage: {
+        covered: bylineCovered,
+        coverage: share(bylineCovered, deepDenominator),
+      },
       sentiment: {
         positive: sentimentCounts.get('positive') ?? 0,
         neutral: sentimentCounts.get('neutral') ?? 0,
         negative: sentimentCounts.get('negative') ?? 0,
         mixed: sentimentCounts.get('mixed') ?? 0,
         covered: sentimentCovered,
-        coverage: share(sentimentCovered, total),
+        coverage: share(sentimentCovered, sentimentDenominator),
       },
       quality: {
         avg: round(qualityRow?.avg ?? 0, 3),
         covered: qualityRow?.n ?? 0,
-        coverage: share(qualityRow?.n ?? 0, total),
+        coverage: share(qualityRow?.n ?? 0, deepDenominator),
       },
-      sample: (f.sample ?? []).map((d) => ({
+      sample: (deep.sample ?? []).map((d) => ({
         id: d._id,
         headline: d.headline ?? '(untitled)',
         description: d.description?.trim() || null,

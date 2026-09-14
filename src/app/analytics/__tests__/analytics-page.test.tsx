@@ -60,6 +60,8 @@ const baseResult: CorpusQueryResult = {
   },
   total: 412,
   usedSearchIndex: true,
+  exact: true,
+  deepScanned: 412,
   series: [
     { date: '2026-08-29', count: 10 },
     { date: '2026-08-30', count: 25 },
@@ -69,7 +71,7 @@ const baseResult: CorpusQueryResult = {
     { sourceId: 'src-herald', name: 'The Herald', country: 'ZW', count: 220, share: 53.4 },
     { sourceId: 'src-chron', name: 'Chronicle', country: 'ZW', count: 192, share: 46.6 },
   ],
-  byCountry: [{ code: 'ZW', name: 'Zimbabwe', count: 412, share: 100, sources: 2 }],
+  byCountry: [{ code: 'ZW', name: 'Zimbabwe', count: 412, share: 100 }],
   byCategory: [{ term: 'transport', count: 88 }],
   byKeyword: [
     { term: 'road safety', count: 140 },
