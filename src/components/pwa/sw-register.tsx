@@ -21,7 +21,20 @@ export function getServiceWorkerUrl(): string {
     process.env.NEXT_PUBLIC_BUILD_ID ||
     process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA ||
     SW_FALLBACK_VERSION;
-  return `/sw.js?v=${encodeURIComponent(buildId)}`;
+  // `v` and `ver` do DIFFERENT jobs and must stay separate.
+  //
+  // `v` is the cache-busting token: `sw.js` reads it as its cache name, and it
+  // has to change on every deploy or the browser sees the same script URL and
+  // never installs an update. The commit SHA is unique per deploy; the release
+  // version is not (a rebuild, a rollback, or any deploy between releases
+  // carries the same one).
+  //
+  // `ver` is what a READER is shown. It is appended only when there is a real
+  // released version to show, so the absent case stays distinguishable from an
+  // empty one.
+  const version = process.env.NEXT_PUBLIC_APP_VERSION;
+  const suffix = version ? `&ver=${encodeURIComponent(version)}` : '';
+  return `/sw.js?v=${encodeURIComponent(buildId)}${suffix}`;
 }
 
 /**
@@ -33,19 +46,35 @@ export function getServiceWorkerUrl(): string {
  * getting. `getServiceWorkerUrl` puts the build id in `?v=`, and the waiting
  * registration's `scriptURL` is the incoming build's copy of it.
  *
- * Commit SHAs are shortened the way every git UI shortens them; anything else
- * (a `VERSION`-style tag, the `v1` fallback) is shown as written. Returns null
+ * `ver` wins over `v` when present, and is what a reader should normally see:
+ * a released semantic version (`v4.60.0`), rendered with the leading `v` every
+ * git UI and release page uses. Owner report 2026-09-14 — the card was naming
+ * a commit id, because `v` is the cache-busting token and on Vercel that is
+ * the commit SHA. A SHA answers "which build" and a reader cannot check it
+ * against anything; a version answers "which release".
+ *
+ * `v` remains the fallback, so a deploy built before `VERSION` was wired
+ * through — or one where the file could not be read — still names something
+ * rather than nothing. Commit SHAs are shortened the way every git UI shortens
+ * them; anything else (the `v1` fallback) is shown as written. Returns null
  * when there is nothing trustworthy to show — a version line that says
  * "unknown" is worse than no version line.
  */
 export function incomingVersion(scriptUrl: string | undefined | null): string | null {
   if (!scriptUrl) return null;
-  let raw: string | null = null;
+  let params: URLSearchParams;
   try {
-    raw = new URL(scriptUrl, 'https://example.invalid').searchParams.get('v');
+    params = new URL(scriptUrl, 'https://example.invalid').searchParams;
   } catch {
     return null;
   }
+
+  const released = params.get('ver')?.trim();
+  // Matched strictly: `ver` is ours to set, so anything that is not a plain
+  // semantic version is a bug rather than something to render at a reader.
+  if (released && /^\d+\.\d+\.\d+$/.test(released)) return `v${released}`;
+
+  const raw = params.get('v');
   if (!raw) return null;
 
   const trimmed = raw.trim();
@@ -154,10 +183,12 @@ export function ServiceWorkerRegister({ reloadPage }: ServiceWorkerRegisterProps
       <div className="flex items-start gap-3">
         <ArrowUpCircle className="mt-0.5 h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium text-foreground">Update available</p>
+          <p className="text-sm font-medium text-foreground">New version available</p>
           {/* Naming the target build is the point of the card: "an update is
               available" tells you nothing you can check afterwards, and a
-              reader who refreshes has no way to confirm they got it. */}
+              reader who refreshes has no way to confirm they got it. What it
+              names is now the RELEASE (`v4.60.0`) rather than the commit id it
+              used to show — see `incomingVersion`. */}
           {version ? (
             <p className="mt-0.5 truncate font-mono text-xs text-text-secondary">
               Upgrading to {version}

@@ -120,7 +120,7 @@ describe('ServiceWorkerRegister', () => {
     render(<ServiceWorkerRegister />);
 
     const refresh = await screen.findByRole('button', { name: /refresh/i });
-    expect(screen.getByText('Update available')).toBeInTheDocument();
+    expect(screen.getByText('New version available')).toBeInTheDocument();
 
     fireEvent.click(refresh);
     expect(waiting.postMessage).toHaveBeenCalledWith({ type: 'SKIP_WAITING' });
@@ -140,7 +140,7 @@ describe('ServiceWorkerRegister', () => {
     installing.state = 'installed';
     act(() => installing.emit('statechange'));
 
-    expect(await screen.findByText('Update available')).toBeInTheDocument();
+    expect(await screen.findByText('New version available')).toBeInTheDocument();
   });
 
   it('does not prompt on the very first install (no controller yet)', async () => {
@@ -156,7 +156,7 @@ describe('ServiceWorkerRegister', () => {
     installing.state = 'installed';
     act(() => installing.emit('statechange'));
 
-    expect(screen.queryByText('Update available')).not.toBeInTheDocument();
+    expect(screen.queryByText('New version available')).not.toBeInTheDocument();
   });
 
   it('reloads exactly once on controllerchange', async () => {
@@ -177,9 +177,9 @@ describe('ServiceWorkerRegister', () => {
     installMockContainer(createMockRegistration({ waiting }));
     render(<ServiceWorkerRegister />);
 
-    await screen.findByText('Update available');
+    await screen.findByText('New version available');
     fireEvent.click(screen.getByRole('button', { name: /dismiss update/i }));
-    expect(screen.queryByText('Update available')).not.toBeInTheDocument();
+    expect(screen.queryByText('New version available')).not.toBeInTheDocument();
   });
 });
 
@@ -220,5 +220,41 @@ describe('incomingVersion', () => {
 
   it('does not throw on a malformed URL', () => {
     expect(() => incomingVersion('::::')).not.toThrow()
+  })
+
+  /**
+   * Owner report 2026-09-14: the card was naming a commit id. `v` is the
+   * cache-busting token and on Vercel that is the commit SHA, so the reader
+   * was shown "9f2c1ab" — which answers "which build" and cannot be checked
+   * against anything. `ver` carries the released version instead.
+   */
+  describe('the released version wins over the cache-busting token', () => {
+    it('renders the release with the leading v every release page uses', () => {
+      expect(incomingVersion('/sw.js?v=9f2c1ab7d4e5f607&ver=4.60.0')).toBe('v4.60.0')
+    })
+
+    it('prefers ver even though v is present and would otherwise parse', () => {
+      // The regression: both params are always present in production, so a
+      // reader must never see the SHA while a real version is available.
+      expect(incomingVersion('/sw.js?v=9f2c1ab7d4e5f607&ver=4.60.0')).not.toBe('9f2c1ab')
+    })
+
+    it('falls back to v when ver is absent, so older deploys still name something', () => {
+      expect(incomingVersion('/sw.js?v=9f2c1ab7d4e5f607')).toBe('9f2c1ab')
+    })
+
+    it.each([
+      ['empty', '/sw.js?v=9f2c1ab7d4e5f607&ver='],
+      ['not semantic', '/sw.js?v=9f2c1ab7d4e5f607&ver=main'],
+      ['partial', '/sw.js?v=9f2c1ab7d4e5f607&ver=4.60'],
+    ])('ignores a %s ver and falls back rather than rendering it', (_label, url) => {
+      // `ver` is ours to set, so a value that is not a plain semantic version
+      // is a bug on our side — show the token we do trust, not the junk.
+      expect(incomingVersion(url)).toBe('9f2c1ab')
+    })
+
+    it('names the release even when there is no usable v', () => {
+      expect(incomingVersion('/sw.js?v=&ver=4.60.0')).toBe('v4.60.0')
+    })
   })
 })

@@ -1,5 +1,31 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import type { NextConfig } from 'next';
 import { buildSecurityHeaders } from './src/lib/security-headers';
+
+/**
+ * The released version, read from the `VERSION` file at build time.
+ *
+ * `VERSION` is the one version in this repo that MOVES: `release.yml` bumps it
+ * on every green merge to `main` and tags it (v4.60.0 at the time of writing).
+ * `package.json` is deliberately not used — it has read `4.0.0` since the repo
+ * was at 4.x and is never bumped, so wiring the update banner to it would
+ * announce the same version after every deploy, which is worse than showing
+ * nothing.
+ *
+ * Falls back to null rather than to a guess: the banner drops its version line
+ * entirely when there is no trustworthy value, on the same principle as
+ * `incomingVersion`.
+ */
+function releasedVersion(): string | null {
+  try {
+    const raw = readFileSync(join(process.cwd(), 'VERSION'), 'utf8').trim();
+    return /^\d+\.\d+\.\d+$/.test(raw) ? raw : null;
+  } catch {
+    return null;
+  }
+}
 
 const nextConfig: NextConfig = {
   // Enable React strict mode for better development experience
@@ -7,6 +33,14 @@ const nextConfig: NextConfig = {
 
   // Don't advertise the framework/version in every response.
   poweredByHeader: false,
+
+  env: {
+    // Read at build time so the client can name the version it is upgrading to.
+    // `''` rather than omitting the key: an absent `env` entry leaves
+    // `process.env.NEXT_PUBLIC_APP_VERSION` as a literal `undefined` reference
+    // in the bundle, while an empty string is falsy and handled.
+    NEXT_PUBLIC_APP_VERSION: releasedVersion() ?? '',
+  },
 
   // Image optimization configuration.
   //
