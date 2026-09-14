@@ -210,6 +210,10 @@ describe("country grid figures come from the corpus, not the loaded slice", () =
       { code: "NG", recent: 11025, sources: 71, newsrooms: 70 },
       { code: "KE", recent: 2349, sources: 27, newsrooms: 24 },
     ],
+    allCountries: [
+      { code: "NG", recent: 11025, sources: 71, newsrooms: 70 },
+      { code: "KE", recent: 2349, sources: 27, newsrooms: 24 },
+    ],
     count: 2,
     scopeTotal: 54,
     fragment: "live in 2 African countries, with all 54 in scope",
@@ -272,6 +276,7 @@ describe("country grid figures come from the corpus, not the loaded slice", () =
           ...LIVE_COVERAGE,
           codes: ["LS"],
           countries: [{ code: "LS", recent: 511, sources: 1, newsrooms: 1 }],
+          allCountries: [{ code: "LS", recent: 511, sources: 1, newsrooms: 1 }],
           count: 1,
         }}
       >
@@ -283,17 +288,49 @@ describe("country grid figures come from the corpus, not the loaded slice", () =
   });
 
   it("invents no figures when the corpus read fell back", async () => {
-    // `countries` is empty on the fallback path by design. A card that filled
-    // in a plausible-looking number here would be fabricating precision at
-    // exactly the moment the platform knows least.
+    // BOTH lists are empty on the fallback path by design — the pinned fallback
+    // is a set of codes and nothing more. A card that filled in a
+    // plausible-looking number here would be fabricating precision at exactly
+    // the moment the platform knows least.
     const { CoverageProvider } = await import("@/contexts/coverage-context");
     render(
-      <CoverageProvider value={{ ...LIVE_COVERAGE, countries: [], stale: true }}>
+      <CoverageProvider
+        value={{ ...LIVE_COVERAGE, countries: [], allCountries: [], stale: true }}
+      >
         <DiscoverPage />
       </CoverageProvider>
     );
     await waitFor(() => expect(screen.queryByTestId("loading-skeleton")).toBeNull());
     expect(screen.queryByText(/sources ·/)).toBeNull();
     expect(screen.getAllByText(/Browse news|Coming soon/).length).toBeGreaterThan(0);
+  });
+
+  it("shows real figures for a country BELOW the claim threshold", async () => {
+    // The grid reads `allCountries`, not `countries`. Keyed on the latter it
+    // rendered "Coming soon" over every country under the 500-article bar —
+    // measured 2026-09-14, 30 of the 48 countries with articles, including
+    // Somalia on 487 and Rwanda on 371. The bar decides what the site may
+    // CLAIM; it is not a claim about an individual card.
+    const { CoverageProvider } = await import("@/contexts/coverage-context");
+    render(
+      <CoverageProvider
+        value={{
+          ...LIVE_COVERAGE,
+          // Somalia clears nothing, so it is absent from the claim…
+          codes: ["KE"],
+          countries: [{ code: "KE", recent: 2349, sources: 27, newsrooms: 24 }],
+          // …and still has real coverage to report.
+          allCountries: [
+            { code: "KE", recent: 2349, sources: 27, newsrooms: 24 },
+            { code: "SO", recent: 487, sources: 3, newsrooms: 3 },
+          ],
+          count: 1,
+        }}
+      >
+        <DiscoverPage />
+      </CoverageProvider>
+    );
+    await waitFor(() => expect(screen.queryByTestId("loading-skeleton")).toBeNull());
+    expect(screen.getByText(/3 sources · 3 newsrooms · 487 articles/)).toBeInTheDocument();
   });
 });

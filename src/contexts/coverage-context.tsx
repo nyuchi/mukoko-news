@@ -61,6 +61,7 @@ export function useCoverage(): LiveCoverage {
   return {
     codes: FALLBACK_LIVE_COUNTRY_CODES,
     countries: [],
+    allCountries: [],
     count,
     scopeTotal: COUNTRY_SCOPE_TOTAL,
     fragment: coverageFragment(count),

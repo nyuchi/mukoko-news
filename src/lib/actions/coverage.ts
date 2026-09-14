@@ -2,7 +2,11 @@
 
 import { unstable_cache } from 'next/cache'
 
-import { getLiveCountries, type CoveredCountry } from '@/lib/mongodb/coverage'
+import {
+  getWindowCountries,
+  LIVE_COUNTRY_MIN_RECENT_ARTICLES,
+  type CoveredCountry,
+} from '@/lib/mongodb/coverage'
 import {
   FALLBACK_LIVE_COUNTRY_CODES,
   COUNTRY_SCOPE_TOTAL,
@@ -31,6 +35,19 @@ export interface LiveCoverage {
    * Callers must render country detail only when this has an entry.
    */
   countries: readonly CoveredCountry[]
+  /**
+   * Per-country detail for EVERY country with articles in the window, busiest
+   * first — not only those clearing the aggregation bar.
+   *
+   * `countries` above is what the site may CLAIM; this is what it actually
+   * holds. The two differ by design: measured 2026-09-14, 48 countries have
+   * articles and 18 clear the bar, so a grid keyed on `countries` renders
+   * "Coming soon" over 30 countries it has real figures for. A card is not a
+   * claim about reach, so it should show the truth.
+   *
+   * Empty on the fallback path, for the same reason `countries` is.
+   */
+  allCountries: readonly CoveredCountry[]
   count: number
   scopeTotal: number
   fragment: string
@@ -61,7 +78,9 @@ const COVERAGE_TTL_SECONDS = 3600
 
 const loadCoverage = unstable_cache(
   async (): Promise<LiveCoverage> => {
-    const live = await getLiveCountries()
+    // One read, two answers: the claim filters it, the grid does not.
+    const all = await getWindowCountries()
+    const live = all.filter((c) => c.recent >= LIVE_COUNTRY_MIN_RECENT_ARTICLES)
 
     // An empty result means the read failed or the corpus is unreachable — NOT
     // that Mukoko covers nowhere. Rendering the honest zero here would put
@@ -78,6 +97,7 @@ const loadCoverage = unstable_cache(
       codes,
       // Deliberately empty on the fallback path — see the field's note.
       countries: stale ? [] : live,
+      allCountries: stale ? [] : all,
       count,
       scopeTotal: COUNTRY_SCOPE_TOTAL,
       fragment: coverageFragment(count),
@@ -106,6 +126,7 @@ export async function getLiveCoverageAction(): Promise<LiveCoverage> {
     return {
       codes: FALLBACK_LIVE_COUNTRY_CODES,
       countries: [],
+      allCountries: [],
       count,
       scopeTotal: COUNTRY_SCOPE_TOTAL,
       fragment: coverageFragment(count),

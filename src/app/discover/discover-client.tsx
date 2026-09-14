@@ -65,12 +65,19 @@ export default function DiscoverClient({
    * flatly as "N Articles". That is a smaller number than the truth, presented
    * as the truth, and it moved every time the feed was filtered.
    *
+   * Read from `allCountries`, NOT `countries`: the latter is filtered to the
+   * countries clearing the aggregation bar, which is the right set for the
+   * "live in N countries" claim and the wrong one for a card. Keyed on it, the
+   * grid rendered "Coming soon" over 30 countries the corpus holds real figures
+   * for — Somalia on 487 articles, Rwanda on 371, Libya on 293 (measured
+   * 2026-09-14). A card is not a claim about reach.
+   *
    * Empty on the fallback path, in which case the card says "Browse news"
    * rather than inventing a figure.
    */
   const countryStats = useMemo(
-    () => new Map(coverage.countries.map((c) => [c.code, c])),
-    [coverage.countries]
+    () => new Map(coverage.allCountries.map((c) => [c.code, c])),
+    [coverage.allCountries]
   );
   const searchParams = useSearchParams();
   const router = useRouter();
