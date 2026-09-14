@@ -4,6 +4,7 @@
   "description": "Mukoko News - Pan-African Digital News Platform. Next.js frontend on Vercel.",
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@10.28.0",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -50,6 +51,7 @@
     "@types/node": "^22.10.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "@typescript-eslint/parser": "^8.51.0",
     "@vitejs/plugin-react": "^5.1.2",
     "@vitest/coverage-v8": "^4.1.11",
     "eslint": "^9.39.2",
