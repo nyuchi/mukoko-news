@@ -45,6 +45,32 @@ export const CSP_REPORT_PATH = '/api/csp-report';
 export const ALLOWED_IMAGE_HOST = 'assets.mukoko.com';
 
 /**
+ * The sibling weather app, which the header's date/time strip fetches from the
+ * READER'S OWN BROWSER (`src/lib/weather.ts`) — so it is a `connect-src`
+ * origin, not a server-to-server call.
+ *
+ * It was missing, and the report-only policy caught it on production:
+ *
+ * > would block the loading of a resource (connect-src) at
+ * > https://weather.mukoko.com/api/embed/current
+ *
+ * Nothing broke, because the full policy only reports — which is exactly what
+ * report-only is for. But the policy was making a false statement about this
+ * app's own architecture, and promoting it to enforcing would have silently
+ * killed a documented feature: the weather read is fail-soft, so a reader
+ * would see no weather and no error, and the strip would look like it had
+ * simply been removed.
+ *
+ * Declared here rather than imported from `@/lib/weather` for the same reason
+ * `ALLOWED_IMAGE_HOST` is not imported from `@/lib/image`: this module is
+ * pulled into `next.config.ts`, which is evaluated by bare Node before the app
+ * exists, and a build-time crash there is far worse than one duplicated
+ * string. `security-headers.test.ts` asserts the two still name the same host,
+ * the same way the appearance bootstrap's literals are held to `appearance.ts`.
+ */
+export const ALLOWED_WEATHER_HOST = 'weather.mukoko.com';
+
+/**
  * Everything the app does not use gets an empty allowlist. Features the app
  * *does* use are absent on purpose so they keep their `self` default:
  * `web-share` (share sheet), `clipboard-write` (copy link), `fullscreen`.
@@ -168,7 +194,7 @@ function reportOnlyCsp(frameAncestors: string, isDev: boolean): string {
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob: https:",
     "font-src 'self' data:",
-    `connect-src 'self' https://${ALLOWED_IMAGE_HOST} https://news.google.com`,
+    `connect-src 'self' https://${ALLOWED_IMAGE_HOST} https://${ALLOWED_WEATHER_HOST} https://news.google.com`,
     "media-src 'self'",
     "worker-src 'self'",
     "manifest-src 'self'",
