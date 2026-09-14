@@ -11,6 +11,7 @@ import {
   FRAMEABLE_PREFIX,
   CSP_REPORT_PATH,
   ALLOWED_IMAGE_HOST,
+  ALLOWED_WEATHER_HOST,
   type HeaderRule,
 } from '@/lib/security-headers';
 
@@ -217,6 +218,27 @@ describe('the Report-Only CSP', () => {
   it('allows the service worker to revalidate the image worker', () => {
     expect(directive(csp, 'connect-src')).toContain(`https://${ALLOWED_IMAGE_HOST}`);
     expect(directive(csp, 'worker-src')).toBe("worker-src 'self'");
+  });
+
+  it('allows the header strip to reach the sibling weather app', () => {
+    // `src/lib/weather.ts` fetches this from the READER'S browser by design —
+    // called server-side the "caller" is the Vercel datacenter and every
+    // reader gets the US centroid. So it is a connect-src origin, and it was
+    // missing: production report-only logged
+    // "would block the loading of a resource (connect-src) at
+    //  https://weather.mukoko.com/api/embed/current".
+    // The read is fail-soft, so enforcing the policy without this would have
+    // removed the weather strip with no error anywhere.
+    expect(directive(csp, 'connect-src')).toContain(`https://${ALLOWED_WEATHER_HOST}`);
+  });
+
+  it('names the same weather host the weather reader actually calls', async () => {
+    // Two copies, because this module is imported by `next.config.ts` and
+    // evaluated by bare Node — see the constant's own comment. A test is where
+    // they are held together; a drift would put a host in the policy that
+    // nothing calls and leave the one that is called out of it.
+    const { WEATHER_APP_URL } = await import('@/lib/weather');
+    expect(new URL(WEATHER_APP_URL).hostname).toBe(ALLOWED_WEATHER_HOST);
   });
 
   it('allows https images from any host — profile pictures and favicons are open-ended', () => {
