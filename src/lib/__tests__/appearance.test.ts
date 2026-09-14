@@ -250,16 +250,66 @@ describe('elevated chrome does not paint itself with the page background', () =>
     return values;
   }
 
+  /**
+   * The one sanctioned exception (owner decision 2026-09-14), keyed on the
+   * EXACT class list rather than on its file.
+   *
+   * The home feed's category strip does not float over the page the way the
+   * island and the scrolled header do — it sticks flush beneath the header as
+   * the bottom of the page's own header stack, and the chips inside it carry
+   * their own `--surface` fill. On `--raised` it read as a third band of
+   * chrome; on the page colour the header and the strip read as one surface
+   * and only the chips stand out.
+   *
+   * Exact-string, deliberately. A file-level carve-out would let a future
+   * sticky element in `home-client.tsx` inherit the exemption silently — the
+   * same trap the outline check avoids by having no file exemptions at all —
+   * and pinning the whole class list means any edit to this bar stops matching
+   * and has to come back here and re-justify itself.
+   */
+  const SANCTIONED = new Map<string, string>([
+    [
+      'src/app/home-client.tsx',
+      'sticky z-40 py-3 border-b border-elevated bg-background',
+    ],
+  ]);
+
   it('no fixed or sticky element fills itself with --background', () => {
     const offenders: string[] = [];
     for (const file of walkTsx(join(process.cwd(), 'src'))) {
+      const rel = file.replace(`${process.cwd()}/`, '');
       for (const value of classNameValues(readFileSync(file, 'utf8'))) {
         if (!/\b(fixed|sticky)\b/.test(value)) continue;
         if (!/\bbg-background\b/.test(value)) continue;
         if (value.includes('inset-0')) continue; // full-bleed: it IS the page
-        offenders.push(`${file.replace(`${process.cwd()}/`, '')}: ${value.slice(0, 60)}`);
+        if (SANCTIONED.get(rel) === value) continue;
+        offenders.push(`${rel}: ${value.slice(0, 60)}`);
       }
     }
     expect(offenders).toEqual([]);
+  });
+
+  it('the sanctioned exception still describes something that exists', () => {
+    // An exception nobody can reach is worse than no exception: it reads as a
+    // live carve-out while the element it names has been renamed or deleted,
+    // and the next person widens it instead of removing it.
+    for (const [rel, expected] of SANCTIONED) {
+      const values = classNameValues(readFileSync(join(process.cwd(), rel), 'utf8'));
+      expect(values, `${rel} no longer carries the sanctioned class list`).toContain(
+        expected
+      );
+    }
+  });
+
+  it('the exception is exact, so a variant of the same bar is still caught', () => {
+    // Proves the carve-out is not a file exemption. A second sticky element in
+    // the same file, or the same bar with one class changed, must still fail.
+    const rel = 'src/app/home-client.tsx';
+    const sanctioned = SANCTIONED.get(rel)!;
+    const variant = `${sanctioned} shadow-lg`;
+    expect(SANCTIONED.get(rel)).not.toBe(variant);
+    expect(/\b(fixed|sticky)\b/.test(variant) && /\bbg-background\b/.test(variant)).toBe(
+      true
+    );
   });
 });
