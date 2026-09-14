@@ -426,10 +426,35 @@ export default function HomeClient({ initialFeed = null, initialCategories = nul
         </div>
       </header>
 
-      {/* Quick Category Pills — sticks flush beneath the measured global header height */}
+      {/* Quick Category Pills — sticks flush beneath the measured global header height.
+       *
+       * `bg-background`, and it is the ONE documented exception to "elevated
+       * chrome never paints itself with the page background" (owner decision
+       * 2026-09-14, narrowing their own report of 2026-09-11 that had put this
+       * bar on `--raised` alongside the island and the scrolled header).
+       *
+       * Those two float OVER the page and need a fill that lifts them off it.
+       * This bar does not float over anything — it sticks flush beneath the
+       * header, as the bottom of the page's own header stack, and the chips
+       * inside it carry their own `--surface` fill. Giving the strip a lighter
+       * fill of its own made it read as a third band of chrome between the
+       * header and the article list; on the page colour the header and the
+       * strip read as one continuous surface and only the chips stand out,
+       * which is the whole point of the row.
+       *
+       * Opaque, not `/80`: a translucent wash lets the feed tint the strip as
+       * it scrolls underneath, so it would only match the page background
+       * while the page happened to be at the top. `backdrop-blur-xl` went with
+       * it — behind an opaque fill it blurs nothing and still costs a
+       * compositing layer.
+       *
+       * `appearance.test.ts` carries this as an EXACT-STRING exception rather
+       * than a file carve-out, so any other sticky element here still fails
+       * the rule and any edit to this class list has to re-justify itself.
+       */}
       <nav
         aria-label="Quick navigation"
-        className="sticky z-40 py-3 border-b border-elevated bg-raised/80 backdrop-blur-xl"
+        className="sticky z-40 py-3 border-b border-elevated bg-background"
         style={{ top: headerOffset }}
       >
         <div className="flex gap-2 overflow-x-auto scrollbar-hide" style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}>
