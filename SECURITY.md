@@ -88,8 +88,9 @@ MongoDB Atlas is accessed only from Vercel server-side (Server Actions, Route Ha
 ### Dependencies
 
 - GitHub Dependabot is enabled for automated vulnerability alerts
-- `package-lock.json` is committed for reproducible CI builds
-- Run `npm audit` before releases to check for known vulnerabilities
+- `pnpm-lock.yaml` is the only lockfile, and CI, the pre-commit hook and Vercel all install from it with `--frozen-lockfile`, so the audited tree is the deployed tree
+- Security overrides are declared in `pnpm-workspace.yaml`
+- Run `pnpm audit` before releases to check for known vulnerabilities
 
 ### Secrets Management
 

@@ -5,13 +5,13 @@ The merge gate and review checklist for the frontend. A change is mergeable only
 ## Automated gate (must pass before merge)
 
 ```bash
-npm run test        # vitest run (~460 tests)
-npm run typecheck   # tsc --noEmit
-npm run lint        # next lint (ESLint)
-npm run build       # next build
+pnpm test           # vitest run
+pnpm typecheck      # tsc --noEmit
+pnpm lint           # next lint (ESLint)
+pnpm build          # next build
 ```
 
-The Husky pre-commit hook runs `vitest related` → `typecheck` → `build` on staged files; CI (`deploy.yml`) runs the lint matrix + `test` → `typecheck` → `lint` → `build` on Node 20. Never merge red. Merge to `main` auto-deploys to Vercel.
+The Husky pre-commit hook runs `vitest related` → `typecheck` → `build` on staged files; CI (`deploy.yml`) runs the `lint / *` gate + `test:coverage`, `typecheck`, `lint`, `build` and `Single lockfile` on Node 24, all installing `pnpm install --frozen-lockfile`. Never merge red. Merge to `main` auto-deploys to Vercel.
 
 ## Review checklist
 
@@ -44,7 +44,7 @@ The Husky pre-commit hook runs `vitest related` → `typecheck` → `build` on s
 
 - [ ] New/changed pages mock `@/lib/actions/feed` (not `@/lib/api`) and match the documented return shapes.
 - [ ] Coverage stays above thresholds (60% statements/functions/lines, 50% branches).
-- [ ] Dependency changes update **both** lockfiles — `pnpm-lock.yaml` regenerated from `package-lock.json` with `pnpm import`, and the `Lockfile parity` check is green.
+- [ ] Dependency changes were made with pnpm and commit `pnpm-lock.yaml` alongside `package.json` (overrides in `pnpm-workspace.yaml`); no `package-lock.json` or `yarn.lock` is added.
 - [ ] Conventional-commit message; PR opened as **draft**.
 
 ## Reviewing an automated PR (claude[bot] / CI autofix)

@@ -15,7 +15,8 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
-    "clean": "rm -rf .next out"
+    "clean": "rm -rf .next out",
+    "prepare": "husky"
   },
   "dependencies": {
     "@radix-ui/react-avatar": "^1.1.2",
@@ -66,45 +67,5 @@
     "vite": "^7.3.6",
     "vitest": "^4.1.11",
     "wrangler": "^4.130.0"
-  },
-  "overrides": {
-    "sharp@<0.35.4": "^0.35.4",
-    "postcss@<8.5.23": "^8.5.28",
-    "nanoid@<3.3.18": "^3.3.18",
-    "valibot@<1.5.0": "^1.5.0",
-    "brace-expansion@1": "^1.1.18",
-    "brace-expansion@2": "^2.1.4",
-    "minimatch@3": "^3.1.5",
-    "minimatch@9": "^9.0.9",
-    "picomatch@4": "^4.0.7",
-    "rollup@<4.59.0": "^4.63.1",
-    "browserslist@<4.28.7": "^4.28.9",
-    "flatted@<3.4.2": "^3.4.4",
-    "js-yaml@4": "^4.3.2",
-    "ajv@6": "^6.15.0",
-    "@humanfs/node@<0.16.8": "^0.16.8",
-    "baseline-browser-mapping@<2.11.0": "^2.11.21",
-    "@babel/core@<7.29.1": "^7.29.7"
-  },
-  "pnpm": {
-    "overrides": {
-      "sharp@<0.35.4": "^0.35.4",
-      "postcss@<8.5.23": "^8.5.28",
-      "nanoid@<3.3.18": "^3.3.18",
-      "valibot@<1.5.0": "^1.5.0",
-      "brace-expansion@1": "^1.1.18",
-      "brace-expansion@2": "^2.1.4",
-      "minimatch@3": "^3.1.5",
-      "minimatch@9": "^9.0.9",
-      "picomatch@4": "^4.0.7",
-      "rollup@<4.59.0": "^4.63.1",
-      "browserslist@<4.28.7": "^4.28.9",
-      "flatted@<3.4.2": "^3.4.4",
-      "js-yaml@4": "^4.3.2",
-      "ajv@6": "^6.15.0",
-      "@humanfs/node@<0.16.8": "^0.16.8",
-      "baseline-browser-mapping@<2.11.0": "^2.11.21",
-      "@babel/core@<7.29.1": "^7.29.7"
-    }
   }
 }
