@@ -54,10 +54,41 @@ jobs:
   # stronger (prettier covered only "**/*.json" here, and markdownlint used a
   # floating action).
 
+  # ── One package manager ────────────────────────────────────────────────────
+  # pnpm is the only package manager (owner decision 2026-09-14). Until then CI
+  # and Husky installed from package-lock.json while Vercel installed from
+  # pnpm-lock.yaml, and the two drifted: measured 2026-09-10 they disagreed on
+  # 144 packages, `npm audit` said 0 vulnerabilities while `pnpm audit` said
+  # 4 high + 2 moderate, and Vercel's in-build ESLint was failing on a package
+  # npm hoisted and pnpm did not. A green run here was not evidence about the
+  # tree that deploys.
+  #
+  # Every job below now installs the same pnpm-lock.yaml Vercel does, with the
+  # pnpm version pinned in package.json#packageManager (pnpm/action-setup reads
+  # it). --frozen-lockfile fails on a lockfile out of date with package.json or
+  # pnpm-workspace.yaml — the ERR_PNPM_OUTDATED_LOCKFILE that failed PR #161's
+  # Vercel deploy while all 14 GitHub checks were green.
+  #
+  # This job stops a second lockfile coming back. One stray `npm install`
+  # writes package-lock.json, and a committed one describes a tree nothing
+  # deploys. (.gitignore covers the accident; this covers `git add -f`.)
+  single-lockfile:
+    runs-on: ubuntu-latest
+    name: Single lockfile
+    steps:
+    - uses: actions/checkout@v4
+    - name: No npm, yarn or bun lockfile is committed
+      run: |
+        foreign="$(git ls-files -- '*package-lock.json' '*npm-shrinkwrap.json' '*yarn.lock' '*bun.lock' '*bun.lockb')"
+        if [ -n "$foreign" ]; then
+          echo "::error::pnpm-lock.yaml is the only lockfile. Remove: $foreign"
+          exit 1
+        fi
+
   # ── Frontend pipeline ──────────────────────────────────────────────────────
   # These four ran chained — ESLint -> Typecheck -> Test -> Build, each `needs:`
   # the last. The chain was not buying ordering that anything relied on: none of
-  # these jobs consumes another's output, they each check out and `npm ci` from
+  # these jobs consumes another's output, they each check out and `pnpm install` from
   # scratch. What it bought was a run that could only ever report ONE failure,
   # because the first red stage skipped the other three. A lint slip hid whether
   # the tests passed; a test failure hid whether it even builds.
@@ -75,13 +106,14 @@ jobs:
         name: 'Vercel - mukoko-news: ESLint'
 
     - uses: actions/checkout@v4
+    - uses: pnpm/action-setup@v4
     - uses: actions/setup-node@v4
       with:
         node-version: ${{ env.NODE_VERSION }}
-        cache: 'npm'
-    - run: npm ci
+        cache: 'pnpm'
+    - run: pnpm install --frozen-lockfile
     - name: Run ESLint
-      run: npm run lint
+      run: pnpm lint
 
   typecheck:
     runs-on: ubuntu-latest
@@ -93,13 +125,14 @@ jobs:
         name: 'Vercel - mukoko-news: Typecheck'
 
     - uses: actions/checkout@v4
+    - uses: pnpm/action-setup@v4
     - uses: actions/setup-node@v4
       with:
         node-version: ${{ env.NODE_VERSION }}
-        cache: 'npm'
-    - run: npm ci
+        cache: 'pnpm'
+    - run: pnpm install --frozen-lockfile
     - name: Run tsc --noEmit
-      run: npm run typecheck
+      run: pnpm typecheck
 
   test:
     runs-on: ubuntu-latest
@@ -111,17 +144,18 @@ jobs:
         name: 'Vercel - mukoko-news: Test'
 
     - uses: actions/checkout@v4
+    - uses: pnpm/action-setup@v4
     - uses: actions/setup-node@v4
       with:
         node-version: ${{ env.NODE_VERSION }}
-        cache: 'npm'
-    - run: npm ci
-    # `npm run test:coverage`, not `npm run test`. The coverage thresholds in
+        cache: 'pnpm'
+    - run: pnpm install --frozen-lockfile
+    # `pnpm test:coverage`, not `pnpm test`. The coverage thresholds in
     # vitest.config.ts have existed for a long time and CI never ran the script
     # that enforces them, so they gated nothing. (`@vitest/coverage-v8` was not
     # even installed — the script could not have run.)
     - name: Run Vitest with coverage
-      run: npm run test:coverage
+      run: pnpm test:coverage
 
   build:
     runs-on: ubuntu-latest
@@ -133,10 +167,11 @@ jobs:
         name: 'Vercel - mukoko-news: Build'
 
     - uses: actions/checkout@v4
+    - uses: pnpm/action-setup@v4
     - uses: actions/setup-node@v4
       with:
         node-version: ${{ env.NODE_VERSION }}
-        cache: 'npm'
-    - run: npm ci
+        cache: 'pnpm'
+    - run: pnpm install --frozen-lockfile
     - name: Build Next.js
-      run: npm run build
+      run: pnpm build

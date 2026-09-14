@@ -30,29 +30,35 @@ This repo (`nyuchi/mukoko-news`) is the **Next.js frontend only**. It deploys to
 
 ## Commands
 
-The repo ships **both** a `package-lock.json` and a `pnpm-lock.yaml`. The human-facing docs (`README.md`, `CONTRIBUTING.md`) use **pnpm**, but **CI (`deploy.yml`) and the Husky pre-commit hook use `npm`**. Either works locally; if you change dependencies, update **both** lockfiles to keep them consistent (or CI's `npm ci` will drift from local `pnpm install`).
+**pnpm is the only package manager** (owner decision 2026-09-14). `pnpm-lock.yaml` is the only lockfile, and every consumer installs from it: **Vercel**, **CI** (`deploy.yml` — `pnpm/action-setup` then `pnpm install --frozen-lockfile`) and the **Husky pre-commit hook**. The version is pinned once, in `package.json#packageManager` (`pnpm@10.28.0` — what Vercel was already running, per its build log), and both Vercel and `pnpm/action-setup` read it; locally, `corepack enable` makes `pnpm` that exact version.
+
+- **Never run `npm install` / `yarn` here.** They ignore `pnpm-lock.yaml` and resolve a different tree from the one that deploys. `package-lock.json` and `yarn.lock` are gitignored, and the **`Single lockfile`** CI job fails if one is committed anyway.
+- **Security overrides live in `pnpm-workspace.yaml`**, not `package.json`. pnpm ≥ 11 no longer reads the `pnpm` field of `package.json` at all (pnpm 12.4.1 warns _"The following keys were ignored: pnpm.overrides"_), so overrides there would silently fall out of the deployed tree on an upgrade. pnpm 10.28.0 is verified to read them from the workspace file: remove one and `--frozen-lockfile` fails with `ERR_PNPM_LOCKFILE_CONFIG_MISMATCH`.
+- **`--frozen-lockfile` is the drift guard.** A `package.json` or override change without the matching `pnpm-lock.yaml` fails every CI job — the `ERR_PNPM_OUTDATED_LOCKFILE` that once failed a Vercel deploy behind 14 green GitHub checks (PR #161).
+
+> **Why (measured 2026-09-10, when the repo shipped both lockfiles):** CI and Husky installed from `package-lock.json`, Vercel from `pnpm-lock.yaml`, and they disagreed on **144** packages. `npm audit` reported 0 vulnerabilities while `pnpm audit` reported **4 high + 2 moderate** (`brace-expansion` 5.0.5 via `@typescript-eslint/typescript-estree` → `minimatch` 10; `ws` 8.20.0 via `jsdom` — all dev-only, `pnpm audit --prod` clean). Sharper: **Vercel's in-build ESLint had been failing** with `Cannot find package '@typescript-eslint/parser' imported from eslint.config.js` — the config imported an undeclared package that npm's flat `node_modules` hoisted into reach and pnpm's strict layout did not, and `next build` logs that and carries on. It is now a declared devDependency. A green CI run was not evidence about the tree that deployed; with one lockfile it is.
 
 ```bash
-# pnpm (documented dev workflow) / npm equivalents both shown
-pnpm dev              # next dev — dev server on :3000   (npm run dev)
-pnpm build            # next build — production build      (npm run build)
-pnpm start            # next start — serve the build       (npm run start)
-pnpm lint             # next lint (ESLint)                 (npm run lint)
-pnpm lint:fix         # next lint --fix                    (npm run lint:fix)
-pnpm typecheck        # tsc --noEmit                       (npm run typecheck)
-pnpm test             # vitest run (single run)            (npm run test)
-pnpm test:watch       # vitest (watch mode)               (npm run test:watch)
-pnpm test:coverage    # vitest run --coverage (v8)         (npm run test:coverage)
-pnpm clean            # rm -rf .next out                   (npm run clean)
+corepack enable       # once per machine: `pnpm` becomes the pinned version
+pnpm install          # install from pnpm-lock.yaml
+pnpm add <package>    # add a dependency (-D for dev); commit package.json + pnpm-lock.yaml
+pnpm audit            # the audit that describes the deployed tree
+
+pnpm dev              # next dev — dev server on :3000
+pnpm build            # next build — production build
+pnpm start            # next start — serve the build
+pnpm lint             # next lint (ESLint)
+pnpm lint:fix         # next lint --fix
+pnpm typecheck        # tsc --noEmit
+pnpm test             # vitest run (single run)
+pnpm test:watch       # vitest (watch mode)
+pnpm test:coverage    # vitest run --coverage (v8) — what CI runs
+pnpm clean            # rm -rf .next out
 
 # Run a single test file
 pnpm vitest run src/lib/__tests__/utils.test.ts
 # Run tests matching a pattern (-t = test name)
 pnpm vitest run -t "formatTimeAgo"
-
-# Install dependencies / add a package
-pnpm install          # or: npm ci  (CI uses npm ci)
-pnpm add <package>    # or: npm install <package>
 ```
 
 ## Architecture
@@ -232,7 +238,7 @@ Used for client-side fetches and the embed widget, and exports the shared `Artic
 
 ## Testing
 
-**Vitest 4 with jsdom + React Testing Library.** `npm run test` prints the current count;
+**Vitest 4 with jsdom + React Testing Library.** `pnpm test` prints the current count;
 no figure is written down here, for the same reason the README carries no coverage number —
 a count in a document nothing checks is stale by the next merge. (It went stale inside a
 single branch once already: this line was corrected from "~1,000 across 64", then a later
@@ -240,18 +246,19 @@ commit on the same branch added 19 tests.)
 
 - Config: `vitest.config.ts` (globals on, `@` alias, `include: src/**/*.{test,spec}.*`)
 - Setup: `src/__tests__/setup.ts`
-- Coverage (v8): thresholds **75%** statements, **64%** branches, **72%** functions, **77%** lines — enforced by CI, which runs `npm run test:coverage`. Ratchet them up as coverage rises; never down to make a build pass.
+- Coverage (v8): thresholds **75%** statements, **64%** branches, **72%** functions, **77%** lines — enforced by CI, which runs `pnpm test:coverage`. Ratchet them up as coverage rises; never down to make a build pass.
 - **Mocking the MongoDB readers**: `src/lib/__tests__/helpers/mongo.ts` stubs the driver at the `getDb()` seam (`collectionStub` / `dbStub`), which is what lets a test assert on the query that was issued — the projection, the sort key, the filter. Use it rather than mocking the reader module, and follow the existing suites (`mongodb-articles`, `mongodb-catalogue`, `mongodb-analytics`, `insights`, `places`).
 - **Mock pattern for pages**: always mock `@/lib/actions/feed` (NOT `@/lib/api`) — pages read via Server Actions. Match the return shapes in the table above.
 
-**Pre-commit hook** (Husky, `.husky/pre-commit`): runs `vitest related` on staged files, then `typecheck`, then `build`. All three must pass (uses `npm run`).
+**Pre-commit hook** (Husky, `.husky/pre-commit`): runs `vitest related` on staged files, then `typecheck`, then `build`. All three must pass (uses `pnpm`).
 
-**CI** (`.github/workflows/deploy.yml`):
+**CI** (Node 24):
 
-- `lint` matrix — actionlint, JSON validity, prettier (`**/*.json`), markdownlint (`**/*.md`), yamllint
-- `test-frontend` — `npm ci` → `npm run test` → `npm run typecheck` → `npm run lint` → `npm run build` (Node 20)
+- `lint / *` (`.github/workflows/lint.yml`, the org reusable gate) — actionlint, JSON validity, prettier, markdownlint, yamllint
+- `deploy.yml` — `ESLint`, `Typecheck`, `Test` (`pnpm test:coverage`) and `Build`, run in parallel, each installing with `pnpm install --frozen-lockfile`; plus `Single lockfile`, which fails if an npm/yarn/bun lockfile is committed
+- `dependency-review.yml` — fails a PR that introduces a high-severity advisory
 
-There are also `claude.yml` and `claude-code-review.yml` workflows for the Claude GitHub app.
+There is also a `claude.yml` workflow for the Claude GitHub app.
 
 ## Deployment
 

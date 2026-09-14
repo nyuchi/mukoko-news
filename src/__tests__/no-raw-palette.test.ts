@@ -16,7 +16,7 @@ import { describe, expect, it } from 'vitest'
  * like a guard. That is the precise failure mode this whole body of work has
  * been removing — a check that cannot fail.
  *
- * A Vitest scan runs in CI unconditionally (`npm run test` is a required job),
+ * A Vitest scan runs in CI unconditionally (the Test job is required),
  * needs no parser plumbing, and can carry the allowlist below with the reason
  * for each entry written next to it. When the ESLint config is restructured to
  * cover TypeScript, this can become a rule; until then it is the honest guard.
