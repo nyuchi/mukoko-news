@@ -1,6 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import { PreferencesProvider } from '@/contexts/preferences-context';
+// The picker genuinely requires the legal context now — it stands down while
+// the terms screen is up, so a first visit shows one dialog rather than two
+// stacked. The suites supply it rather than mocking it away, for the same
+// reason the header's suites wrap SidebarProvider: the coupling is the
+// feature.
+import { LegalProvider } from '@/contexts/legal-context';
 
 /**
  * The onboarding country quick-picks.
@@ -30,9 +36,11 @@ import { OnboardingModal } from '../onboarding-modal';
 
 function renderModal() {
   return render(
-    <PreferencesProvider>
-      <OnboardingModal />
-    </PreferencesProvider>
+    <LegalProvider initial={{ resolved: true, accepted: true }}>
+      <PreferencesProvider>
+        <OnboardingModal />
+      </PreferencesProvider>
+    </LegalProvider>
   );
 }
 

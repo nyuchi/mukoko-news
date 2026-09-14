@@ -19,6 +19,7 @@ import { type Article } from "@/lib/api";
 import { getArticleAction } from "@/lib/actions/feed";
 import { getArticleUrl } from "@/lib/constants";
 import { imageProxyUrl } from "@/lib/image";
+import { ImageCredit } from "@/components/ui/image-credit";
 import { isValidImageUrl, topicSlug } from "@/lib/utils";
 import { ArticlePageSkeleton } from "@/components/ui/skeleton";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
@@ -431,12 +432,21 @@ export default function ArticleDetailClient({
 
           {showHero && (
             <PageBleed className="my-6">
-              <img
-                src={imageProxyUrl(article.image_url!, { width: 900 })}
-                alt=""
-                className="aspect-video w-full object-cover sm:rounded-2xl"
-                onError={() => setHeroImageFailed(true)}
-              />
+              {/* A figure, not a bare img: the credit is a caption OF the
+                  photograph, and the two have to be associated for anyone
+                  reading this page with a screen reader rather than looking at
+                  it. `alt=""` stays — the caption carries the provenance, and
+                  the corpus carries no description of what is actually IN the
+                  picture, so anything else here would be invented. */}
+              <figure className="m-0">
+                <img
+                  src={imageProxyUrl(article.image_url!, { width: 900 })}
+                  alt=""
+                  className="aspect-video w-full object-cover sm:rounded-2xl"
+                  onError={() => setHeroImageFailed(true)}
+                />
+                <ImageCredit article={article} />
+              </figure>
             </PageBleed>
           )}
 

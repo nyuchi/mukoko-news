@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { X, Loader2, Sparkles } from "lucide-react";
 import { usePreferences } from "@/contexts/preferences-context";
+import { useLegal } from "@/contexts/legal-context";
 import { getCategoryEmoji } from "@/lib/constants";
 import { STATIC_COUNTRIES, type CountryOption } from "@/lib/countries";
 import { type Category } from "@/lib/api";
@@ -22,6 +23,14 @@ export function OnboardingModal() {
     completeOnboarding,
   } = usePreferences();
 
+  // Both of these want the first visit. The terms screen has to win: it asks
+  // for a decision about using the app at all, and a preferences picker stacked
+  // behind a consent dialog reads as two unrelated things demanding attention
+  // at once. `resolved` is checked too, so the picker does not flash for the
+  // frame before storage has answered.
+  const { resolved: legalResolved, accepted: legalAccepted } = useLegal();
+  const blockedByTerms = !legalResolved || !legalAccepted;
+
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   // Country codes ranked by what the corpus is actually publishing. Null until
@@ -30,7 +39,7 @@ export function OnboardingModal() {
   const [countries, setCountries] = useState<CountryOption[]>(STATIC_COUNTRIES);
 
   useEffect(() => {
-    if (!showOnboarding) return;
+    if (!showOnboarding || blockedByTerms) return;
     let active = true;
 
     getCategoriesAction()
@@ -60,9 +69,9 @@ export function OnboardingModal() {
     return () => {
       active = false;
     };
-  }, [showOnboarding]);
+  }, [showOnboarding, blockedByTerms]);
 
-  if (!showOnboarding) return null;
+  if (!showOnboarding || blockedByTerms) return null;
 
   const handleGetStarted = () => {
     completeOnboarding();

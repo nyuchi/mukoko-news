@@ -8,6 +8,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { OnboardingModal } from '../onboarding-modal';
 import { PreferencesProvider } from '@/contexts/preferences-context';
+// See the note in onboarding-countries.test.tsx: the picker stands down while
+// the terms screen is up, so the suite supplies an accepted legal context.
+import { LegalProvider } from '@/contexts/legal-context';
 
 // Mock the entire api module
 vi.mock('@/lib/api', () => ({
@@ -59,9 +62,11 @@ describe('OnboardingModal', () => {
 
   const renderWithProvider = () => {
     return render(
-      <PreferencesProvider>
-        <OnboardingModal />
-      </PreferencesProvider>
+      <LegalProvider initial={{ resolved: true, accepted: true }}>
+        <PreferencesProvider>
+          <OnboardingModal />
+        </PreferencesProvider>
+      </LegalProvider>
     );
   };
 
@@ -79,6 +84,37 @@ describe('OnboardingModal', () => {
 
       renderWithProvider();
 
+      expect(screen.queryByText('Welcome to Mukoko')).not.toBeInTheDocument();
+    });
+
+    it('stands down while the terms screen is up', async () => {
+      // Two modals stacked on a first visit reads as two unrelated things
+      // demanding attention at once, and the terms screen is the one that has
+      // to win: it asks about using the app at all.
+      render(
+        <LegalProvider initial={{ resolved: true, accepted: false }}>
+          <PreferencesProvider>
+            <OnboardingModal />
+          </PreferencesProvider>
+        </LegalProvider>
+      );
+
+      await act(async () => {});
+      expect(screen.queryByText('Welcome to Mukoko')).not.toBeInTheDocument();
+    });
+
+    it('stands down while the terms answer is still unresolved', async () => {
+      // Otherwise the picker flashes for the frame before storage answers,
+      // and is then replaced by the terms screen.
+      render(
+        <LegalProvider initial={{ resolved: false, accepted: false }}>
+          <PreferencesProvider>
+            <OnboardingModal />
+          </PreferencesProvider>
+        </LegalProvider>
+      );
+
+      await act(async () => {});
       expect(screen.queryByText('Welcome to Mukoko')).not.toBeInTheDocument();
     });
   });

@@ -480,6 +480,41 @@ const { user } = await withAuth()
 
 The MCP OAuth server (`news.mukoko.com/.well-known/oauth-authorization-server`, `/mcp`) lives in `nyuchi/mukoko-news-gateway`.
 
+## We are the vehicle, not the publisher (owner decision 2026-09-14)
+
+> _"We are an aggregator we do not publish news. We are not a publishing house. We provide the vehicle, but we don't publish news. Everything that we have, we don't own."_
+
+This is the position the legal pages, the first-run screen and the image credits all say in the same words, and `AGGREGATOR_STATEMENT` in **`src/lib/legal.ts`** is the one place it is written down. Stating it differently in different places is how a platform ends up having claimed, somewhere, to be the publisher of somebody else's article.
+
+**`/terms` and `/privacy` were rewritten in full**, both leading with a boxed statement rather than a preamble. Terms is thirteen sections built out from the position: what the service does, that we own none of the content (with an explicit **Images in particular** clause at `#images`), what we DO own, that the AI outputs are ours and machine-written, that accuracy is the publisher's, a named removal route (`legal@mukoko.com`, `#removal`), conduct, API terms, availability, liability. Privacy opens with what we do **not** do, because that is the shorter and more checkable list — and because the old copy claimed _"we may also use third-party analytics services"_ when the dependency tree carries **no analytics package at all**. ⚠️ **Neither page asserts a governing law**: the jurisdiction is an owner decision and inventing one is worse than the gap. Both want a lawyer's read before they are relied on.
+
+**Acceptance stores a VERSION, not a boolean.** `LEGAL_VERSION` is the revision date; `hasAcceptedCurrentTerms()` compares it against `localStorage['mukoko-news-terms-accepted']`. A boolean records that somebody once accepted _something_ without recording what, which makes every future material change unannounceable — every existing reader stays silently on a record of consent to text that no longer exists. Bump the version only for a material change: a typo fix that re-prompts the whole audience trains them to dismiss the screen unread, which is worse than not showing it.
+
+### The welcome gate is a CLIENT OVERLAY, and that is the whole design
+
+`components/legal/welcome-gate.tsx` over `contexts/legal-context.tsx`, mounted last in `layout.tsx`. The page underneath is rendered, cached and delivered exactly as before — `/terms`, `/privacy`, `/insights`, `/discover` and every article are still `○` in the build manifest — and the gate is added on top in the browser after an effect has read storage.
+
+That ordering is the requirement, not a shortcut. `robots.txt` here deliberately courts search engines and answer engines, and **for an aggregator that indexed traffic IS the asset**; a gate rendered server-side would serve every crawler a consent dialog in place of the article and quietly delete the product from search. It also means a reader on a slow connection sees the news first and the dialog a moment later, rather than a blank page holding a modal.
+
+Four rules hold it honest:
+
+- **It never covers `/terms` or `/privacy`.** It asks a reader to accept two documents; covering the documents would have them agreeing to text they were physically prevented from reading. `/embed*` (our markup in somebody else's page) and `/offline` are exempt too.
+- **No Escape, no backdrop dismiss, and one button.** Escape closes a dialog you may dismiss; wiring it would hand every reader a one-key bypass and make the whole screen a suggestion. There is no "Decline" because declining means not using the service, and a Decline that navigates someone off a news site they chose to open is theatre — the Terms say it in words instead.
+- **Storage failing must not trap anyone.** `accept()` sets state first and writes second, so a private window or blocked site data still lets the reader through; they are simply asked again next visit.
+- **The preferences onboarding modal stands down while it is up** (and while the answer is still unresolved, so it does not flash for a frame). Two modals stacked on a first visit is the failure the shared context exists to prevent — two components each reading storage could not do it, because accepting in one would not tell the other until a reload.
+
+### Image credits name who SUPPLIED the picture, never who took it
+
+`components/ui/image-credit.tsx`, rendered at every surface that shows a publisher photograph at size: the article hero (a `<figcaption>` linking `/terms#images`), the hero card, the feed card, both story-cluster heroes, NewsBytes and the embed hero + card.
+
+**Measured on the live cluster 2026-09-14**, over the 20,000 most recent articles: every one stores its image as the schema.org array shape and the sub-document has exactly **two** keys, `@type` and `url`. A scan for `imageCredit` / `imageCaption` / `mediaCredit` / `copyrightHolder` across the same window returns **zero**. Neither collector writes one and the enrichment write surface does not include one. So the platform does not know who took the picture — it knows one thing exactly, that **the publisher handed us this image with this article**, and that is all the credit says. Hence `Image via <Publisher>` and never `Photo: <Publisher>`: the second asserts authorship, which for a wire picture is simply false, and a false credit printed under somebody's copyrighted work is worse than none.
+
+**The image host was measured and rejected as a credit.** 5,005 of 12,267 recent articles serve the image from a different host than the article (41%), and the top of that list is `i0.wp.com`, `blogger.googleusercontent.com`, `cdn.punchng.com`, `assets.citizen.digital`, `s.france24.com` — the publisher's own CDN subdomain or a generic proxy. Printing it would credit Automattic and Google for African newsrooms' photography. It is infrastructure, not provenance.
+
+With neither a masthead nor a feed name the component renders **nothing**: `via Unknown` over a real photographer's work is the invented verdict the rest of this codebase refuses everywhere else.
+
+**The promise is machine-checked.** `/terms` now tells publishers that images "are displayed with a credit identifying where they came from", and that is kept by seven separate call sites — exactly the shape that drifts. `components/__tests__/image-credit.test.tsx` holds an **inventory**: every file in the tree that calls `imageProxyUrl`/`mukokoImageLoader` must appear in it marked `credited`, `thumbnail` or `not-a-photograph`, and a new image surface fails the suite until someone adds it with a decision — the same pattern `navigation.test.ts` uses for routes, with no silent exemption. A threshold on the fetched image width was tried first and rejected: `{width: 600}` is the DPR-oversampled fetch, not the rendered size, so the embed's 80px list thumbnail and its 280px hero both ask for 600 and the number cannot tell them apart. `thumbnail` is a recorded decision, not a skip — below roughly 128px a credit chip is unreadable or wider than the picture, and in every one of those cases the surface's own source badge sits immediately beside the image. The card path is additionally covered **end to end** in `article-card.test.tsx`, because the credit reaches a card through the brand component's `imageCredit` slot and a source-text check would keep passing if that slot stopped rendering.
+
 ## Design System (Mukoko "Swarm" — doctrine v4.1.0)
 
 **Mark**: the **Seed of Life** — one centre cell ringed by six, the first ring of the honeycomb, rendered in the 7 minerals with **tanzanite at the core**. **The full-palette mark is the only icon, at every size.** Bare mark on a transparent ground: `public/mukoko-mark-full-{light,dark}.svg` (used by `AppIcon`). Mark on the deep-tanzanite (`#1A0033`) rounded ground: `public/mukoko-appicon.png` — the app icon, and the source the favicons are downscaled from, so the browser tab, the installed app and every other surface carry identical artwork. (Owner correction 2026-09-01 — this **supersedes** the earlier "mono-tanzanite favicon below 32px" rule. The mono variant made the tab icon a solid purple blob that looked like a different product; `favicon.svg`, `favicon-{16,32,48}.png`, `favicon-180.png`, `apple-touch-icon.png` and `favicon.ico` are now the full-palette mark, and `mukoko-appicon-mono-tanzanite.png` was deleted so it cannot be wired up again. `favicon.svg` carries its own ground, so one file serves both browser themes and there is no `favicon-dark.svg`.) Never add gradients/shadows, recolour petals, reorder the ring, or substitute a mono/single-colour reduction.
@@ -569,7 +604,7 @@ CSS variables in `src/app/globals.css`. Use Tailwind classes: `bg-primary`, `tex
 
 ## Code Conventions
 
-Prettier (`.prettierrc.json`): single quotes, semicolons, 2-space tabs, `es5` trailing commas, 100 print width.
+Prettier config is **`.prettierrc`**, copied from `nyuchi/.github` with the org-wide lint gate: `printWidth: 80`, `tabWidth: 2`, `trailingComma: "all"`, `endOfLine: "lf"`, `proseWrap: "preserve"`, and prettier's own defaults for everything else — so **double quotes and semicolons**. (Corrected 2026-09-14: this line used to name a `.prettierrc.json` with single quotes and a 100 print width. No such file has ever existed here, and `prettier --check 'src/**/*.{ts,tsx}'` reports **294** files that do not match the real config — src has never been formatted to it and the org gate does not cover it. Format NEW files with `npx prettier --write`; do not reformat an existing one in passing, since that buries a real change under a whole-file diff.)
 
 ### Naming
 

@@ -14,6 +14,7 @@ import { type Article } from "@/lib/api";
 import { getNewsBytesAction } from "@/lib/actions/feed";
 import { isValidImageUrl, safeCssUrl } from "@/lib/utils";
 import { imageProxyUrl } from "@/lib/image";
+import { ImageCredit } from "@/components/ui/image-credit";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { NewsBytesSkeleton } from "@/components/ui/discover-skeleton";
 
@@ -319,6 +320,12 @@ export default function NewsBytesPage() {
                   <span>•</span>
                   <span>{formatDate(byte.published_at)}</span>
                 </div>
+
+                {/* The slide IS the photograph, so it gets the credit the
+                    article hero gets — inline under the source row rather than
+                    as a second floating chip, since this block already sits on
+                    its own scrim. */}
+                <ImageCredit article={byte} variant="inline" className="mt-1" />
 
                 {/* Read More Button */}
                 <Link
