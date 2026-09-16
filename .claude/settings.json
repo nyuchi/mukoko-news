@@ -4,5 +4,29 @@
     "security-guidance@claude-plugins-official": true,
     "frontend-design@claude-plugins-official": true,
     "pr-review-toolkit@claude-plugins-official": true
+  },
+  "permissions": {
+    "allow": [
+      "mcp__github__pull_request_read",
+      "Bash(npm run typecheck)",
+      "Bash(npm run test)",
+      "Bash(npm run test:coverage)",
+      "mcp__MongoDB_Atlas__count",
+      "Bash(npm run lint)",
+      "mcp__MongoDB_Atlas__find",
+      "mcp__MongoDB_Atlas__remote-atlas-connect",
+      "mcp__github__list_pull_requests",
+      "mcp__github__get_job_logs",
+      "mcp__github__actions_list",
+      "mcp__MongoDB_Atlas__explain",
+      "mcp__MongoDB_Atlas__atlas-list-clusters",
+      "Bash(pnpm audit)",
+      "mcp__MongoDB_Atlas__collection-indexes",
+      "mcp__Mzizi__mzizi_get_tokens",
+      "Bash(pnpm test)",
+      "mcp__Mzizi__mzizi_check_accessibility",
+      "Bash(pnpm typecheck)",
+      "mcp__Cloudflare_Developer_Platform__search_cloudflare_documentation"
+    ]
   }
 }
