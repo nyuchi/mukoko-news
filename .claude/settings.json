@@ -26,7 +26,13 @@
       "Bash(pnpm test)",
       "mcp__Mzizi__mzizi_check_accessibility",
       "Bash(pnpm typecheck)",
-      "mcp__Cloudflare_Developer_Platform__search_cloudflare_documentation"
+      "mcp__Cloudflare_Developer_Platform__search_cloudflare_documentation",
+      "Bash(uv run pytest)",
+      "Bash(git fetch *)",
+      "Bash(uv run pyright)",
+      "Bash(npm test)",
+      "Bash(npm audit)",
+      "mcp__MongoDB_Atlas__atlas-list-projects"
     ]
   }
 }
