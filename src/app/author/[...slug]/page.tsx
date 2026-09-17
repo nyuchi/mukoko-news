@@ -58,6 +58,16 @@ import { getFullUrl } from '@/lib/constants'
  * 404 tells a crawler to drop a real journalist's page from the index, and a
  * 200 over an "we couldn't load this" body tells it the page is fine and that
  * emptiness is the content. A 5xx is the only response that says "come back".
+ *
+ * ⚠️ **That depends on there being no `loading.tsx` above this route**, and for
+ * a while there was one, at the app root. A `loading.tsx` is a Suspense
+ * boundary: Next streams the shell the moment it suspends, and the status line
+ * goes out WITH the shell, before this page has decided anything. Measured on a
+ * production build 2026-09-17, `src/app/loading.tsx` turned both branches below
+ * into `200 OK` — the `notFound()` and the throw alike — which is the HTTP 200
+ * in the original byline report. It was never about bylines; every rendered
+ * dynamic route in the app answered 200. `route-status-codes.test.ts` is the
+ * guard, and it is keyed on ancestry rather than on that one filename.
  */
 export const revalidate = 3600
 

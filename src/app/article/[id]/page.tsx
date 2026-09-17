@@ -108,6 +108,13 @@ export default async function ArticleDetailPage({ params }: Props) {
   // articles churn constantly here, and a soft-404 leaves every dead id in the
   // index as a thin duplicate. A read *failure* still renders the shell, so an
   // outage degrades instead of deindexing.
+  //
+  // ⚠️ This was ASPIRATIONAL until 2026-09-17: measured on production, a dead
+  // id answered `200` with `Article Not Found` in the title. This route carried
+  // its own `loading.tsx`, and a Suspense boundary above a page streams the
+  // shell — and the status line — before the page decides, so the `notFound()`
+  // below landed in a response that had already said `200 OK`. Both that file
+  // and the root one are gone; `route-status-codes.test.ts` keeps them gone.
   if (result.status === "missing") notFound();
   const article = result.status === "ok" ? result.article : null;
   return <ArticleDetailClient articleId={id} initialArticle={article} />;

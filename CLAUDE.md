@@ -222,6 +222,30 @@ All news data reads go through Server Actions → MongoDB Atlas (`news` database
 >
 > What this repo fixed is the second failure, which is the one the doctrine actually forbids: the outage was being **published as a fact about named people**. `getBylineDirectory` returned `[]` on timeout, which is also what a corpus with no bylines looks like; the action turned that into `null`, the page turned `null` into `notFound()`, and `unstable_cache` memoised the empty list for the full hour — one 15-second timeout, sixty minutes of every journalist on the platform not existing. Both reads now carry **`ok`** (same flag, same reason as `CorpusSummary.ok`), `getAuthorPageAction` returns `'ok' | 'not-found' | 'unavailable'` instead of `AuthorPage | null`, and the route **throws** on `unavailable` so an unreadable corpus answers 5xx: a 404 tells a crawler to drop a real byline's page, and a 200 over "we couldn't load this" tells it the emptiness is the content. The cached wrapper **rejects** rather than returning a failed read, because `unstable_cache` stores a resolved value and stores nothing for a rejection. `author-directory-availability.test.ts` drives a rejecting driver through the real reader, the real cache and the real action and asserts all of it — the previous suite asserted the OPPOSITE ("404s when the directory read failed") and passed throughout the outage.
 
+### A `loading.tsx` above a route THROWS AWAY its status code (measured 2026-09-17)
+
+**This is the HTTP 200 in the byline report, and it was never about bylines.** `loading.tsx` is a Suspense boundary wrapped around a segment's children. Next streams the shell the moment it suspends — and **the HTTP status line goes out with that shell**, before the page's async work has resolved. Once sent it cannot be taken back, so whatever the page decides afterwards is rendered into a response that already said `200 OK`.
+
+One file, `src/app/loading.tsx`, sat above every route in the app. Measured on a production build (`next build && next start`, Next 15.5.25), rebuilding once per row:
+
+| route                                               | with it | without it |
+| --------------------------------------------------- | ------- | ---------- |
+| a page calling `notFound()`                         | **200** | 404        |
+| the same page under `revalidate` or `force-dynamic` | **200** | 404        |
+| a page whose whole body is `throw new Error(...)`   | **200** | 500        |
+| `/author/…` over an unreachable cluster             | **200** | 500        |
+| an unrouted path (never renders a page)             | 404     | 404        |
+
+So `notFound()` **and** `throw` both answered 200 from every rendered dynamic route, while a path with no route at all 404'd correctly — which is why this read as route-specific and was not. Live on `main` at the time: `/author/abubakar-ibrahim` → `200` titled _"Byline not found"_, and `/article/000000000000000000000000` → `200` titled _"Article Not Found"_, both carrying Next's real 404 body (`NEXT_HTTP_ERROR_FALLBACK;404`). `/article/[id]` carried its **own** `loading.tsx` on top, so every dead article id was a 200 to a crawler — the exact soft-404 that page's own comment says it exists to prevent, aspirational for as long as the boundary was there.
+
+Ruled out on the way, each by rebuilding without it: the AuthKit middleware, `revalidate` (`force-dynamic` behaves identically), MongoDB, and the author route specifically. A page with no database and no ISR reproduced it.
+
+**Both files are deleted.** The cost is the streaming skeleton, and it is small where it was paid: `/` is `revalidate = 180` and prerenders (`○`), so ISR serves the stale page while it regenerates and the skeleton was almost never on screen. `/article/[id]` is genuinely dynamic and does lose its skeleton — accepted, because a correct 404 on a churning corpus is worth more than a skeleton on a route whose whole job is to be indexed. `/discover` and `/insights` **keep** theirs: both prerender, both are fail-soft, and neither calls `notFound()` nor throws, so neither has a status code to lose.
+
+`src/app/__tests__/route-status-codes.test.ts` is the guard. It is keyed on **ancestry, not on a filename** — it walks every `page.tsx`, and any that calls `notFound()` or throws must have no `loading.tsx` at any level from `src/app` down to its own segment. That is the shape of the bug: the boundary that decided `/author`'s status code was one nobody would have associated with `/author`. A second assertion names the root file specifically, so a reintroduction fails with the reason attached. Verified non-vacuous: restoring either file fails it, naming the page and the boundary.
+
+> ⚠️ **The general rule: a route that can answer 404 or 5xx must not stream its shell early.** If such a route needs streaming, the existence check has to resolve in the page _before_ any Suspense boundary, with `<Suspense>` around the slow sub-tree _inside_ the page — never a `loading.tsx` above it.
+
 ### Data Flow (writes / mutations)
 
 - **Engagement** (like / view / save) — Next.js **Route Handlers** under `src/app/api/articles/[id]/{like,view,save}/route.ts` (`POST`, `runtime = 'nodejs'`), rate-limited via `src/lib/rate-limit.ts` (`checkRateLimit` — **async** — and `getRequestIp`). When `UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN` are set the limit is enforced globally via the Upstash REST API (fixed window, fails open); otherwise it's the in-memory per-instance window. Likes/saves are keyed to an **engagement subject** (`src/lib/engagement.ts`): the signed-in WorkOS user (`user:<id>` — follows the account across devices; anonymous cookie history is claimed on first signed-in interaction) or the `mukoko_session` cookie. The stored field remains `sessionId` — an opaque subject key to the gateway/pipeline. `src/app/api/health/route.ts` is the health probe.
