@@ -81,6 +81,19 @@ const CLOCK_TICK_MS = 30_000;
 const WEATHER_REFRESH_MS = 10 * 60_000;
 
 /**
+ * How often to re-read the reader's position while permission is granted.
+ *
+ * A reader MOVES. The position used to be read exactly once, on mount, so the
+ * strip reported wherever they happened to be when the tab was opened and then
+ * kept reporting it — the weather refreshed on its own ten-minute tick, but
+ * always against a frozen fix. Matching the weather cadence means a move is
+ * picked up on the same tick that would have refetched anyway, so this costs
+ * one extra fix per ten minutes and no extra requests: the coarsened
+ * coordinates make a move within the same ~1.1km cell a no-op.
+ */
+const POSITION_REFRESH_MS = WEATHER_REFRESH_MS;
+
+/**
  * Representative placeholder text. Same font/size as the real string, so it
  * reserves the row's height and roughly its width; `invisible` (not `hidden`)
  * keeps it in the layout.
@@ -145,6 +158,10 @@ export function DateTimeWeather() {
   // honour, and 'unsupported' has nothing to ask.
   const [canAsk, setCanAsk] = useState(false);
   const [asking, setAsking] = useState(false);
+  // True once permission is known to be granted — at mount, or after the
+  // reader presses the control. Drives the position refresh below, so a reader
+  // who grants permission mid-session starts tracking without a reload.
+  const [tracking, setTracking] = useState(false);
 
   // The refresh interval must read the CURRENT coordinates, not the ones that
   // existed when it was armed — otherwise granting permission gives one
@@ -172,11 +189,7 @@ export function DateTimeWeather() {
     geolocationAvailability().then((state) => {
       if (!active) return;
       if (state === 'granted') {
-        requestCoords().then((fresh) => {
-          if (!active || !fresh) return;
-          storeCoords(fresh);
-          setCoords(fresh);
-        });
+        setTracking(true);
         return;
       }
       // Offer the control only where pressing it could actually work.
@@ -187,6 +200,37 @@ export function DateTimeWeather() {
       active = false;
     };
   }, []);
+
+  // Keep the fix current while permission is granted. This is the whole reason
+  // the strip can follow a reader who moves: `requestCoords` is only ever
+  // called from here once `tracking` is true, i.e. once the browser has
+  // already said yes, so it still never prompts.
+  //
+  // State is replaced only when the COARSENED pair actually differs. Two
+  // readings a metre apart round to the same 2dp cell, so an unchanged
+  // location does not churn state or refire the weather effect below; a real
+  // move does both, immediately.
+  useEffect(() => {
+    if (!tracking) return;
+    let active = true;
+
+    const reread = () => {
+      requestCoords().then((fresh) => {
+        if (!active || !fresh) return;
+        storeCoords(fresh);
+        setCoords((prev) =>
+          prev && prev.lat === fresh.lat && prev.lon === fresh.lon ? prev : fresh
+        );
+      });
+    };
+
+    reread();
+    const id = setInterval(reread, POSITION_REFRESH_MS);
+    return () => {
+      active = false;
+      clearInterval(id);
+    };
+  }, [tracking]);
 
   // Weather: browser-side, fail-soft, and cancelled on unmount so a late
   // response cannot set state on a component that is gone.
@@ -225,6 +269,9 @@ export function DateTimeWeather() {
           storeCoords(fresh);
           setCoords(fresh);
           setCanAsk(false);
+          // Permission has just been granted, so start following the reader
+          // from here on rather than leaving this one fix frozen until reload.
+          setTracking(true);
         }
       })
       .finally(() => setAsking(false));
