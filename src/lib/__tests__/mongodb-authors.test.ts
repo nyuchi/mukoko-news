@@ -23,11 +23,16 @@ import {
  * Mocked at the driver seam so these assert on the PIPELINE that was issued.
  *
  * That matters more here than usual. `news.articles` carries no index on
- * `author.name` (measured 2026-09-10), so the shape of the match is the whole
- * cost of the page: a windowed equality match rides
- * `status_1_datePublished_-1` as a range seek, and a regex or an unwindowed
- * match is a full scan of a 1.5 GB collection on every render. Neither shows up
- * in the returned value.
+ * `author.name` (measured 2026-09-10, re-confirmed 2026-09-17), so the shape of
+ * the match is the whole cost of the page and none of it shows up in the
+ * returned value.
+ *
+ * ⚠️ This block used to say the windowed match "rides
+ * `status_1_datePublished_-1` as a range seek". It does not — `VISIBLE` opens
+ * with `status: {$ne: 'rejected'}`, a range on the index's leading key, and the
+ * window is wider than the corpus. See the module header. The assertions below
+ * are unchanged: an equality match and a bounded window are still the shapes an
+ * index COULD serve, which is the point of holding them in place.
  */
 describe('getBylineDirectory', () => {
   let articles: CollectionStub;
@@ -84,7 +89,7 @@ describe('getBylineDirectory', () => {
       { _id: 'abubakar ibrahim', articles: 23, newsroomIds: ['org-bd', null] },
     ]);
 
-    const [entry] = await getBylineDirectory();
+    const [entry] = (await getBylineDirectory()).bylines;
     expect(entry.slug).toBe('abubakar-ibrahim');
     expect(entry.articles).toBe(323);
     expect(entry.variants).toEqual(['Abubakar Ibrahim', 'abubakar ibrahim']);
@@ -98,7 +103,7 @@ describe('getBylineDirectory', () => {
       { _id: 'MARY MOYO', articles: 90, newsroomIds: [] },
       { _id: 'Mary Moyo', articles: 4, newsroomIds: [] },
     ]);
-    expect((await getBylineDirectory())[0].name).toBe('MARY MOYO');
+    expect((await getBylineDirectory()).bylines[0].name).toBe('MARY MOYO');
   });
 
   it('marks a desk byline as a desk', async () => {
@@ -106,21 +111,45 @@ describe('getBylineDirectory', () => {
       { _id: 'Staff Reporter', articles: 198, newsroomIds: ['a', 'b'] },
       { _id: 'Abubakar Ibrahim', articles: 323, newsroomIds: ['c'] },
     ]);
-    const entries = await getBylineDirectory();
-    expect(entries.find((e) => e.slug === 'staff-reporter')?.desk).toBe(true);
-    expect(entries.find((e) => e.slug === 'abubakar-ibrahim')?.desk).toBe(false);
+    const { bylines } = await getBylineDirectory();
+    expect(bylines.find((e) => e.slug === 'staff-reporter')?.desk).toBe(true);
+    expect(bylines.find((e) => e.slug === 'abubakar-ibrahim')?.desk).toBe(false);
   });
 
   it('drops a byline that folds to no address at all', async () => {
     // Bucketing these under an empty slug would merge unrelated bylines into one
     // page reachable at `/author/`.
     stub([{ _id: '---', articles: 5, newsroomIds: [] }]);
-    await expect(getBylineDirectory()).resolves.toEqual([]);
+    // Empty, and `ok` — we looked, and this byline has no address. That is a
+    // different statement from the one below, and the flag is the difference.
+    await expect(getBylineDirectory()).resolves.toEqual({ ok: true, bylines: [] });
   });
 
-  it('returns empty rather than throwing when the read fails', async () => {
+  /**
+   * The regression that started this.
+   *
+   * `news.articles` has no index on `author.name`, so this `$group` is a scan
+   * of the whole collection; measured 2026-09-17 it did not return in 60s and
+   * `QUERY_MAX_TIME_MS` aborts it at 15. The read is fail-soft, which is right
+   * — but an empty list is ALSO what a corpus with no bylines looks like, and
+   * for as long as the two were the same value the caller turned a cluster
+   * timeout into 'Byline not found' over real journalists with real articles.
+   * `ok: false` is what makes the failure legible, and nothing downstream can
+   * re-collapse them without this failing.
+   */
+  it('reports ok:false when the read fails, never a bare empty list', async () => {
     mockGetDb.mockRejectedValue(new Error('mongo down'));
-    await expect(getBylineDirectory()).resolves.toEqual([]);
+    await expect(getBylineDirectory()).resolves.toEqual({ ok: false, bylines: [] });
+  });
+
+  it('reports ok:false when the aggregation itself times out', async () => {
+    // `maxTimeMS` surfaces as a driver error on `toArray()`, not on `getDb()` —
+    // which is the path this defect actually takes in production.
+    articles = collectionStub({
+      aggregate: [new Error('operation exceeded time limit')],
+    });
+    mockGetDb.mockResolvedValue(dbStub({ articles }));
+    await expect(getBylineDirectory()).resolves.toEqual({ ok: false, bylines: [] });
   });
 });
 
@@ -231,9 +260,19 @@ describe('getAuthorProfile', () => {
     expect(profile.total).toBe(0);
   });
 
-  it('returns an empty profile rather than throwing when the read fails', async () => {
+  it('marks a profile the match genuinely found nothing for as ok', async () => {
+    // A desk scoped to a newsroom it has stopped filing to. Zero is the answer,
+    // and the page is entitled to say so.
+    stub([{ totals: [], sources: [], newsrooms: [], countries: [], topics: [], categories: [], tags: [], recent: [] }]);
+    const profile = await getAuthorProfile({ variants: ['Staff Reporter'] });
+    expect(profile.ok).toBe(true);
+    expect(profile.total).toBe(0);
+  });
+
+  it('reports ok:false when the read fails, so zero is never published as a count', async () => {
     mockGetDb.mockRejectedValue(new Error('mongo down'));
     const profile = await getAuthorProfile({ variants: ['Abubakar Ibrahim'] });
+    expect(profile.ok).toBe(false);
     expect(profile.total).toBe(0);
     expect(profile.articles).toEqual([]);
   });
