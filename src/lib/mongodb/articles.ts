@@ -615,6 +615,38 @@ export async function getArticleBySlug(slug: string): Promise<Article | null> {
   return resolveArticleDetail(doc)
 }
 
+/**
+ * Does this id name an article — WITHOUT reading one.
+ *
+ * `getArticleById` is a point lookup plus `resolveArticleDetail`, which is two
+ * further round trips (`feedSources`, the publisher organisation) and pulls the
+ * whole ~25 KB document. The article route needs the *answer* before it can
+ * decide between a 404 and a page, but it does not need the article to decide
+ * that — and everything above a `<Suspense>` boundary blocks the shell, so
+ * whatever the route awaits first is what the reader waits for.
+ *
+ * This is the cheap half: a projection of `_id` alone, which `_id_` covers
+ * outright — an index scan with no document FETCH and no joins. The expensive
+ * half then streams in behind the boundary.
+ *
+ * Three-valued on purpose, the same rule the rest of this module follows:
+ * `false` means we looked and there is nothing, `null` means we could not look.
+ * Only the first is a 404. Answering 404 for a transient read failure hands
+ * Google a deindex signal for a live article.
+ */
+export async function articleExists(id: string): Promise<boolean | null> {
+  try {
+    const db = await getDb()
+    const doc = await db
+      .collection<MongoArticle>('articles')
+      .findOne({ _id: id }, { projection: { _id: 1 }, maxTimeMS: QUERY_MAX_TIME_MS })
+    return doc !== null
+  } catch (error) {
+    console.error('[articles.articleExists]', error)
+    return null
+  }
+}
+
 export async function getArticleById(id: string): Promise<Article | null> {
   const db = await getDb()
   const doc = await db.collection<MongoArticle>('articles').findOne({ _id: id })

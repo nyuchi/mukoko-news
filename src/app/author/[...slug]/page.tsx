@@ -4,7 +4,12 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { ArrowLeft, Building2, Newspaper } from 'lucide-react'
 
-import { getAuthorPageAction, type AuthorPage, type LabelledFacet } from '@/lib/actions/authors'
+import {
+  getAuthorPageAction,
+  type AuthorPage,
+  type AuthorPageResult,
+  type LabelledFacet,
+} from '@/lib/actions/authors'
 import { authorSlug } from '@/lib/author-identity'
 import { PageContainer } from '@/components/layout/page-container'
 import { CompactCard } from '@/components/compact-card'
@@ -32,6 +37,37 @@ import { getFullUrl } from '@/lib/constants'
  * ISR at an hour: a byline's article list moves when they file, which is a
  * timescale of hours, and the read behind it is a scan of the corpus (there is
  * no index on `author.name` — see `@/lib/mongodb/authors`).
+ *
+ * ## An outage is not an answer about a journalist
+ *
+ * That scan times out today, and until this was fixed every byline page on the
+ * platform answered 'Byline not found'. `notFound()` is a CLAIM — that this
+ * platform carries no such byline — and it is only ours to make when we
+ * actually read the directory. So the three outcomes of
+ * `getAuthorPageAction` get three different responses, and the failing one is
+ * deliberately the loudest:
+ *
+ * | result        | response                                    |
+ * | ------------- | ------------------------------------------- |
+ * | `ok`          | the page                                    |
+ * | `not-found`   | `notFound()` — we looked, there is no byline |
+ * | `unavailable` | THROW — the error boundary, a 5xx           |
+ *
+ * `unavailable` throws rather than rendering an apologetic page because the
+ * status code is the part that matters to everything that is not a human: a
+ * 404 tells a crawler to drop a real journalist's page from the index, and a
+ * 200 over an "we couldn't load this" body tells it the page is fine and that
+ * emptiness is the content. A 5xx is the only response that says "come back".
+ *
+ * ⚠️ **That depends on there being no `loading.tsx` above this route**, and for
+ * a while there was one, at the app root. A `loading.tsx` is a Suspense
+ * boundary: Next streams the shell the moment it suspends, and the status line
+ * goes out WITH the shell, before this page has decided anything. Measured on a
+ * production build 2026-09-17, `src/app/loading.tsx` turned both branches below
+ * into `200 OK` — the `notFound()` and the throw alike — which is the HTTP 200
+ * in the original byline report. It was never about bylines; every rendered
+ * dynamic route in the app answered 200. `route-status-codes.test.ts` is the
+ * guard, and it is keyed on ancestry rather than on that one filename.
  */
 export const revalidate = 3600
 
@@ -61,9 +97,23 @@ function parseRoute(segments: string[]): { slug: string; newsroomSlug?: string }
  * for the duration of the render.
  */
 const loadPage = cache(
-  async (slug: string, newsroomSlug?: string): Promise<AuthorPage | null> =>
+  async (slug: string, newsroomSlug?: string): Promise<AuthorPageResult> =>
     getAuthorPageAction(slug, newsroomSlug)
 )
+
+/**
+ * The route's own unavailability error.
+ *
+ * Named so it is greppable in the Vercel log next to the
+ * `[authors.getBylineDirectory]` line that caused it; the reader only ever sees
+ * `app/error.tsx`.
+ */
+class BylineDirectoryUnavailable extends Error {
+  constructor() {
+    super('The byline directory could not be read')
+    this.name = 'BylineDirectoryUnavailable'
+  }
+}
 
 const COUNTRY_NAMES = new Map(STATIC_COUNTRIES.map((c) => [c.code, c.name]))
 
@@ -87,9 +137,20 @@ function canonicalPath(page: AuthorPage): string {
 
 export async function generateMetadata({ params }: AuthorRouteProps): Promise<Metadata> {
   const route = parseRoute((await params).slug)
-  const page = route ? await loadPage(route.slug, route.newsroomSlug) : null
-  if (!page) return { title: 'Byline not found' }
+  const result: AuthorPageResult = route
+    ? await loadPage(route.slug, route.newsroomSlug)
+    : { status: 'not-found' }
 
+  // A failed read must not be titled 'Byline not found' either. The body throws
+  // into the error boundary, but metadata is rendered alongside it, and that
+  // title is the string a reader sees in the tab and a crawler files the URL
+  // under — which is the claim this whole route was making out of a timeout.
+  if (result.status === 'unavailable') {
+    return { title: 'Byline temporarily unavailable', robots: { index: false, follow: true } }
+  }
+  if (result.status === 'not-found') return { title: 'Byline not found' }
+
+  const page = result.page
   const title = page.newsroom ? `${page.name}, ${page.newsroom.name}` : page.name
   const description = page.desk
     ? `Reporting filed under the ${page.name} byline at ${page.newsroom?.name}.`
@@ -177,9 +238,16 @@ function Chips({ rows }: { rows: Array<LabelledFacet & { href?: string }> }) {
 
 export default async function AuthorRoute({ params }: AuthorRouteProps) {
   const route = parseRoute((await params).slug)
-  const page = route ? await loadPage(route.slug, route.newsroomSlug) : null
-  if (!page) notFound()
+  const result: AuthorPageResult = route
+    ? await loadPage(route.slug, route.newsroomSlug)
+    : { status: 'not-found' }
 
+  // Ordered so the failure is handled BEFORE the claim. Reversed — or collapsed
+  // back into one falsy check — this is the bug again.
+  if (result.status === 'unavailable') throw new BylineDirectoryUnavailable()
+  if (result.status === 'not-found') notFound()
+
+  const page = result.page
   const { profile } = page
   // Only countries the app can NAME. An unrecognised ISO code printed raw reads
   // as a typo rather than a place, and `countryCode` is stamped by ingestion
@@ -226,8 +294,11 @@ export default async function AuthorRoute({ params }: AuthorRouteProps) {
         )}
 
         <p className="mt-3 text-sm text-text-tertiary">
-          {profile.total.toLocaleString()} {profile.total === 1 ? 'article' : 'articles'} in the last{' '}
-          {Math.round(profile.windowDays / 30)} months
+          {/* `0 articles` is a claim about a person. Only printed once the read
+              that produced the number is known to have run. */}
+          {profile.ok
+            ? `${profile.total.toLocaleString()} ${profile.total === 1 ? 'article' : 'articles'} in the last ${Math.round(profile.windowDays / 30)} months`
+            : `Article count unavailable`}
           {profile.sources.length > 0 && (
             <>
               {' · '}
@@ -245,12 +316,22 @@ export default async function AuthorRoute({ params }: AuthorRouteProps) {
         </p>
       </header>
 
-      {profile.total === 0 ? (
-        /* The byline is in the directory, so it published something; this read
-           came back empty, which means the corpus could not be reached rather
-           than that they have written nothing. Say the former. */
+      {!profile.ok ? (
+        /* The profile read failed on its own — the directory answered, so the
+           byline is real and HAS published. Zero here is our outage, never a
+           finding about them, and `profile.ok` is what makes that a fact rather
+           than an inference from an empty list. */
         <p className="text-sm text-text-secondary">
           We could not load this byline&rsquo;s articles just now. Please try again shortly.
+        </p>
+      ) : profile.total === 0 ? (
+        /* The read SUCCEEDED and found nothing — a desk scoped to a newsroom it
+           has stopped filing to, or a byline whose last article has aged out of
+           the window since the hourly directory was built. That is a real
+           answer, and it is a different sentence. */
+        <p className="text-sm text-text-secondary">
+          No articles under this byline in the last{' '}
+          {Math.round(profile.windowDays / 30)} months.
         </p>
       ) : (
         <div className="grid gap-8 lg:grid-cols-[1fr_18rem]">

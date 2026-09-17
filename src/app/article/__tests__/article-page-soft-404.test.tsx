@@ -13,13 +13,25 @@
  *
  * Collapsing the two states back into one boolean is the obvious "simplification"
  * a future edit would make, and nothing else in the suite would notice.
+ *
+ * ## The Suspense split (2026-09-17)
+ *
+ * The route now awaits a CHEAP `articleExists` and then streams the article
+ * from inside `<Suspense>`. The order is the whole point: everything above the
+ * boundary decides the status line, everything inside it is already too late —
+ * a `loading.tsx` above this page is what made the `notFound()` below answer
+ * `200` in production. So these tests reach THROUGH the boundary rather than
+ * around it, and one of them asserts that the expensive read has not happened
+ * yet when the boundary is returned.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen } from '@testing-library/react';
 import type { ReactElement } from 'react';
 
-const { mockGetArticleById, mockNotFound } = vi.hoisted(() => ({
+const { mockGetArticleById, mockArticleExists, mockNotFound } = vi.hoisted(() => ({
   mockGetArticleById: vi.fn(),
+  mockArticleExists: vi.fn(),
   mockNotFound: vi.fn(() => {
     // The real `notFound()` throws to unwind into the 404 boundary. Preserving
     // that is what makes "did it render the shell anyway?" answerable.
@@ -27,13 +39,34 @@ const { mockGetArticleById, mockNotFound } = vi.hoisted(() => ({
   }),
 }));
 
-vi.mock('@/lib/mongodb/articles', () => ({ getArticleById: mockGetArticleById }));
+vi.mock('@/lib/mongodb/articles', () => ({
+  getArticleById: mockGetArticleById,
+  articleExists: mockArticleExists,
+}));
 vi.mock('next/navigation', () => ({ notFound: mockNotFound }));
 vi.mock('../[id]/article-detail-client', () => ({ default: () => null }));
 
 /** The props the page handed to the detail client. */
 type ShellProps = { articleId: string; initialArticle: { id: string } | null };
-const shellProps = (rendered: unknown) => (rendered as ReactElement<ShellProps>).props;
+
+/** The `<ArticleBody>` element the page suspended on, still unresolved. */
+function suspendedBody(rendered: unknown) {
+  const boundary = rendered as ReactElement<{ children: ReactElement<{ id: string }> }>;
+  return boundary.props.children;
+}
+
+/**
+ * Resolve the streamed half and read what it handed the client component.
+ *
+ * `ArticleBody` is an async Server Component, so it is called rather than
+ * rendered — there is no renderer in this suite and none is needed to assert on
+ * the props it produces.
+ */
+async function shellProps(rendered: unknown): Promise<ShellProps> {
+  const body = suspendedBody(rendered);
+  const resolve = body.type as (props: { id: string }) => Promise<ReactElement<ShellProps>>;
+  return (await resolve(body.props)).props;
+}
 
 let page: (props: { params: Promise<{ id: string }> }) => Promise<unknown>;
 let generateMetadata: (props: { params: Promise<{ id: string }> }) => Promise<{
@@ -63,20 +96,84 @@ const article = (over: Record<string, unknown> = {}) => ({
 
 describe('an id that resolves to nothing', () => {
   it('answers a real 404 rather than a 200 shell', async () => {
-    mockGetArticleById.mockResolvedValue(null);
+    mockArticleExists.mockResolvedValue(false);
 
     await expect(page({ params: Promise.resolve({ id: 'gone-1' }) })).rejects.toThrow(
       'NEXT_NOT_FOUND'
     );
     expect(mockNotFound).toHaveBeenCalled();
   });
+
+  it('decides that from the CHEAP read, before the boundary', async () => {
+    // The whole reason the route reads twice. `articleExists` is a covered
+    // `_id` projection; `getArticleById` is the document plus two joins. If a
+    // future edit reaches for the expensive one to answer "does it exist", the
+    // status decision moves behind the wait it was split out to avoid.
+    mockArticleExists.mockResolvedValue(false);
+
+    await expect(page({ params: Promise.resolve({ id: 'gone-2' }) })).rejects.toThrow(
+      'NEXT_NOT_FOUND'
+    );
+    expect(mockArticleExists).toHaveBeenCalledWith('gone-2');
+    expect(mockGetArticleById).not.toHaveBeenCalled();
+  });
+});
+
+describe('the existence check itself failing', () => {
+  it('renders the shell rather than 404ing on an unknown', async () => {
+    // `null` is "we could not look". A 404 here would deindex a live article
+    // on the strength of an outage — the same rule the read below follows.
+    mockArticleExists.mockResolvedValue(null);
+    mockGetArticleById.mockRejectedValue(new Error('no primary available'));
+
+    const props = await shellProps(await page({ params: Promise.resolve({ id: 'blind-1' }) }));
+
+    expect(mockNotFound).not.toHaveBeenCalled();
+    expect(props.initialArticle).toBeNull();
+  });
+});
+
+describe('the expensive read', () => {
+  it('has not run by the time the boundary is returned', async () => {
+    // This is the streaming property, asserted structurally: the page returns a
+    // `<Suspense>` whose child has not been resolved, so the shell (and the
+    // status line) can go out while the document and its two joins are still in
+    // flight. Await the page body above the boundary and this fails.
+    mockArticleExists.mockResolvedValue(true);
+    mockGetArticleById.mockResolvedValue(article({ id: 'stream-1' }));
+
+    const rendered = await page({ params: Promise.resolve({ id: 'stream-1' }) });
+
+    expect(mockGetArticleById).not.toHaveBeenCalled();
+    // ...and it is genuinely the article that is suspended, not a stub.
+    expect(suspendedBody(rendered).props.id).toBe('stream-1');
+    await shellProps(rendered);
+    expect(mockGetArticleById).toHaveBeenCalledWith('stream-1');
+  });
+
+  it('falls back to the article skeleton, which carries the spinner', async () => {
+    // The skeleton is why the boundary is in the page at all rather than in a
+    // `loading.tsx` — that file streamed the 200 along with it.
+    mockArticleExists.mockResolvedValue(true);
+    mockGetArticleById.mockResolvedValue(article({ id: 'fallback-1' }));
+
+    const rendered = (await page({ params: Promise.resolve({ id: 'fallback-1' }) })) as ReactElement<{
+      fallback: ReactElement;
+    }>;
+
+    expect(rendered.props.fallback).toBeTruthy();
+    const { container } = render(rendered.props.fallback);
+    expect(container.querySelector('.mukoko-spinner')).not.toBeNull();
+    expect(screen.getByLabelText('Loading article')).toBeInTheDocument();
+  });
 });
 
 describe('a read that fails', () => {
   it('renders the existing shell instead of 404ing every live article at once', async () => {
+    mockArticleExists.mockResolvedValue(true);
     mockGetArticleById.mockRejectedValue(new Error('no primary available'));
 
-    const props = shellProps(await page({ params: Promise.resolve({ id: 'outage-1' }) }));
+    const props = await shellProps(await page({ params: Promise.resolve({ id: 'outage-1' }) }));
 
     expect(mockNotFound).not.toHaveBeenCalled();
     // The shell still receives the id, so the client can retry the fetch —
@@ -88,9 +185,10 @@ describe('a read that fails', () => {
 
 describe('an article that resolves', () => {
   it('hands the server-read article straight to the client component', async () => {
+    mockArticleExists.mockResolvedValue(true);
     mockGetArticleById.mockResolvedValue(article({ id: 'ok-1' }));
 
-    const props = shellProps(await page({ params: Promise.resolve({ id: 'ok-1' }) }));
+    const props = await shellProps(await page({ params: Promise.resolve({ id: 'ok-1' }) }));
 
     expect(mockNotFound).not.toHaveBeenCalled();
     expect(props.initialArticle?.id).toBe('ok-1');

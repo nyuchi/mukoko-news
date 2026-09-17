@@ -13,6 +13,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
+  articleExists,
   getArticles,
   getArticleById,
   getArticleBySlug,
@@ -838,5 +839,62 @@ describe('getTopicTimeline', () => {
       $or: Array<{ 'engagement.tags.slug'?: RegExp }>;
     };
     expect(filter.$or[1]['engagement.tags.slug']?.source).toBe('^a\\.\\*b$');
+  });
+});
+
+/**
+ * The cheap half of the article route's two reads.
+ *
+ * `/article/[id]` must decide 404-or-not BEFORE it streams anything, because
+ * the status line goes out with the shell and cannot be taken back. So the
+ * decision rides this — a covered `_id` projection — rather than
+ * `getArticleById`, which pulls the ~25 KB document and then joins `feedSources`
+ * and the publisher organisation. If a future edit widens the projection, the
+ * status decision quietly starts waiting on a document FETCH again.
+ */
+describe('articleExists', () => {
+  let articles: CollectionStub;
+
+  function stub(result: unknown) {
+    articles = collectionStub({ findOne: [result] });
+    vi.mocked(getDb).mockResolvedValue(dbStub({ articles }) as unknown as never);
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  it('asks for the _id alone, so the read is covered by _id_', async () => {
+    stub({ _id: 'a1' });
+    await articleExists('a1');
+
+    const [call] = articles.findCalls;
+    expect(call.filter).toEqual({ _id: 'a1' });
+    expect(call.projection).toEqual({ _id: 1 });
+  });
+
+  it('bounds itself like every other read here', async () => {
+    stub({ _id: 'a1' });
+    await articleExists('a1');
+    expect((articles.findCalls[0].options as { maxTimeMS?: number }).maxTimeMS).toBe(15000);
+  });
+
+  it('answers true for a document that is there', async () => {
+    stub({ _id: 'a1' });
+    await expect(articleExists('a1')).resolves.toBe(true);
+  });
+
+  it('answers false for one that is not — this is the 404', async () => {
+    stub(null);
+    await expect(articleExists('missing')).resolves.toBe(false);
+  });
+
+  it('answers NULL when the read fails, which is not a 404', async () => {
+    // The distinction the whole route turns on: `false` is a finding about the
+    // id, `null` is a statement about our cluster. Collapsing them to a boolean
+    // answers 404 for every live article the moment Mongo hiccups.
+    vi.mocked(getDb).mockRejectedValue(new Error('no primary available'));
+    await expect(articleExists('a1')).resolves.toBeNull();
   });
 });
