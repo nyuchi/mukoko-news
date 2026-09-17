@@ -28,10 +28,32 @@ const DIRECTORY_TTL_SECONDS = 3600
 const TAG_CHIP_LIMIT = 12
 const CATEGORY_CHIP_LIMIT = 8
 
-const loadDirectory = unstable_cache(getBylineDirectory, ['byline-directory'], {
-  revalidate: DIRECTORY_TTL_SECONDS,
-  tags: ['authors'],
-})
+/**
+ * Thrown past `unstable_cache` when the directory read failed.
+ *
+ * This is the whole reason the cached function is a wrapper rather than
+ * `getBylineDirectory` itself. `unstable_cache` memoises a RESOLVED value for
+ * the full hour and stores nothing for a rejection — so returning the failed
+ * read's empty list here would pin "this platform has no bylines" in front of
+ * every author page until the TTL expired, turning one 15-second timeout into a
+ * one-hour outage. Rejecting keeps the failure to the request that hit it.
+ */
+class DirectoryUnavailableError extends Error {
+  constructor() {
+    super('byline directory read failed')
+    this.name = 'DirectoryUnavailableError'
+  }
+}
+
+const loadDirectory = unstable_cache(
+  async (): Promise<BylineIdentity[]> => {
+    const { ok, bylines } = await getBylineDirectory()
+    if (!ok) throw new DirectoryUnavailableError()
+    return bylines
+  },
+  ['byline-directory'],
+  { revalidate: DIRECTORY_TTL_SECONDS, tags: ['authors'] }
+)
 
 /** `feedSources._id` → the feed's own name, for labelling the sources panel. */
 const loadSourceNames = unstable_cache(
@@ -123,10 +145,24 @@ function label(rows: AuthorFacet[], names: Record<string, string>): LabelledFace
 }
 
 /**
+ * What the page is allowed to say, and there are three answers rather than two.
+ *
+ * `not-found` is a claim — "this platform carries no such byline" — and it is
+ * only sound when we actually looked. `unavailable` is the case where we did
+ * not, and it exists because the two were collapsed into `null` and a cluster
+ * timeout was being served to readers as a 'Byline not found' page over real
+ * journalists with real articles.
+ */
+export type AuthorPageResult =
+  | { status: 'ok'; page: AuthorPage }
+  | { status: 'not-found' }
+  | { status: 'unavailable' }
+
+/**
  * Find the byline a URL slug refers to.
  *
- * Exported so the page and its metadata can resolve once each without
- * duplicating the fold rules.
+ * `undefined` means the directory was read and does not carry this slug. A
+ * failed read does not reach here at all — it rejects out of `loadDirectory`.
  */
 async function findIdentity(slug: string): Promise<BylineIdentity | undefined> {
   const wanted = authorSlug(slug)
@@ -135,33 +171,45 @@ async function findIdentity(slug: string): Promise<BylineIdentity | undefined> {
 }
 
 /**
- * The author page, or `null` when the URL does not name a byline this corpus
- * carries.
+ * The author page, or why there is not one.
  *
- * `null` is a 404, and the distinction matters: a failed directory read returns
- * an empty directory, which lands here as `null` too. That is the right
- * failure — a page that renders a journalist's name above zero articles asserts
- * they have published nothing, which is a claim about a real person that the
- * platform would be making from an outage.
+ * ⚠️ This used to return `AuthorPage | null`, and the null was load-bearing in
+ * two incompatible ways at once: "this URL names nobody" AND "the directory
+ * read failed, so we have no idea". The page turned both into `notFound()`, so
+ * for as long as the unindexed directory `$group` was timing out, every byline
+ * on the platform answered 'Byline not found' — an outage rendered as a
+ * statement about named journalists. The two are separated here, at the only
+ * place that can still tell them apart.
  *
  * ## Desk bylines are scoped, not merged
  *
  * `newsroomSlug` is required for a desk byline and rejected for a person. A
  * desk URL without a newsroom cannot be answered truthfully, so it 404s rather
- * than falling back to the merged view.
+ * than falling back to the merged view. Those ARE `not-found`: we looked.
  */
 export async function getAuthorPageAction(
   slug: string,
   newsroomSlug?: string
-): Promise<AuthorPage | null> {
-  const identity = await findIdentity(slug)
-  if (!identity) return null
+): Promise<AuthorPageResult> {
+  let identity: BylineIdentity | undefined
+  try {
+    identity = await findIdentity(slug)
+  } catch (error) {
+    // Deliberately not narrowed to `DirectoryUnavailableError`: an identity
+    // check across the `unstable_cache` boundary is not something to stake a
+    // reader's 404 on, and anything else thrown from here is a bug whose honest
+    // response is the same 5xx. What must never happen is falling through to
+    // `not-found`.
+    console.error('[authors.getAuthorPageAction]', error)
+    return { status: 'unavailable' }
+  }
+  if (!identity) return { status: 'not-found' }
 
   const organizations = await getPublisherOrganizationMap()
 
   let newsroom: { id: string; name: string } | undefined
   if (identity.desk) {
-    if (!newsroomSlug) return null
+    if (!newsroomSlug) return { status: 'not-found' }
     const wanted = authorSlug(newsroomSlug)
     for (const id of identity.newsroomIds) {
       const org = organizations.get(id)
@@ -173,11 +221,11 @@ export async function getAuthorPageAction(
     // A desk byline whose newsroom segment matches none of the mastheads it has
     // actually filed to. Answering it with the unscoped profile is exactly the
     // false attribution the scoping exists to prevent.
-    if (!newsroom) return null
+    if (!newsroom) return { status: 'not-found' }
   } else if (newsroomSlug) {
     // A person's page has one address. Serving the same profile at a second,
     // newsroom-prefixed URL would split its ranking across two of them.
-    return null
+    return { status: 'not-found' }
   }
 
   const profile = await getAuthorProfile({
@@ -191,14 +239,17 @@ export async function getAuthorPageAction(
   )
 
   return {
-    name: identity.name,
-    slug: identity.slug,
-    desk: identity.desk,
-    newsroom,
-    profile,
-    sources: label(profile.sources, sourceNames),
-    newsrooms: label(profile.newsrooms, newsroomNames),
-    tags: foldTopics(profile.tags, TAG_CHIP_LIMIT),
-    categories: foldTopics(profile.categories, CATEGORY_CHIP_LIMIT),
+    status: 'ok',
+    page: {
+      name: identity.name,
+      slug: identity.slug,
+      desk: identity.desk,
+      newsroom,
+      profile,
+      sources: label(profile.sources, sourceNames),
+      newsrooms: label(profile.newsrooms, newsroomNames),
+      tags: foldTopics(profile.tags, TAG_CHIP_LIMIT),
+      categories: foldTopics(profile.categories, CATEGORY_CHIP_LIMIT),
+    },
   }
 }

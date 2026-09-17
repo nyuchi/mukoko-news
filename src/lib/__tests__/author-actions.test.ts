@@ -18,7 +18,13 @@ vi.mock('next/cache', () => ({
   unstable_cache: (fn: (...a: unknown[]) => unknown) => fn,
 }));
 
-import { getAuthorPageAction } from '@/lib/actions/authors';
+import { getAuthorPageAction, type AuthorPageResult } from '@/lib/actions/authors';
+
+/** Narrow to the served page, failing loudly rather than reading through a union. */
+function ok(result: AuthorPageResult): { page: NonNullable<Extract<AuthorPageResult, { status: 'ok' }>['page']> } {
+  if (result.status !== 'ok') throw new Error(`expected a served page, got ${result.status}`);
+  return { page: result.page };
+}
 
 const PERSON = {
   slug: 'abubakar-ibrahim',
@@ -39,6 +45,7 @@ const DESK = {
 };
 
 const EMPTY_PROFILE = {
+  ok: true,
   total: 0,
   sources: [],
   newsrooms: [],
@@ -62,7 +69,7 @@ const EMPTY_PROFILE = {
 describe('getAuthorPageAction', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockDirectory.mockResolvedValue([PERSON, DESK]);
+    mockDirectory.mockResolvedValue({ ok: true, bylines: [PERSON, DESK] });
     mockProfile.mockResolvedValue(EMPTY_PROFILE);
     mockSources.mockResolvedValue([{ id: 'src-joy-news', name: 'Joy News' }]);
     mockOrgMap.mockResolvedValue(
@@ -75,10 +82,10 @@ describe('getAuthorPageAction', () => {
   });
 
   it('serves a person across the whole corpus', async () => {
-    const page = await getAuthorPageAction('abubakar-ibrahim');
-    expect(page?.name).toBe('Abubakar Ibrahim');
-    expect(page?.desk).toBe(false);
-    expect(page?.newsroom).toBeUndefined();
+    const { page } = ok(await getAuthorPageAction('abubakar-ibrahim'));
+    expect(page.name).toBe('Abubakar Ibrahim');
+    expect(page.desk).toBe(false);
+    expect(page.newsroom).toBeUndefined();
     // Every spelling of the byline, and NO newsroom scope.
     expect(mockProfile).toHaveBeenCalledWith({
       variants: PERSON.variants,
@@ -87,8 +94,8 @@ describe('getAuthorPageAction', () => {
   });
 
   it('scopes a desk byline to the newsroom named in the URL', async () => {
-    const page = await getAuthorPageAction('staff-reporter', 'the-herald');
-    expect(page?.newsroom).toEqual({ id: 'org-herald', name: 'The Herald' });
+    const { page } = ok(await getAuthorPageAction('staff-reporter', 'the-herald'));
+    expect(page.newsroom).toEqual({ id: 'org-herald', name: 'The Herald' });
     expect(mockProfile).toHaveBeenCalledWith({
       variants: DESK.variants,
       newsroomIds: ['org-herald'],
@@ -96,19 +103,19 @@ describe('getAuthorPageAction', () => {
   });
 
   it('refuses to serve a desk byline unscoped', async () => {
-    await expect(getAuthorPageAction('staff-reporter')).resolves.toBeNull();
+    await expect(getAuthorPageAction('staff-reporter')).resolves.toEqual({ status: 'not-found' });
     expect(mockProfile).not.toHaveBeenCalled();
   });
 
   it('refuses a newsroom the desk has never filed to', async () => {
     // Answering with the unscoped profile here is exactly the false attribution
     // the scoping exists to prevent, so this 404s instead.
-    await expect(getAuthorPageAction('staff-reporter', 'the-guardian')).resolves.toBeNull();
+    await expect(getAuthorPageAction('staff-reporter', 'the-guardian')).resolves.toEqual({ status: 'not-found' });
     expect(mockProfile).not.toHaveBeenCalled();
   });
 
   it('refuses to give a person a second, newsroom-prefixed address', async () => {
-    await expect(getAuthorPageAction('abubakar-ibrahim', 'joy-news')).resolves.toBeNull();
+    await expect(getAuthorPageAction('abubakar-ibrahim', 'joy-news')).resolves.toEqual({ status: 'not-found' });
   });
 
   it('resolves the newsroom segment through the same fold as the link', async () => {
@@ -118,20 +125,32 @@ describe('getAuthorPageAction', () => {
     mockOrgMap.mockResolvedValue(
       new Map([['org-herald', { id: 'org-herald', name: "L'Événement", isVerified: false }]])
     );
-    const page = await getAuthorPageAction('staff-reporter', 'l-evenement');
-    expect(page?.newsroom?.name).toBe("L'Événement");
+
+    const { page } = ok(await getAuthorPageAction('staff-reporter', 'l-evenement'));
+    expect(page.newsroom?.name).toBe("L'Événement");
   });
 
   it('404s a byline the corpus does not carry', async () => {
-    await expect(getAuthorPageAction('nobody-at-all')).resolves.toBeNull();
+    await expect(getAuthorPageAction('nobody-at-all')).resolves.toEqual({ status: 'not-found' });
   });
 
-  it('404s when the directory read failed', async () => {
-    // A failed read returns an empty directory. Rendering a name above zero
-    // articles would assert that a real person has published nothing, on the
-    // strength of an outage.
-    mockDirectory.mockResolvedValue([]);
-    await expect(getAuthorPageAction('abubakar-ibrahim')).resolves.toBeNull();
+  it('does NOT 404 when the directory read failed — it reports unavailable', async () => {
+    // ⚠️ This test used to assert the opposite, and it passed throughout the
+    // outage it was written to prevent. A 404 is the platform stating that a
+    // named journalist does not exist; we are only entitled to say that when we
+    // read the directory and they were not in it. A failed read is `ok: false`,
+    // and the caller owes the reader a 5xx, not a verdict.
+    mockDirectory.mockResolvedValue({ ok: false, bylines: [] });
+    await expect(getAuthorPageAction('abubakar-ibrahim')).resolves.toEqual({
+      status: 'unavailable',
+    });
+  });
+
+  it('still 404s a byline missing from a directory that read fine', async () => {
+    mockDirectory.mockResolvedValue({ ok: true, bylines: [] });
+    await expect(getAuthorPageAction('abubakar-ibrahim')).resolves.toEqual({
+      status: 'not-found',
+    });
   });
 
   it('labels sources and newsrooms from their own records', async () => {
@@ -144,12 +163,12 @@ describe('getAuthorPageAction', () => {
       newsrooms: [{ key: 'org-joy', count: 313 }],
     });
 
-    const page = await getAuthorPageAction('abubakar-ibrahim');
-    expect(page?.sources[0].label).toBe('Joy News');
+    const { page } = ok(await getAuthorPageAction('abubakar-ibrahim'));
+    expect(page.sources[0].label).toBe('Joy News');
     // An id the catalogue cannot name falls back to the id rather than to a
     // blank row — a nameless source is unresolved, not nonexistent.
-    expect(page?.sources[1].label).toBe('src-unknown');
-    expect(page?.newsrooms[0].label).toBe('Joy News');
+    expect(page.sources[1].label).toBe('src-unknown');
+    expect(page.newsrooms[0].label).toBe('Joy News');
   });
 
   it('merges tag spellings and points each at its own timeline', async () => {
@@ -162,10 +181,10 @@ describe('getAuthorPageAction', () => {
       ],
     });
 
-    const page = await getAuthorPageAction('abubakar-ibrahim');
+    const { page } = ok(await getAuthorPageAction('abubakar-ibrahim'));
     // "Ghana" and "ghana" are one tag: 40 articles under the spelling readers
     // actually see, ranked on the merged count rather than on either half.
-    expect(page?.tags).toEqual([
+    expect(page.tags).toEqual([
       { key: 'world cup', label: 'World Cup', count: 47, href: '/topic/world-cup' },
       { key: 'ghana', label: 'Ghana', count: 40, href: '/topic/ghana' },
     ]);
@@ -181,7 +200,7 @@ describe('getAuthorPageAction', () => {
       tags: [{ key: "Côte d'Ivoire", count: 9 }],
     });
 
-    const page = await getAuthorPageAction('abubakar-ibrahim');
-    expect(decodeURIComponent(page!.tags[0].href)).toBe("/topic/côte-d'ivoire");
+    const { page } = ok(await getAuthorPageAction('abubakar-ibrahim'));
+    expect(decodeURIComponent(page.tags[0].href)).toBe("/topic/côte-d'ivoire");
   });
 });

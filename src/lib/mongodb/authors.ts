@@ -12,21 +12,44 @@
  *    author page instead.
  * 2. `getAuthorProfile` answers everything the page shows, from ONE `$facet`.
  *
- * ## Why both are windowed
+ * ## Both reads are unindexed, and the window does NOT rescue them
  *
- * `news.articles` has no index on `author.name` (measured 2026-09-10: the eight
- * classic indexes are on `_id`, `datePublished+status`,
- * `datePublished+mediaOrganizationId`, `bundu.ubuntuScoreSnapshot+status`,
- * `aiProcessed+createdAt`, `externalUrl`, `slug` and `countryCode+feedSourceId`
- * — and the Atlas Search index does not map `author` either). So a byline match
- * is a scan, and the only thing that bounds it is the date window, which rides
- * `status_1_datePublished_-1` as a range seek. That is the same reason
- * `getSourceAuthors` is windowed.
+ * ⚠️ **Corrected 2026-09-17.** This header used to claim that the 365-day
+ * window "rides `status_1_datePublished_-1` as a range seek". It does not, and
+ * that claim is why nobody looked when every byline page started answering
+ * "Byline not found" over a corpus of 65,203 articles. Two independent reasons:
  *
- * A year is the window because the corpus is younger than that — the oldest
- * articles date from 2026-05 — so today it is every article the platform holds
- * while still bounding the read as the corpus grows. The page states the window
- * rather than implying it is a career total.
+ * 1. **`$ne` on the leading key forbids the seek.** `VISIBLE` opens with
+ *    `status: {$ne: 'rejected'}`, which is a RANGE predicate on the index's
+ *    first field — bounds of `[MinKey, "rejected") ∪ ("rejected", MaxKey]`,
+ *    i.e. the whole key space less one point. With a range rather than an
+ *    equality on the leading key, the `datePublished` bound on the second key
+ *    cannot narrow the scan's entry point. This is the same shape, on the same
+ *    collection, as the `/insights` incident already on record in `CLAUDE.md`:
+ *    explained live, a `$facet` behind that identical `$ne` pair took 27,529 ms
+ *    and examined all 65,203 documents with ZERO index keys.
+ * 2. **The window is wider than the corpus.** The oldest articles date from
+ *    2026-05, so a 365-day window excludes nothing. Even a perfect range seek
+ *    would return every key in the collection. The window bounds this read
+ *    later, as the corpus ages — it bounds nothing today.
+ *
+ * And `author.name`, `moderationStatus` and `mediaOrganizationId` appear in NO
+ * index (classic or Atlas Search), so every candidate must be FETCHed from the
+ * 1.5 GB collection regardless of how it was found. Measured 2026-09-17 on a
+ * direct connection, the directory `$group` did not return within 60 seconds;
+ * bounded by `QUERY_MAX_TIME_MS` it throws instead.
+ *
+ * **Nothing in this file can fix that** — the fix is an index on
+ * `{'author.name': 1, datePublished: -1}`, which is a live-cluster change this
+ * repo does not make. What this file CAN do, and now does, is refuse to pass a
+ * failed read off as a finding: both reads carry `ok`, so the caller can tell
+ * "we could not look" from "there is nothing there". A byline directory that
+ * came back empty because the cluster timed out must never reach a reader as
+ * the statement that a journalist does not exist.
+ *
+ * A year is the window because the corpus is younger than that, so today it is
+ * every article the platform holds while still bounding the read as the corpus
+ * grows. The page states the window rather than implying it is a career total.
  */
 
 import { getDb, QUERY_MAX_TIME_MS } from './client'
@@ -85,14 +108,28 @@ export interface BylineIdentity {
 }
 
 /**
+ * The directory read's answer, and whether it is an answer at all.
+ *
+ * `ok` exists because `bylines: []` is what BOTH outcomes look like: a corpus
+ * with no attributed articles in it, and a read that timed out. They are not
+ * the same claim — the second one is about our cluster and the first one is
+ * about journalists — and the caller cannot tell them apart from the list.
+ * Same flag, same reason, as `CorpusSummary.ok`.
+ */
+export interface BylineDirectory {
+  /** False when the read failed. `bylines` is then empty but means NOTHING. */
+  ok: boolean
+  bylines: BylineIdentity[]
+}
+
+/**
  * Every byline in the window, folded onto its slug.
  *
- * Fail-soft: an unreachable cluster yields an empty directory, and the caller
- * turns that into a 404 rather than into an author page with no articles on it.
- * An empty directory means "we could not look", never "this journalist has
- * published nothing".
+ * Fail-soft in the sense that it does not throw — but NOT silent: a failure
+ * comes back as `{ok: false, bylines: []}`, and a caller that ignores `ok` is
+ * publishing an outage as a fact about a named person. See the header.
  */
-export async function getBylineDirectory(): Promise<BylineIdentity[]> {
+export async function getBylineDirectory(): Promise<BylineDirectory> {
   try {
     const db = await getDb()
     const rows = await db
@@ -156,10 +193,12 @@ export async function getBylineDirectory(): Promise<BylineIdentity[]> {
       }
     }
 
-    return [...bySlug.values()]
+    return { ok: true, bylines: [...bySlug.values()] }
   } catch (error) {
+    // `maxTimeMS` firing lands here, and that is the expected failure today —
+    // see the header. Empty, and SAID to be empty for the wrong reason.
     console.error('[authors.getBylineDirectory]', error)
-    return []
+    return { ok: false, bylines: [] }
   }
 }
 
@@ -170,6 +209,13 @@ export interface AuthorFacet {
 }
 
 export interface AuthorProfile {
+  /**
+   * False when the read failed, so every figure below is absent rather than
+   * zero. `total: 0` is otherwise ambiguous: a byline whose window has aged
+   * out reads identically to a byline whose read timed out, and only one of
+   * those is a statement about the journalist.
+   */
+  ok: boolean
   total: number
   firstPublished?: string
   lastPublished?: string
@@ -189,7 +235,9 @@ export interface AuthorProfile {
   windowDays: number
 }
 
+/** A genuine nothing: the match ran and found no articles. */
 const EMPTY_PROFILE: AuthorProfile = {
+  ok: true,
   total: 0,
   sources: [],
   newsrooms: [],
@@ -200,6 +248,9 @@ const EMPTY_PROFILE: AuthorProfile = {
   articles: [],
   windowDays: AUTHOR_WINDOW_DAYS,
 }
+
+/** Not a nothing: we could not look. Shaped the same, claims the opposite. */
+const UNAVAILABLE_PROFILE: AuthorProfile = { ...EMPTY_PROFILE, ok: false }
 
 /** A `$group`/`$sort`/`$limit` breakdown over one already-unwound field. */
 function tally(limit: number) {
@@ -322,6 +373,7 @@ export async function getAuthorProfile(params: {
 
     const totals = result.totals[0]
     return {
+      ok: true,
       total: totals?.total ?? 0,
       firstPublished: totals?.first?.toISOString(),
       lastPublished: totals?.last?.toISOString(),
@@ -336,6 +388,6 @@ export async function getAuthorProfile(params: {
     }
   } catch (error) {
     console.error('[authors.getAuthorProfile]', error)
-    return EMPTY_PROFILE
+    return UNAVAILABLE_PROFILE
   }
 }

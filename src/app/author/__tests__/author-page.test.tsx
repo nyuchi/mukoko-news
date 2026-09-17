@@ -19,6 +19,7 @@ vi.mock('@/components/compact-card', () => ({
 import AuthorRoute, { generateMetadata } from '../[...slug]/page';
 
 const PROFILE = {
+  ok: true,
   total: 323,
   firstPublished: '2026-06-20T12:10:45.000Z',
   lastPublished: '2026-09-08T05:19:29.000Z',
@@ -70,7 +71,7 @@ function route(...slug: string[]) {
 describe('/author', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockGetAuthorPageAction.mockResolvedValue(PERSON);
+    mockGetAuthorPageAction.mockResolvedValue({ status: 'ok', page: PERSON });
   });
 
   it('renders a person with their byline, sources and reporting', async () => {
@@ -83,7 +84,7 @@ describe('/author', () => {
   });
 
   it('names the newsroom a desk byline belongs to, and says it is not one person', async () => {
-    mockGetAuthorPageAction.mockResolvedValue(DESK);
+    mockGetAuthorPageAction.mockResolvedValue({ status: 'ok', page: DESK });
     render(await route('the-herald', 'staff-reporter'));
 
     expect(screen.getByText('Newsroom desk')).toBeInTheDocument();
@@ -98,7 +99,7 @@ describe('/author', () => {
   });
 
   it('passes the newsroom segment through as the scope, not as the byline', async () => {
-    mockGetAuthorPageAction.mockResolvedValue(DESK);
+    mockGetAuthorPageAction.mockResolvedValue({ status: 'ok', page: DESK });
     await route('the-herald', 'staff-reporter');
     expect(mockGetAuthorPageAction).toHaveBeenCalledWith('staff-reporter', 'the-herald');
   });
@@ -116,8 +117,8 @@ describe('/author', () => {
     // so a linked topic chip would land the reader on a timeline with no
     // coverage — which reads as a gap in the reporting rather than in the query.
     mockGetAuthorPageAction.mockResolvedValue({
-      ...PERSON,
-      profile: { ...PROFILE, topics: [{ key: 'health', count: 12 }] },
+      status: 'ok',
+      page: { ...PERSON, profile: { ...PROFILE, topics: [{ key: 'health', count: 12 }] } },
     });
     render(await route('abubakar-ibrahim'));
 
@@ -127,8 +128,11 @@ describe('/author', () => {
 
   it('names countries rather than printing a bare ISO code', async () => {
     mockGetAuthorPageAction.mockResolvedValue({
-      ...PERSON,
-      profile: { ...PROFILE, countries: [{ key: 'GH', count: 313 }, { key: 'XX', count: 4 }] },
+      status: 'ok',
+      page: {
+        ...PERSON,
+        profile: { ...PROFILE, countries: [{ key: 'GH', count: 313 }, { key: 'XX', count: 4 }] },
+      },
     });
     render(await route('abubakar-ibrahim'));
 
@@ -141,19 +145,65 @@ describe('/author', () => {
   it('says the corpus is unreachable rather than claiming the byline wrote nothing', async () => {
     // The byline is in the directory, so it HAS published. A page that renders a
     // real person's name above "0 articles" makes a claim about them out of an
-    // outage.
+    // outage — so a FAILED profile read says so, and prints no count at all.
     mockGetAuthorPageAction.mockResolvedValue({
-      ...PERSON,
-      profile: { ...PROFILE, total: 0, articles: [] },
+      status: 'ok',
+      page: { ...PERSON, profile: { ...PROFILE, ok: false, total: 0, articles: [] } },
     });
     render(await route('abubakar-ibrahim'));
 
     expect(screen.getByText(/could not load/i)).toBeInTheDocument();
+    expect(screen.queryByText(/0 articles/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/count unavailable/i)).toBeInTheDocument();
+  });
+
+  it('distinguishes a read that found nothing from a read that failed', async () => {
+    // Both are `total: 0`. Only one of them is a statement about the journalist,
+    // and the page must not use the other one's words for it.
+    mockGetAuthorPageAction.mockResolvedValue({
+      status: 'ok',
+      page: { ...PERSON, profile: { ...PROFILE, ok: true, total: 0, articles: [] } },
+    });
+    render(await route('abubakar-ibrahim'));
+
+    expect(screen.getByText(/No articles under this byline/i)).toBeInTheDocument();
+    expect(screen.queryByText(/could not load/i)).not.toBeInTheDocument();
   });
 
   it('404s a URL that is not a byline', async () => {
-    mockGetAuthorPageAction.mockResolvedValue(null);
+    mockGetAuthorPageAction.mockResolvedValue({ status: 'not-found' });
     await expect(route('nobody')).rejects.toThrow('NEXT_NOT_FOUND');
+  });
+
+  /**
+   * The regression this route was rebuilt for.
+   *
+   * While the unindexed directory `$group` was timing out, every byline on the
+   * platform answered 'Byline not found'. A 404 is the platform asserting that a
+   * named journalist does not exist — a claim, made from an outage, and served
+   * to crawlers as an instruction to drop the page. An unreadable corpus is a
+   * 5xx and nothing else.
+   */
+  describe('when the corpus could not be read', () => {
+    beforeEach(() => {
+      mockGetAuthorPageAction.mockResolvedValue({ status: 'unavailable' });
+    });
+
+    it('throws to the error boundary instead of calling notFound()', async () => {
+      await expect(route('abubakar-ibrahim')).rejects.toThrow(/could not be read/i);
+      expect(mockNotFound).not.toHaveBeenCalled();
+    });
+
+    it('does not title the page "Byline not found"', async () => {
+      const meta = await generateMetadata({
+        params: Promise.resolve({ slug: ['abubakar-ibrahim'] }),
+      });
+      expect(meta.title).not.toMatch(/not found/i);
+      // And it is not offered to a crawler as a page worth filing under that
+      // title either — an outage must not cost a real journalist their index
+      // entry.
+      expect(meta.robots).toMatchObject({ index: false });
+    });
   });
 
   it('404s a URL with more segments than the page ever issues', async () => {
@@ -172,7 +222,7 @@ describe('/author', () => {
     });
 
     it('canonicalises a desk at its scoped address, never at the bare byline', async () => {
-      mockGetAuthorPageAction.mockResolvedValue(DESK);
+      mockGetAuthorPageAction.mockResolvedValue({ status: 'ok', page: DESK });
       const meta = await generateMetadata({
         params: Promise.resolve({ slug: ['the-herald', 'staff-reporter'] }),
       });
