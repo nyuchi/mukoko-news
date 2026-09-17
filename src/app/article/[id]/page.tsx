@@ -1,10 +1,11 @@
-import { cache } from "react";
+import { cache, Suspense } from "react";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { getArticleById } from "@/lib/mongodb/articles";
+import { articleExists, getArticleById } from "@/lib/mongodb/articles";
 import { getArticleUrl, BASE_URL } from "@/lib/constants";
 import { isValidImageUrl } from "@/lib/utils";
 import ArticleDetailClient from "./article-detail-client";
+import { ArticlePageSkeleton } from "@/components/ui/skeleton";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -101,21 +102,44 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   };
 }
 
-export default async function ArticleDetailPage({ params }: Props) {
-  const { id } = await params;
+/**
+ * The article itself, behind the boundary.
+ *
+ * Split out so the expensive read — the full document plus the two joins in
+ * `resolveArticleDetail` — happens INSIDE `<Suspense>` and streams, while the
+ * decision that sets the status code happens outside it. `fetchArticle` is
+ * `cache()`d, so `generateMetadata` and this share one read per request.
+ */
+async function ArticleBody({ id }: { id: string }) {
   const result = await fetchArticle(id);
-  // An id that resolves to nothing answers 404 rather than a 200 shell —
-  // articles churn constantly here, and a soft-404 leaves every dead id in the
-  // index as a thin duplicate. A read *failure* still renders the shell, so an
-  // outage degrades instead of deindexing.
-  //
-  // ⚠️ This was ASPIRATIONAL until 2026-09-17: measured on production, a dead
-  // id answered `200` with `Article Not Found` in the title. This route carried
-  // its own `loading.tsx`, and a Suspense boundary above a page streams the
-  // shell — and the status line — before the page decides, so the `notFound()`
-  // below landed in a response that had already said `200 OK`. Both that file
-  // and the root one are gone; `route-status-codes.test.ts` keeps them gone.
-  if (result.status === "missing") notFound();
+  // A read FAILURE still renders the shell, so an outage degrades instead of
+  // deindexing. `missing` cannot reach here — the route already 404'd on it.
   const article = result.status === "ok" ? result.article : null;
   return <ArticleDetailClient articleId={id} initialArticle={article} />;
+}
+
+export default async function ArticleDetailPage({ params }: Props) {
+  const { id } = await params;
+
+  // The existence check is deliberately the FIRST thing awaited and sits
+  // OUTSIDE the boundary below, because everything above a `<Suspense>`
+  // decides the status line and everything inside it is already too late.
+  //
+  // ⚠️ The 404 here was ASPIRATIONAL until 2026-09-17: measured on production,
+  // a dead id answered `200` with `Article Not Found` in the title. This route
+  // carried a `loading.tsx`, and a Suspense boundary ABOVE a page streams the
+  // shell — and the status line — before the page decides anything, so this
+  // `notFound()` landed in a response that had already said `200 OK`. That file
+  // is gone; the skeleton it rendered now hangs off the in-page boundary below,
+  // which keeps the streaming without buying it with the status code.
+  // `route-status-codes.test.ts` keeps a `loading.tsx` from coming back.
+  //
+  // `null` is "we could not look", and is NOT a 404 — see `articleExists`.
+  if ((await articleExists(id)) === false) notFound();
+
+  return (
+    <Suspense fallback={<ArticlePageSkeleton />}>
+      <ArticleBody id={id} />
+    </Suspense>
+  );
 }
