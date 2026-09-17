@@ -693,6 +693,60 @@
   }
 }
 
+/* The Seed of Life, turning — the app's one loading indicator.
+
+   Two nested elements because both halves animate `transform`, and a single
+   element cannot run two transform animations at once: the outer turns, the
+   inner breathes. The artwork itself is untouched — these move the boxes around
+   `mukoko-mark-full-{light,dark}.svg`, never a fill, so the mark doctrine (no
+   recolouring, no reordering, no mono reduction) holds by construction.
+
+   A full 360°, not the 60° the six-fold geometry would allow: 60° loops
+   seamlessly in shape but lands cobalt where gold was, so the ring would read
+   as changing colour. A whole turn returns every mineral to its own cell. */
+@keyframes mukoko-spinner-turn {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes mukoko-spinner-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(0.86);
+    opacity: 0.7;
+  }
+}
+
+.mukoko-spinner-turn {
+  animation: mukoko-spinner-turn 2.4s linear infinite;
+}
+
+.mukoko-spinner-breathe {
+  animation: mukoko-spinner-breathe 1.6s ease-in-out infinite;
+}
+
+/* Reduced motion gets a mark that is present and still, not one that vanishes:
+   the reader still needs to know something is loading. The breathing element
+   keeps a settled opacity so it does not read as a failed image. */
+@media (prefers-reduced-motion: reduce) {
+  .mukoko-spinner-turn,
+  .mukoko-spinner-breathe {
+    animation: none;
+  }
+
+  .mukoko-spinner-breathe {
+    opacity: 0.85;
+  }
+}
+
 body {
   background: var(--background);
   color: var(--foreground);

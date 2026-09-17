@@ -240,11 +240,36 @@ So `notFound()` **and** `throw` both answered 200 from every rendered dynamic ro
 
 Ruled out on the way, each by rebuilding without it: the AuthKit middleware, `revalidate` (`force-dynamic` behaves identically), MongoDB, and the author route specifically. A page with no database and no ISR reproduced it.
 
-**Both files are deleted.** The cost is the streaming skeleton, and it is small where it was paid: `/` is `revalidate = 180` and prerenders (`○`), so ISR serves the stale page while it regenerates and the skeleton was almost never on screen. `/article/[id]` is genuinely dynamic and does lose its skeleton — accepted, because a correct 404 on a churning corpus is worth more than a skeleton on a route whose whole job is to be indexed. `/discover` and `/insights` **keep** theirs: both prerender, both are fail-soft, and neither calls `notFound()` nor throws, so neither has a status code to lose.
+**Both files are deleted**, and `/article/[id]` **kept its skeleton anyway** (owner direction 2026-09-17 — _"keep the article skeleton with the in-page Suspense"_) by moving the boundary INSIDE the page, which is the general rule below applied rather than an exception to it:
+
+```tsx
+if ((await articleExists(id)) === false) notFound()   // outside: decides the status line
+return (
+  <Suspense fallback={<ArticlePageSkeleton />}>       // inside: streams
+    <ArticleBody id={id} />
+  </Suspense>
+)
+```
+
+That needed the route's one read split in two. **`articleExists`** (`mongodb/articles.ts`) is a projection of `_id` alone — covered outright by `_id_`, an index scan with no document FETCH and no joins — and it is all the 404 decision needs. `getArticleById` stays behind the boundary, where its ~25 KB document and its two further round trips (`feedSources`, the publisher organisation) cost the reader a skeleton rather than a blank page. It is three-valued like every other read here: `false` is a finding about the id, **`null` is "we could not look"**, and only the first is a 404. Measured on a production build: `articleExists → false` answers **404**, a read failure answers **200** with the skeleton, `/author/…` over a dead cluster answers **500**, and an unrouted path still answers 404. `article-page-soft-404.test.ts` asserts the ordering structurally — that `getArticleById` has **not** been called when the boundary is returned — so an edit that awaits the article above the boundary fails rather than silently costing the status code again.
+
+`/` pays nothing for its deletion: `revalidate = 180` prerenders it (`○`), so ISR serves the stale page while it regenerates and the skeleton was almost never on screen. `/discover` and `/insights` **keep** their `loading.tsx`: both prerender, both are fail-soft, and neither calls `notFound()` nor throws, so neither has a status code to lose.
 
 `src/app/__tests__/route-status-codes.test.ts` is the guard. It is keyed on **ancestry, not on a filename** — it walks every `page.tsx`, and any that calls `notFound()` or throws must have no `loading.tsx` at any level from `src/app` down to its own segment. That is the shape of the bug: the boundary that decided `/author`'s status code was one nobody would have associated with `/author`. A second assertion names the root file specifically, so a reintroduction fails with the reason attached. Verified non-vacuous: restoring either file fails it, naming the page and the boundary.
 
 > ⚠️ **The general rule: a route that can answer 404 or 5xx must not stream its shell early.** If such a route needs streaming, the existence check has to resolve in the page _before_ any Suspense boundary, with `<Suspense>` around the slow sub-tree _inside_ the page — never a `loading.tsx` above it.
+
+### The loading mark (`components/ui/mukoko-spinner.tsx`)
+
+**`MukokoSpinner` is the app's one loading indicator: the Seed of Life, turning.** It does **not** redraw the mark — inlining the seven polygons in JSX would be a second copy of the artwork, free to drift from the `public/mukoko-mark-full-{light,dark}.svg` every other surface renders, and free to break the mark doctrine (no recolouring, no reordering, no gradients, no mono reduction). It renders those files and animates the **transform of the boxes around them**, which cannot touch a fill.
+
+Two nested elements, because both halves animate `transform` and one element cannot run two transform animations at once: the outer turns (2.4s linear), the inner breathes (1.6s ease-in-out, scale + opacity). The rotation is a full **360°, not the 60°** the six-fold geometry would allow — 60° loops seamlessly in shape but lands cobalt where gold was, so the ring would read as changing colour; a whole turn returns every mineral to its own cell.
+
+⚠️ **It deliberately does not use `AppIcon`.** `AppIcon` picks its file with `useTheme()`, and this app's `useTheme` **throws** outside a `ThemeProvider` — so building on it would make `ThemeProvider` a hard requirement of every skeleton, empty state and test that mounts a spinner. That is the same coupling the nav sidebar's "no theme toggle in the panel" rule avoids. Both marks are rendered instead and the `.dark` class picks one in **pure CSS**, which also puts the correct mark in the first paint rather than one frame after it. `mukoko-spinner.test.tsx` renders it with **no provider in the tree**, so a rebuild on `AppIcon` fails there rather than at a call site.
+
+It is **decorative by default** (`aria-hidden`) and announces only when given a `label`: inside `ArticlePageSkeleton`, which already carries `role="status"`, a second live region would make a screen reader say the same thing twice. Under `prefers-reduced-motion: reduce` both animations stop and the mark settles at 0.85 opacity — **present and still, not gone**, because the reader still needs to know something is loading. A test reads `globals.css` for that rule, since nothing in the DOM can prove the stylesheet honours it.
+
+**`ArticlePageSkeleton` mirrors the article's real geometry**, which is the only thing that stops the page jumping when it resolves: same column tokens (`--width-reading`, `--page-gutter`, `--page-block-reading`), a headline at the article's own `text-3xl`→`2.75rem/1.15` rather than a flat `h-10` that was short by a third on desktop, and placeholders for the summary card, the hero-sized CTA pill and the provenance panel that the previous version omitted entirely. The spinner sits **inside the hero well** rather than above the column — that is where the eye already is, and a loading indicator stacked on top would push every bar below it down, so the skeleton would stop standing in for the article's geometry, which is its whole job.
 
 ### Data Flow (writes / mutations)
 

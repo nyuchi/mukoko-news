@@ -1,6 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
+import { MukokoSpinner } from "@/components/ui/mukoko-spinner";
 
 interface SkeletonProps {
   className?: string;
@@ -156,38 +157,71 @@ export function InsightsPageSkeleton() {
  */
 export function ArticlePageSkeleton() {
   return (
-    <div className="mx-auto w-full max-w-[var(--width-reading)] px-[var(--page-gutter)] sm:px-[var(--page-gutter-sm)] py-[var(--page-block-reading)]" aria-label="Loading article" role="status" aria-live="polite">
-      {/* Back button */}
-      <Skeleton className="h-10 w-24 mb-6" />
+    <div
+      className="mx-auto w-full max-w-[var(--width-reading)] px-[var(--page-gutter)] sm:px-[var(--page-gutter-sm)] py-[var(--page-block-reading)]"
+      role="status"
+      aria-live="polite"
+      aria-label="Loading article"
+    >
+      {/* Back link */}
+      <Skeleton className="mb-6 h-10 w-24 rounded-full" />
 
-      {/* Category */}
-      <Skeleton className="h-6 w-20 mb-4" />
+      {/* Category chip — a chip, so `--touch-chip` and pill-shaped. */}
+      <Skeleton className="mb-4 h-[var(--touch-chip)] w-24 rounded-full" />
 
-      {/* Title */}
-      <Skeleton className="h-10 w-full mb-2" />
-      <Skeleton className="h-10 w-3/4 mb-6" />
+      {/* Headline. Two lines at the real thing's height: the article sets
+          text-3xl rising to 2.75rem/1.15 from `md`, so a flat h-10 (40px) was
+          short by a third on desktop and the page jumped when it resolved. */}
+      <Skeleton className="mb-2 h-9 w-full md:h-[3.15rem]" />
+      <Skeleton className="mb-6 h-9 w-4/5 md:h-[3.15rem]" />
 
-      {/* Meta */}
-      <div className="flex items-center gap-4 mb-6">
-        <Skeleton className="h-10 w-10 rounded-full" />
-        <div>
-          <Skeleton className="h-4 w-24 mb-1" />
-          <Skeleton className="h-3 w-32" />
+      {/* Byline row — avatar, name, date. */}
+      <div className="mb-6 flex items-center gap-3">
+        <Skeleton className="h-10 w-10 shrink-0 rounded-full" />
+        <div className="min-w-0 flex-1">
+          <Skeleton className="mb-1.5 h-4 w-32" />
+          <Skeleton className="h-3 w-44" />
         </div>
       </div>
 
-      {/* Image */}
-      <Skeleton className="h-[300px] w-full rounded-xl mb-6" />
+      {/* Hero well, and where the mark sits.
+          The spinner goes here rather than above the column because this is
+          where the eye already is, and because a loading indicator stacked on
+          top would push every bar below it down — so the skeleton would not
+          stand in for the article's geometry, which is its whole job. It is
+          decorative: this container already announces. */}
+      <div className="relative mb-6 aspect-[16/9] w-full overflow-hidden rounded-[var(--radius-card)] bg-elevated">
+        <span className="absolute inset-0 flex items-center justify-center">
+          <MukokoSpinner size={56} />
+        </span>
+      </div>
 
-      {/* Content */}
-      <div className="space-y-4">
-        <Skeleton className="h-4 w-full" />
-        <Skeleton className="h-4 w-full" />
-        <Skeleton className="h-4 w-5/6" />
-        <Skeleton className="h-4 w-full" />
-        <Skeleton className="h-4 w-4/5" />
-        <Skeleton className="h-4 w-full" />
-        <Skeleton className="h-4 w-3/4" />
+      {/* AI summary card */}
+      <div className="mb-8 rounded-[var(--radius-card)] border border-outline bg-card p-4">
+        <Skeleton className="mb-3 h-3 w-28" />
+        <Skeleton className="mb-2 h-4 w-full" />
+        <Skeleton className="h-4 w-11/12" />
+      </div>
+
+      {/* Body copy. Ragged by design — uniform full-width bars read as a table,
+          not as prose. */}
+      <div className="mb-8 space-y-3">
+        {["w-full", "w-full", "w-5/6", "w-full", "w-11/12", "w-full", "w-2/3"].map((w, i) => (
+          <Skeleton key={`line-${i}`} className={`h-4 ${w}`} />
+        ))}
+      </div>
+
+      {/* "Read the original" CTA — the real one is a hero-sized pill. */}
+      <Skeleton className="mb-8 h-[var(--touch-hero)] w-52 rounded-full" />
+
+      {/* Source provenance panel */}
+      <div className="rounded-[var(--radius-card)] border border-outline bg-card p-4">
+        <Skeleton className="mb-3 h-3 w-36" />
+        <div className="space-y-2">
+          <Skeleton className="h-3 w-full" />
+          <Skeleton className="h-3 w-4/5" />
+          <Skeleton className="h-3 w-3/5" />
+        </div>
       </div>
     </div>
   );

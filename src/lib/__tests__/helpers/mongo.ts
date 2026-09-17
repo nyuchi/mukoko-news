@@ -118,8 +118,15 @@ export function collectionStub(spec: CollectionSpec = {}): CollectionStub {
     return cursor;
   });
 
-  stub.findOne.mockImplementation((filter: unknown) => {
-    stub.findCalls.push({ filter, options: undefined, projection: undefined });
+  // `options` is recorded, not dropped: a `findOne` whose whole point is its
+  // projection (a covered `_id` lookup, say) is indistinguishable from a full
+  // document read unless the test can see what was asked for.
+  stub.findOne.mockImplementation((filter: unknown, options?: unknown) => {
+    stub.findCalls.push({
+      filter,
+      options,
+      projection: (options as { projection?: unknown } | undefined)?.projection,
+    });
     return settle(nextFrom<unknown | Error>(findOneQueue, null));
   });
 
