@@ -48,6 +48,95 @@ describe('DateTimeWeather', () => {
     vi.useRealTimers();
   });
 
+  describe('following a reader who moves', () => {
+    // `waitFor` polls on REAL timers, so it hangs under fake ones. These cases
+    // need fake timers to advance the interval, so promises are flushed
+    // explicitly instead.
+    const flush = async () => {
+      for (let i = 0; i < 6; i += 1) await Promise.resolve();
+    };
+
+    // The strip used to read the position exactly once, on mount. The weather
+    // refreshed on its own ten-minute tick but always against that frozen fix,
+    // so a reader who travelled kept being told the weather where they had
+    // opened the tab. These pin the re-read, and the two things that must not
+    // come with it: a prompt, and a refetch when nothing moved.
+
+    it('re-reads the position on an interval while permission is granted', async () => {
+      vi.useFakeTimers();
+      mockGeolocationAvailability.mockResolvedValue('granted');
+      mockRequestCoords.mockResolvedValue({ lat: -17.83, lon: 31.05 });
+
+      render(<DateTimeWeather />);
+      await act(flush);
+      expect(mockRequestCoords).toHaveBeenCalledTimes(1);
+
+      mockRequestCoords.mockResolvedValue({ lat: -26.2, lon: 28.04 });
+      await act(async () => {
+        vi.advanceTimersByTime(10 * 60_000);
+        await flush();
+      });
+
+      expect(mockRequestCoords.mock.calls.length).toBeGreaterThan(1);
+      expect(mockStoreCoords).toHaveBeenCalledWith({ lat: -26.2, lon: 28.04 });
+    });
+
+    it('refetches the weather for the new position after a move', async () => {
+      vi.useFakeTimers();
+      mockGeolocationAvailability.mockResolvedValue('granted');
+      mockRequestCoords.mockResolvedValue({ lat: -17.83, lon: 31.05 });
+
+      render(<DateTimeWeather />);
+      await act(flush);
+
+      mockRequestCoords.mockResolvedValue({ lat: -26.2, lon: 28.04 });
+      await act(async () => {
+        vi.advanceTimersByTime(10 * 60_000);
+        await flush();
+      });
+
+      expect(mockFetchCurrentWeather).toHaveBeenCalledWith({ lat: -26.2, lon: 28.04 });
+    });
+
+    it('never asks for a position when permission has not been granted', async () => {
+      // The re-read must not become a back door around rule 1: no prompt on
+      // load, ever. `prompt` means the reader has not said yes.
+      vi.useFakeTimers();
+      mockGeolocationAvailability.mockResolvedValue('prompt');
+
+      render(<DateTimeWeather />);
+      await act(async () => {
+        await flush();
+        vi.advanceTimersByTime(30 * 60_000);
+        await flush();
+      });
+
+      expect(mockRequestCoords).not.toHaveBeenCalled();
+    });
+
+    it('does not churn when the reader has not left their ~1.1km cell', async () => {
+      // Coarsened coordinates are the point: an identical pair must not
+      // replace state, or every tick would refire the weather effect.
+      vi.useFakeTimers();
+      mockGeolocationAvailability.mockResolvedValue('granted');
+      mockRequestCoords.mockResolvedValue({ lat: -17.83, lon: 31.05 });
+
+      render(<DateTimeWeather />);
+      await act(flush);
+      const afterFirstFix = mockFetchCurrentWeather.mock.calls.length;
+
+      await act(async () => {
+        vi.advanceTimersByTime(10 * 60_000);
+        await flush();
+      });
+
+      // The interval's own weather tick may fire; what must NOT happen is an
+      // extra refetch caused by coords being replaced with an equal value.
+      const withSameFix = mockFetchCurrentWeather.mock.calls.length;
+      expect(withSameFix - afterFirstFix).toBeLessThanOrEqual(1);
+    });
+  });
+
   describe('the clock', () => {
     it('renders NO time on the server, only a reserved placeholder', () => {
       // The server runs in the datacenter's timezone. Putting a time in the
