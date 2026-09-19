@@ -28,6 +28,7 @@ import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { ArticleReadingMeta, ArticleMetricsPanel } from "@/components/article/article-metrics";
 import { ArticleByline } from "@/components/article/article-byline";
 import { ArticleSummary } from "@/components/article/article-summary";
+import { MeteredArticleBody } from "@/components/access/metered-article-body";
 import { SourceProvenancePanel } from "@/components/article/source-provenance";
 import { RelatedArticles } from "@/components/article/related-articles";
 import { ReadProgress } from "@/components/article/read-progress";
@@ -102,6 +103,15 @@ export default function ArticleDetailClient({
     }
   }, [articleId, initialArticle, loadArticle]);
 
+  // Likes and saves are account-only, enforced server-side. A 401 here is not a
+  // failure — it is the gate — so the reader is sent to sign in and returned to
+  // this article, rather than shown an error for doing the thing we asked them
+  // to do. Reverting the optimistic update first matters: leaving the heart
+  // filled while navigating away would tell them the like landed.
+  const requireAccount = () => {
+    router.push(`/sign-in?returnTo=${encodeURIComponent(`/article/${articleId}`)}`);
+  };
+
   const handleLike = async () => {
     // Optimistic update
     const wasLiked = isLiked;
@@ -109,7 +119,14 @@ export default function ArticleDetailClient({
     setLikesCount(wasLiked ? likesCount - 1 : likesCount + 1);
 
     try {
-      const result = await fetch(`/api/articles/${articleId}/like`, { method: 'POST' }).then(r => r.json()) as { liked: boolean };
+      const res = await fetch(`/api/articles/${articleId}/like`, { method: 'POST' });
+      if (res.status === 401) {
+        setIsLiked(wasLiked);
+        setLikesCount(wasLiked ? likesCount : likesCount - 1);
+        requireAccount();
+        return;
+      }
+      const result = await res.json() as { liked: boolean };
       // Sync with server state if different
       if (result.liked !== !wasLiked) {
         setIsLiked(result.liked);
@@ -128,7 +145,13 @@ export default function ArticleDetailClient({
     setIsSaved(!wasSaved);
 
     try {
-      const result = await fetch(`/api/articles/${articleId}/save`, { method: 'POST' }).then(r => r.json()) as { saved: boolean };
+      const res = await fetch(`/api/articles/${articleId}/save`, { method: 'POST' });
+      if (res.status === 401) {
+        setIsSaved(wasSaved);
+        requireAccount();
+        return;
+      }
+      const result = await res.json() as { saved: boolean };
       // Sync with server state if different
       if (result.saved !== !wasSaved) {
         setIsSaved(result.saved);
@@ -450,30 +473,32 @@ export default function ArticleDetailClient({
             </PageBleed>
           )}
 
-          <ArticleSummary summary={article.summary} />
+          <ArticleSummary summary={article.summary} articleId={articleId} />
 
           {/* Body — the pipeline's Markdown rendition where it exists, plain
               paragraphs for legacy articles the Markdown backfill has not
               reached. */}
-          {article.content_markdown ? (
-            <div className="mb-8">
-              <Markdown>{article.content_markdown}</Markdown>
-            </div>
-          ) : (
-            article.content && (
-              <div className="prose prose-lg mb-8 max-w-none dark:prose-invert">
-                {article.content
-                  .split(/\n+/)
-                  .map((p) => p.trim())
-                  .filter(Boolean)
-                  .map((paragraph, index) => (
-                    <p key={`${article.id}-p-${index}`} className="mb-4 leading-relaxed">
-                      {paragraph}
-                    </p>
-                  ))}
+          <MeteredArticleBody articleId={articleId}>
+            {article.content_markdown ? (
+              <div className="mb-8">
+                <Markdown>{article.content_markdown}</Markdown>
               </div>
-            )
-          )}
+            ) : (
+              article.content && (
+                <div className="prose prose-lg mb-8 max-w-none dark:prose-invert">
+                  {article.content
+                    .split(/\n+/)
+                    .map((p) => p.trim())
+                    .filter(Boolean)
+                    .map((paragraph, index) => (
+                      <p key={`${article.id}-p-${index}`} className="mb-4 leading-relaxed">
+                        {paragraph}
+                      </p>
+                    ))}
+                </div>
+              )
+            )}
+          </MeteredArticleBody>
 
           {/* Read at the publisher. Mukoko shows what the feed gave it and
               sends the reader on; the traffic belongs to the newsroom that did

@@ -12,12 +12,20 @@
  * to safe defaults rather than throwing: a malformed filter yields an
  * unfiltered-but-bounded query, not a 500.
  *
- * ACCESS: every action here requires a signed-in viewer. Unlike `/insights`,
- * which publishes a fixed set of aggregates, the console answers an arbitrary
- * query over the corpus and returns sample articles — a queryable database, not
- * a published dataset. The guard lives in each action rather than only on the
- * page because an action id can be POSTed directly by anyone who has seen it
- * once; a page-only redirect would protect nothing.
+ * ACCESS: every action here requires a signed-in viewer EXCEPT
+ * `runCorpusPreviewAction`, which is the anonymous top of the sign-up funnel and
+ * carries its own justification at its definition. Unlike `/insights`, which
+ * publishes a fixed set of aggregates, the console answers an arbitrary query
+ * over the corpus and returns sample articles — a queryable database, not a
+ * published dataset. The guard lives in each action rather than only on the page
+ * because an action id can be POSTed directly by anyone who has seen it once; a
+ * page-only redirect would protect nothing.
+ *
+ * That last sentence is exactly why the preview is a SEPARATE action rather than
+ * a flag on the gated one. A `runCorpusQueryAction({ preview: true })` would put
+ * the anonymous path and the signed-in path behind one action id, one argument
+ * apart — and the argument arrives from the caller. Two doors cannot be confused
+ * for each other; one door with a mode can.
  */
 
 import { z } from 'zod'
@@ -25,10 +33,12 @@ import { unstable_cache } from 'next/cache'
 import { requireViewer } from '@/lib/auth/guard'
 import {
   runCorpusQuery,
+  runCorpusPreview,
   getCoverageConcentration,
   getQueryFacets,
   type CorpusQueryParams,
   type CorpusQueryResult,
+  type CorpusPreview,
   type CoverageConcentration,
   type QueryFacets,
 } from '@/lib/mongodb/analytics'
@@ -105,6 +115,34 @@ function safeQueryParams(raw: unknown): CorpusQueryParams {
 export async function runCorpusQueryAction(params: unknown): Promise<CorpusQueryResult> {
   await requireViewer()
   return runCorpusQuery(safeQueryParams(params))
+}
+
+/**
+ * The anonymous half of the console — the top of the sign-up funnel.
+ *
+ * ⚠️ **This one deliberately does NOT call `requireViewer()`**, and that is the
+ * whole point of it, so it is worth saying why it is not a hole in the gate
+ * above.
+ *
+ * `runCorpusPreview` runs only the `$searchMeta` facet pass. It never issues the
+ * document scan, never returns a sample article, and never returns the named
+ * entities, bylines or quality average — those come from the pass it does not
+ * run, so they cannot leak through this door even by mistake. What it returns
+ * are counts and shares over a query: the same KIND of figure `/insights`
+ * already publishes to anyone, narrowed to a question the reader asked.
+ *
+ * The two reasons `guard.ts` gives for gating the console both survive:
+ *   - "a queryable database rather than a published dataset" — there are no rows
+ *     of articles here, only aggregates;
+ *   - "the expensive path reachable without a cost owner" — the expensive path
+ *     is the deep scan, and this is not it.
+ *
+ * Defended the way the other open surfaces are — by cost, not by a login (see
+ * the open-data note in CLAUDE.md). Inputs are clamped by the same schemas as
+ * the gated action, so an unbounded `limit` cannot be used as a load generator.
+ */
+export async function runCorpusPreviewAction(params: unknown): Promise<CorpusPreview> {
+  return runCorpusPreview(safeQueryParams(params))
 }
 
 /**

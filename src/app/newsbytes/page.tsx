@@ -96,6 +96,29 @@ export default function NewsBytesPage() {
     return () => observer.disconnect();
   }, [bytes.length]);
 
+  // Undo an optimistic toggle. Both the error path and the account-gate path
+  // need exactly this, and writing it twice per action is how the two drift.
+  const revertLike = (byteId: string) => {
+    setBytesState((prev) => {
+      const current = prev[byteId] || { isLiked: false, isSaved: false, likesCount: 0 };
+      return {
+        ...prev,
+        [byteId]: {
+          ...current,
+          isLiked: !current.isLiked,
+          likesCount: current.isLiked ? current.likesCount + 1 : current.likesCount - 1,
+        },
+      };
+    });
+  };
+
+  const revertSave = (byteId: string) => {
+    setBytesState((prev) => {
+      const current = prev[byteId] || { isLiked: false, isSaved: false, likesCount: 0 };
+      return { ...prev, [byteId]: { ...current, isSaved: !current.isSaved } };
+    });
+  };
+
   const handleLike = async (byteId: string, e: React.MouseEvent) => {
     e.stopPropagation();
 
@@ -114,7 +137,16 @@ export default function NewsBytesPage() {
 
     // Call API
     try {
-      await fetch(`/api/articles/${byteId}/like`, { method: 'POST' });
+      const res = await fetch(`/api/articles/${byteId}/like`, { method: 'POST' });
+      // A 401 is the account gate, not an error — and it has to be handled
+      // here rather than ignored. The response used to be discarded entirely,
+      // so a denied write left the optimistic state on screen: the control
+      // showed the action had landed when nothing had been stored.
+      if (res.status === 401) {
+        revertLike(byteId);
+        router.push(`/sign-in?returnTo=${encodeURIComponent("/newsbytes")}`);
+        return;
+      }
     } catch (err) {
       // Revert on error
       console.error("Failed to like article:", err);
@@ -149,7 +181,16 @@ export default function NewsBytesPage() {
 
     // Call API
     try {
-      await fetch(`/api/articles/${byteId}/save`, { method: 'POST' });
+      const res = await fetch(`/api/articles/${byteId}/save`, { method: 'POST' });
+      // A 401 is the account gate, not an error — and it has to be handled
+      // here rather than ignored. The response used to be discarded entirely,
+      // so a denied write left the optimistic state on screen: the control
+      // showed the action had landed when nothing had been stored.
+      if (res.status === 401) {
+        revertSave(byteId);
+        router.push(`/sign-in?returnTo=${encodeURIComponent("/newsbytes")}`);
+        return;
+      }
     } catch (err) {
       // Revert on error
       console.error("Failed to save article:", err);

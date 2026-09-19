@@ -139,6 +139,35 @@ describe('InsightsClient', () => {
     expect(screen.getByText(/Coverage: 25% of the corpus/i)).toBeInTheDocument()
   })
 
+  /**
+   * Every measurable row on this dashboard pivots INTO the query console, so a
+   * reader who clicks a bar keeps analysing it. Topic distribution alone used to
+   * send them to `/discover` — out of the analysis and into a browse feed, with
+   * every other figure on screen dropped. The two surfaces filter the same field
+   * (`engagement.interest_categories`), so this was never a data difference.
+   *
+   * Asserted by destination rather than by class name: a future edit that points
+   * this back at a browse route fails here with the reason attached.
+   */
+  it('pivots a topic row into the analytics console, never out to /discover', () => {
+    render(<InsightsClient summary={bundle.summary} detail={bundle} />)
+
+    const topicRow = screen.getByRole('link', { name: /Politics/i })
+    expect(topicRow).toHaveAttribute('href', '/analytics?category=politics')
+
+    for (const link of screen.getAllByRole('link')) {
+      expect(link.getAttribute('href') ?? '').not.toMatch(/^\/discover/)
+    }
+  })
+
+  it('keeps country rows pointing at the same console, so the two agree', () => {
+    render(<InsightsClient summary={bundle.summary} detail={bundle} />)
+    expect(screen.getByRole('link', { name: /Zimbabwe/i })).toHaveAttribute(
+      'href',
+      '/analytics?country=ZW'
+    )
+  })
+
   it('sorts the leaderboard when a column header is clicked', () => {
     render(<InsightsClient summary={bundle.summary} detail={bundle} />)
     const table = screen.getByRole('table')

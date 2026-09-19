@@ -426,22 +426,45 @@ FLY_TRIGGER_TOKEN=...                              # must match the fly secret
 
 **Entity capabilities are not platform tiers** (owner decision 2026-09-02) — `src/lib/auth/entity-access.ts` is the _only_ consumer of memberships, and it turns one into `EntityCapability`s (`entity:read` / `entity:manage` / `entity:members`) that apply to **that one entity**. It cannot produce a `Tier`: it imports nothing from `roles.ts`, `roles.ts` reads no database, and `/admin` takes no membership input — three assertions the `entity-access` test suite enforces structurally, so a future edit that wires them together fails CI rather than silently widening access. Capabilities come from `membershipRole` through a **closed** map (an unknown role grants nothing); the row's own `permissions` array is never consulted for a decision, and `sanitizeEntityPermissions` strips the reserved namespaces (`platform:`, `mukoko:`, `nyuchi:`, `admin:`, `news:`, plus bare `admin`/`superadmin`/`moderator`/`support`/`staff`) on read. That is not theoretical: an active membership on the live cluster carries `permissions: ["platform:admin"]`, on an entity with **no** `workosOrgId` to reconcile against, and several other active memberships are of `entityType: "family"` entities — founding your own household is not staff access. Since `entity` is written by the gateway's WorkOS webhook and MongoDB's validators accept unknown fields, honouring a slug from there would make every writer to `entity` an authority on who administers this app. Every decision grants on the **presence** of a membership, so the fail-soft empty read denies rather than opens. `src/lib/actions/entity-access.ts` is the Server-Action door; `src/components/profile/profile-organizations.tsx` shows the caller their own memberships on `/profile`.
 
-### Reader access tiers (`src/lib/access.ts`) — NOT staff RBAC
+### Reader access tiers (`src/lib/access.ts` + `src/lib/metering.ts`) — NOT staff RBAC
 
-**One map, consulted everywhere** (owner decision 2026-09-11 — _"I need to start making money from this some how"_). `canAccess(feature, plan)` answers whether a READER may reach a gated capability; `planFor(signedIn)` produces the plan. Plans rank `anonymous` < `free` < `subscriber`, and both the map and the rank **fail closed**: an unknown feature or an unknown plan grants nothing, the same rule `entity-access.ts` applies to membership roles.
+**One map, consulted everywhere** (owner decision 2026-09-11 — _"I need to start making money from this some how"_; shape set 2026-09-19 — _"Free = public is 50 articles 5 searches, then the rest is gated but free user tier — have to be logged in. Similar to how Instagram and TikTok work. Interactions is gated by auth. Analytics and AI is gated to auth, 5 article insights then tiers by subscription kicks in."_).
 
-⚠️ **Nothing returns `subscriber` yet.** There is no billing — no plan field, no webhook, no checkout — so `planFor` can only answer `anonymous` or `free`, and a test asserts it. The tier exists so features can be _declared_ against it now and moved in one edit later. The plan must never be read from a field another domain writes: `identity`/`entity` are written by the gateway's WorkOS webhook and Mongo's validators accept unknown keys, so honouring a `plan` from there would make every writer to those databases an authority on who has paid.
+**Two mechanisms, and keeping them apart is the point of the file.**
 
-**This is not `roles.ts`.** That answers "is this person platform staff" from the WorkOS org claims and gates `/admin`. This answers "has this reader paid". An admin is not a subscriber and a subscriber is not an admin; `access.test.ts` asserts structurally that neither module imports the other, so an edit that wires them together fails CI rather than quietly turning a paywall into a privilege escalation.
+|                                                   | what it answers                                             | where        |
+| ------------------------------------------------- | ----------------------------------------------------------- | ------------ |
+| **gate** (`canAccess`)                            | may this plan reach the feature at all — binary             | `REQUIRES`   |
+| **allowance** (`allowanceOf` / `withinAllowance`) | how much of it — a ceiling on something otherwise reachable | `ALLOWANCES` |
 
-| gated                 | plan   | enforced where                                                     |
-| --------------------- | ------ | ------------------------------------------------------------------ |
-| `ai-summary`          | `free` | `article-summary.tsx`, client-side                                 |
-| `analytics-console`   | `free` | `/analytics` page redirect **+** `requireViewer()` in every action |
-| `analytics-export`    | `free` | the export route                                                   |
-| `saved-articles`      | `free` | account-scoped by the engagement subject                           |
-| `publisher-dashboard` | `free` | ownership-gated                                                    |
-| `source-transparency` | `free` | `source-provenance.tsx` + the `/sources` directory                 |
+Collapsing the two is how an aggregator deletes itself from search. `robots.txt` here deliberately courts crawlers and **for an aggregator that indexed traffic IS the asset**, so reading and searching are **metered, never gated**: the 50-article wall is a thing a _person_ meets after real use, not a gate a crawler meets on its first request.
+
+|                            | anonymous    | free  | pro | custom |
+| -------------------------- | ------------ | ----- | --- | ------ |
+| articles read              | **50**       | ∞     | ∞   | ∞      |
+| searches                   | **5**        | ∞     | ∞   | ∞      |
+| AI summaries               | 0 (gated)    | **5** | ∞   | ∞      |
+| interactions (like/save)   | ✗            | ✓     | ✓   | ✓      |
+| analytics console / export | preview only | ✓     | ✓   | ✓      |
+
+**Plans are `anonymous` < `free` < `pro` < `custom`**, and both the map and the rank **fail closed**: an unknown feature or plan grants nothing, the same rule `entity-access.ts` applies to membership roles. `free`/`pro`/`custom` are **not invented here** — they mirror `MukokoPlan`, the cross-app subscription vocabulary the sibling apps already use (nhimbe's `src/lib/mongo/entitlements.ts`), so one subscription means the same thing in every product. `anonymous` is this app's own addition: the shared field cannot express "not signed in", because the apps that defined it require a session before anything is gated.
+
+⚠️ **Nothing returns `pro` or `custom` yet.** `planFor(signedIn, mukokoPlan)` reads the plan from an argument its callers all pass as `null`, because the billing service that would set `identity.persons.mukoko.plan` does not exist. Checked rather than assumed (2026-09-19): the gateway's `IdentityService.ts` writes only WorkOS OIDC claim fields and **never touches `mukoko.plan`**, so the field has exactly one intended writer and that writer is not yet built. Until it is, everyone signed in reads `free`. The plan must never be read from a field another domain writes freely.
+
+**⚠️ The meters are CONVERSION gates, not confidentiality gates.** `src/lib/metering.ts` counts in the reader's own `localStorage`, so a determined reader clears it in a keystroke. That is the deliberate trade, for the reason above: a server-side wall treats a crawler as an anonymous reader and serves it the wall. **Nothing behind a meter may be a secret**, because the payload was already delivered — if something genuinely must not leave the server it needs a session-gated action of its own. (A first draft of that note also claimed a server-side count would cost `/article/[id]` its ISR. **Measured: that route is already `ƒ` dynamic and was before any of this.** The prerendered metered surfaces are `/`, `/search`, `/discover` and `/insights`; the crawler argument is the one that carries articles.)
+
+**Interactions are the counter-example and are gated properly, server-side** — `src/lib/auth/interaction-guard.ts`, called by `/api/articles/[id]/{like,save}`. Those are POSTs rather than indexed pages, so no crawler issues one and no page is made dynamic by reading the session; a client-side check there would be three keystrokes in a console. It **fails closed** on an auth outage, and it sits **above the article-id validation** — which is also what `access.test.ts` uses to prove it is the guard doing the denying and not something else. **`/view` is deliberately NOT gated**: views fire on every article load including a crawler's.
+
+Three rules the enforcement follows, each recorded because the first cut got it wrong:
+
+- **The verdict is taken on ARRIVAL, before the article is counted, then held.** Asking after spending the fiftieth says fifty is one too many, and a reader promised fifty gets forty-nine. Holding it stops a wall materialising mid-paragraph, which is indistinguishable from the page breaking. A first version derived it live from `hasCounted` and so could never wall anything at all — the effect records the current article, which makes it read as already-paid-for a frame later.
+- **Something already given is never taken back.** An article or summary already counted stays readable at the limit.
+- **A wall must never state a fact we did not measure.** The search results header reads _"Found N results for X"_, and with the search never issued N is 0 — so the walled branch renders instead of it, not beside it. Same failure `CorpusSummary.ok` exists to prevent.
+- **Storage failing must not trap anyone.** A throwing `localStorage` reads as _zero used_ — deliberately the opposite of `withinAllowance`, which treats a broken count as exhausted. A non-finite count can only come from a miswired counter; a throwing read is a person in a private window.
+
+**No reset window, deliberately.** Fifty articles on this device, not fifty a month — the reference was Instagram and TikTok, and those are one-way walls. A rolling window is a reasonable different product decision but it is a _pricing_ decision, and inventing a period here would be this repo's own forbidden move. Adding one later is one field and one comparison.
+
+**This is not `roles.ts`.** That answers "is this person platform staff" from the WorkOS org claims and gates `/admin`. This answers "what has this reader signed up or paid for". `access.test.ts` asserts structurally that neither module imports the other, that no enforcing surface hardcodes an allowance (scanned in the two pure modules — on a JSX file Tailwind's `p-5` and a genuine `slice(0, 50)` make that scan pure noise, so the positive assertion that every decider reads the map carries the rest there), and that the interaction guard is present on `/like` and `/save` and absent from `/view`.
 
 ### The source trust score was WITHDRAWN, not gated (owner decision 2026-09-11)
 
