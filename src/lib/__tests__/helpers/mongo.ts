@@ -37,6 +37,12 @@ export interface CountCall {
   options: unknown;
 }
 
+/** One `bulkWrite(operations, options)` call. */
+export interface BulkWriteCall {
+  operations: unknown[];
+  options?: unknown;
+}
+
 export interface CollectionStub {
   find: Mock;
   findOne: Mock;
@@ -44,9 +50,15 @@ export interface CollectionStub {
   countDocuments: Mock;
   estimatedDocumentCount: Mock;
   distinct: Mock;
+  bulkWrite: Mock;
+  deleteMany: Mock;
   findCalls: FindCall[];
   aggregateCalls: AggregateCall[];
   countCalls: CountCall[];
+  /** Every `bulkWrite`, in order — so a test can assert on the ops, not just the count. */
+  bulkWriteCalls: BulkWriteCall[];
+  /** Every `deleteMany` filter, in order. */
+  deleteManyCalls: unknown[];
 }
 
 /**
@@ -69,9 +81,20 @@ interface CollectionSpec {
   aggregate?: QueueEntry[];
   /** Result of `countDocuments`. */
   count?: number | Error;
-  /** Result of `estimatedDocumentCount`. */
-  estimated?: number | Error;
+  /** Results for successive `estimatedDocumentCount()` calls, in order. */
+  estimated?: number | Error | Array<number | Error>;
   distinct?: unknown[];
+  /** Result of `bulkWrite`. Defaults to "everything upserted". */
+  bulkWrite?: BulkWriteResultStub | Error;
+  /** Result of `deleteMany`. */
+  deleteMany?: { deletedCount: number } | Error;
+}
+
+/** The three counters this codebase reads off a `bulkWrite` result. */
+export interface BulkWriteResultStub {
+  upsertedCount?: number;
+  matchedCount?: number;
+  modifiedCount?: number;
 }
 
 function nextFrom<T>(queue: T[] | undefined, fallback: T): T {
@@ -88,17 +111,35 @@ export function collectionStub(spec: CollectionSpec = {}): CollectionStub {
   const findOneQueue = spec.findOne ? [...spec.findOne] : undefined;
   const aggregateQueue = spec.aggregate ? [...spec.aggregate] : undefined;
 
+  // A queue, because the publisher calls it once to decide whether an empty
+  // build may overwrite, and a test needs to drive "populated, then empty".
+  const estimatedQueue = Array.isArray(spec.estimated) ? [...spec.estimated] : undefined;
+
   const stub: CollectionStub = {
     findCalls: [],
     aggregateCalls: [],
     countCalls: [],
+    bulkWriteCalls: [],
+    deleteManyCalls: [],
     find: vi.fn(),
     findOne: vi.fn(),
     aggregate: vi.fn(),
     countDocuments: vi.fn(),
     estimatedDocumentCount: vi.fn(),
     distinct: vi.fn(async () => spec.distinct ?? []),
+    bulkWrite: vi.fn(),
+    deleteMany: vi.fn(),
   };
+
+  stub.bulkWrite.mockImplementation((operations: unknown[], options?: unknown) => {
+    stub.bulkWriteCalls.push({ operations, options });
+    return settle(spec.bulkWrite ?? { upsertedCount: operations.length });
+  });
+
+  stub.deleteMany.mockImplementation((filter: unknown) => {
+    stub.deleteManyCalls.push(filter);
+    return settle(spec.deleteMany ?? { deletedCount: 0 });
+  });
 
   stub.find.mockImplementation((filter: unknown, options: unknown) => {
     const record: FindCall = {
@@ -141,7 +182,13 @@ export function collectionStub(spec: CollectionSpec = {}): CollectionStub {
     return settle(spec.count ?? 0);
   });
 
-  stub.estimatedDocumentCount.mockImplementation(() => settle(spec.estimated ?? 0));
+  stub.estimatedDocumentCount.mockImplementation(() =>
+    settle(
+      estimatedQueue
+        ? nextFrom<number | Error>(estimatedQueue, 0)
+        : ((spec.estimated as number | Error | undefined) ?? 0)
+    )
+  );
 
   return stub;
 }
