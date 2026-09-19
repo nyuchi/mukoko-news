@@ -527,14 +527,26 @@ export default function InsightsClient({
               {/* Category distribution */}
               {categories && categories.categories.length > 0 && (
                 <Section
+                  deepDive={{ href: '/analytics', label: 'Query these topics' }}
                   title="Topic distribution"
                   caption={`Share of ${formatNumber(
                     categories.totalAssignments
                   )} category assignments — top ${categories.categories.length} cover ${categories.coverage}%.`}
                 >
+                  {/*
+                    Every other row on this dashboard pivots INTO the query
+                    console — country coverage already does, and both deep-dive
+                    links point there. This one alone sent the reader to
+                    `/discover`, i.e. out of the analysis and into a browse feed,
+                    so clicking a bar you were measuring dropped every other
+                    figure on screen. Both surfaces filter the same field
+                    (`engagement.interest_categories`), so this is a change of
+                    destination, not of meaning: `/analytics?category=<slug>` is
+                    read by the console's own `categories` param and applied.
+                  */}
                   <BarList
                     colorClass="bg-cobalt"
-                    href={(slug) => `/discover?category=${encodeURIComponent(slug)}`}
+                    href={(slug) => `/analytics?category=${encodeURIComponent(slug)}`}
                     items={categories.categories.map((c) => ({
                       key: c.slug,
                       label: humanize(c.slug),
