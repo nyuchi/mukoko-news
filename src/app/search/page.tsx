@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { Search, Loader2, TrendingUp, BarChart3, X } from "lucide-react";
 import { ArticleCard } from "@/components/article-card";
@@ -9,6 +9,8 @@ import { CategoryChip } from "@/components/ui/category-chip";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { type Article, type Category } from "@/lib/api";
 import { getCategoriesAction, getTrendingCategoriesAction, getStatsAction, searchArticlesAction } from "@/lib/actions/feed";
+import { useMeter } from "@/hooks/use-meter";
+import { MeterWall } from "@/components/access/meter-wall";
 
 export default function SearchPage() {
   const [query, setQuery] = useState("");
@@ -19,6 +21,20 @@ export default function SearchPage() {
   const [loading, setLoading] = useState(false);
   const [insightsLoading, setInsightsLoading] = useState(true);
   const [searchMethod, setSearchMethod] = useState<'semantic' | 'keyword' | null>(null);
+
+  // Searching is metered for readers without an account (5, see @/lib/access).
+  const searchMeter = useMeter("searches");
+  const [walled, setWalled] = useState(false);
+
+  // ⚠️ A search is a QUERY, not a request.
+  //
+  // `performSearch` is called from four places and two of them re-run the query
+  // already on screen with a different category filter. Counting every call
+  // would spend a reader's whole allowance on one question — five chip taps
+  // while refining a single search and they are done — which is not what
+  // anybody reads "5 searches" to mean. So the allowance is spent when the
+  // query TEXT changes, and narrowing what you already asked is free.
+  const spentOnRef = useRef<string | null>(null);
 
   // Real trending topics from categories
   const [trendingTopics, setTrendingTopics] = useState<Array<{ name: string; count: number }>>([]);
@@ -69,8 +85,24 @@ export default function SearchPage() {
       setResults([]);
       setActiveQuery("");
       setSearchMethod(null);
+      setWalled(false);
       return;
     }
+
+    const term = searchQuery.trim();
+    if (spentOnRef.current !== term) {
+      if (!searchMeter.allowed) {
+        // Out of allowance. Show the wall over the reader's own query rather
+        // than running it — and do NOT clear what is already on screen, so the
+        // last search they did get stays readable behind the ask.
+        setActiveQuery(term);
+        setWalled(true);
+        return;
+      }
+      searchMeter.record();
+      spentOnRef.current = term;
+    }
+    setWalled(false);
 
     setLoading(true);
     setActiveQuery(searchQuery);
@@ -86,7 +118,7 @@ export default function SearchPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [searchMeter]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -98,6 +130,7 @@ export default function SearchPage() {
     setActiveQuery("");
     setResults([]);
     setSelectedCategory(null);
+    setWalled(false);
   };
 
   const handleCategoryClick = (categoryName: string) => {
@@ -187,8 +220,26 @@ export default function SearchPage() {
         </div>
       )}
 
+      {/* Out of free searches.
+          This block comes BEFORE the results block and that block is now
+          guarded on `!walled`, because the results header reads "Found N
+          results for X" — and with the search never run, N is 0. Rendering it
+          would tell the reader this corpus holds nothing on their subject,
+          which is a claim about the corpus we did not measure. Exactly the
+          failure `CorpusSummary.ok` exists to prevent, one surface over. */}
+      {isSearchMode && walled && (
+        <div className="mb-8">
+          <MeterWall
+            title="That's your free searches on this device"
+            had={`You've run ${searchMeter.used} searches here without an account. We haven't run this one.`}
+            promise="A free account makes search unlimited, and keeps your saved articles with the account instead of this browser."
+            returnTo={`/search`}
+          />
+        </div>
+      )}
+
       {/* Search Results */}
-      {isSearchMode && !loading && (
+      {isSearchMode && !loading && !walled && (
         <>
           <div className="flex items-center justify-between mb-6">
             <span className="text-sm text-text-secondary">

@@ -2,6 +2,8 @@ import { beforeEach, describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 
 import { ArticleSummary, firstSentence } from '../article-summary'
+import { allowanceOf } from '@/lib/access'
+import { recordMeterUse, readMeter } from '@/lib/metering'
 
 // The AuthKit client entry pulls server-only modules through vitest, and the
 // suite is about what the card SAYS, not about the session. Same stub the
@@ -28,6 +30,7 @@ beforeEach(() => {
   // Signed in by default, so the existing assertions below still describe the
   // card a reader with an account sees.
   mockUseAuth.mockReturnValue({ user: { id: 'u1' }, loading: false })
+  window.localStorage.clear()
 })
 
 /**
@@ -154,5 +157,89 @@ describe('firstSentence', () => {
 
   it('returns a short summary whole', () => {
     expect(firstSentence('Short one.')).toBe('Short one.')
+  })
+})
+
+/**
+ * A free account does not mean unlimited AI.
+ *
+ * The gate and the meter answer different questions and both are needed: the
+ * gate says an anonymous reader gets none, the meter says a free account gets
+ * a handful. A gate alone made "free" mean forever.
+ */
+describe('the free AI-summary allowance', () => {
+  const FREE_SUMMARIES = allowanceOf('ai-summary', 'free') as number
+
+  // Two sentences on purpose. The locked card teases the FIRST one, so a
+  // single-sentence fixture makes the teaser byte-identical to the full text
+  // and "is the summary shown?" becomes unanswerable — which is exactly how
+  // the first draft of this suite produced two false failures.
+  const LEAD = 'A machine-written précis.'
+  const REST = 'It continues past the fold.'
+  const SUMMARY = `${LEAD} ${REST}`
+
+  function renderFor(articleId: string) {
+    return render(<ArticleSummary summary={SUMMARY} articleId={articleId} />)
+  }
+
+  /** The full text is only on screen when the part BEYOND the teaser is. */
+  function summaryIsShown() {
+    return screen.queryByText(SUMMARY) !== null
+  }
+
+  it('an anonymous reader gets NONE — the gate, not the meter, decides that', () => {
+    mockUseAuth.mockReturnValue({ user: null, loading: false })
+    renderFor('a-1')
+    expect(summaryIsShown()).toBe(false)
+    // Nothing is spent either: you cannot use an allowance you cannot reach.
+    expect(readMeter('ai-summary').used).toBe(0)
+  })
+
+  it('a free reader gets the whole allowance', () => {
+    for (let i = 0; i < FREE_SUMMARIES; i++) {
+      const { unmount } = renderFor(`a-${i}`)
+      expect(summaryIsShown()).toBe(true)
+      unmount()
+    }
+    expect(readMeter('ai-summary').used).toBe(FREE_SUMMARIES)
+  })
+
+  it('locks the one after the allowance is spent', () => {
+    for (let i = 0; i < FREE_SUMMARIES; i++) recordMeterUse('ai-summary', `a-${i}`)
+    renderFor('one-too-many')
+    expect(summaryIsShown()).toBe(false)
+  })
+
+  it('says something DIFFERENT to a reader who spent their allowance than to one who is signed out', () => {
+    // "Sign in to read the summary" is nonsense to somebody already signed in,
+    // and saying nothing at all reads as the feature breaking. The two locked
+    // states are not the same sentence.
+    for (let i = 0; i < FREE_SUMMARIES; i++) recordMeterUse('ai-summary', `a-${i}`)
+    renderFor('one-too-many')
+    expect(screen.getByText(/subscription/i)).toBeInTheDocument()
+    expect(screen.queryByText(/sign in to read the summary/i)).toBeNull()
+  })
+
+  it('…and still says "sign in" to a reader who has no account', () => {
+    mockUseAuth.mockReturnValue({ user: null, loading: false })
+    renderFor('a-1')
+    expect(screen.getByText(/sign in to read the summary/i)).toBeInTheDocument()
+    expect(screen.queryByText(/subscription/i)).toBeNull()
+  })
+
+  it('does not take back a summary already read, even at the limit', () => {
+    recordMeterUse('ai-summary', 'already-read')
+    for (let i = 0; i < FREE_SUMMARIES - 1; i++) recordMeterUse('ai-summary', `a-${i}`)
+    expect(readMeter('ai-summary').used).toBe(FREE_SUMMARIES)
+
+    renderFor('already-read')
+    expect(summaryIsShown()).toBe(true)
+  })
+
+  it('spends one per ARTICLE, not per render', () => {
+    const { rerender } = renderFor('a-1')
+    rerender(<ArticleSummary summary={SUMMARY} articleId="a-1" />)
+    rerender(<ArticleSummary summary={SUMMARY} articleId="a-1" />)
+    expect(readMeter('ai-summary').used).toBe(1)
   })
 })

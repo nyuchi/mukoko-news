@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
@@ -343,5 +343,97 @@ describe('allowances', () => {
     )
     expect(meteredFor('free')).toEqual(['ai-summary'])
     expect(meteredFor('pro')).toEqual([])
+  })
+})
+
+/**
+ * The allowances are policy, and policy has exactly one home.
+ *
+ * `access.ts` already had a structural guard proving it never imports
+ * `roles.ts` — the lesson being that a rule which exists in two places is a
+ * rule that will eventually disagree with itself. The numbers are the same
+ * shape of hazard, and a worse one: a `50` typed into the article wall and a
+ * `50` typed into the map look identical right up to the day one of them
+ * changes, and a wall that fires at a different count from the one the map
+ * declares is unreviewable from either file.
+ *
+ * So no enforcing surface may carry its own copy. They read `allowanceOf`.
+ */
+describe('the allowance numbers live in ONE place', () => {
+  /** Comments explain the numbers at length; only code is searched. */
+  function code(file: string): string {
+    return readFileSync(resolve(process.cwd(), file), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/(^|[^:])\/\/.*$/gm, '$1')
+  }
+
+  /**
+   * ⚠️ The literal scan covers the two PURE modules only, and that is a real
+   * limit rather than an oversight — so it is written down instead of being
+   * quietly papered over.
+   *
+   * A blanket "this number must not appear" check cannot work on a component or
+   * a page. Tailwind's spacing scale puts `5` in `p-5`, `h-5`, `mt-5` on almost
+   * every card in this repo, and `src/app/search/page.tsx` passes a result
+   * limit of 50 to `searchArticlesAction` that has nothing whatever to do with
+   * the article allowance. A check that fires on those is noise, and a noisy
+   * check is one somebody deletes — which would leave no check at all.
+   *
+   * So the scan runs where a bare number could only be policy, and the
+   * positive assertion below carries the rest: every surface that decides
+   * something reaches the decision through the map.
+   */
+  const PURE_MODULES = ['src/hooks/use-meter.ts', 'src/lib/metering.ts']
+
+  it.each(PURE_MODULES)('%s does not hardcode an allowance', (file) => {
+    const src = code(file)
+    for (const meter of ['articles', 'searches', 'ai-summary'] as const) {
+      for (const plan of ['anonymous', 'free', 'pro', 'custom'] as const) {
+        const value = allowanceOf(meter, plan)
+        // 0 and 1 appear all over ordinary code, so only real ceilings count.
+        if (value === null || value <= 1) continue
+        expect(
+          new RegExp(`\\b${value}\\b`).test(src),
+          `${file} contains the literal ${value}, the ${plan} allowance for "${meter}". Read it from allowanceOf() instead.`,
+        ).toBe(false)
+      }
+    }
+  })
+
+  it('every enforcing surface actually consults the map', () => {
+    // The scan above only proves a number is ABSENT, which a file that enforces
+    // nothing passes trivially. This asserts the positive: the files that
+    // decide something reach the decision through `@/lib/access`, directly or
+    // through the hook that does.
+    const deciders = [
+      'src/components/access/metered-article-body.tsx',
+      'src/components/article/article-summary.tsx',
+      'src/app/search/page.tsx',
+      'src/hooks/use-meter.ts',
+    ]
+    for (const file of deciders) {
+      const src = code(file)
+      expect(
+        /@\/lib\/access|@\/hooks\/use-meter/.test(src),
+        `${file} enforces an allowance without reading the access map`,
+      ).toBe(true)
+    }
+  })
+
+  it('interactions are gated SERVER-side, not in the browser', () => {
+    // The one real gate in the model. Everything else is a conversion wall over
+    // a payload already sent; this one must survive a console `fetch`, so the
+    // check has to live in the Route Handler rather than in the component that
+    // calls it.
+    for (const route of ['like', 'save']) {
+      const src = code(`src/app/api/articles/[id]/${route}/route.ts`)
+      expect(
+        /guardInteraction/.test(src),
+        `/api/articles/[id]/${route} does not call the interaction guard`,
+      ).toBe(true)
+    }
+    // …and views are deliberately NOT gated: they fire on every article load,
+    // a crawler's included.
+    expect(/guardInteraction/.test(code('src/app/api/articles/[id]/view/route.ts'))).toBe(false)
   })
 })
