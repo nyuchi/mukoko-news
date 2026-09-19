@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 
@@ -16,7 +19,7 @@ vi.mock('@/components/compact-card', () => ({
   CompactCard: ({ article }: { article: { title: string } }) => <li>{article.title}</li>,
 }));
 
-import AuthorRoute, { generateMetadata } from '../[...slug]/page';
+import AuthorRoute, { generateMetadata, maxDuration } from '../[...slug]/page';
 
 const PROFILE = {
   ok: true,
@@ -228,6 +231,33 @@ describe('/author', () => {
       });
       expect(meta.alternates?.canonical).toContain('/author/the-herald/staff-reporter');
       expect(meta.title).toBe('Staff Reporter, The Herald');
+    });
+  });
+
+  describe('function budget', () => {
+    // This route's whole failure story is built on OUR timeout firing first:
+    // `maxTimeMS` aborts, the reader reports `ok: false`, the action answers
+    // `unavailable`, and the route throws so the reader gets a 5xx rather than
+    // a claim that a named journalist does not exist. A platform timeout
+    // preempts all of it — the function is killed with no stack in it. So the
+    // assertion is about the RELATIONSHIP between the two bounds, not about the
+    // number 60, which is why the query bound is read rather than repeated.
+    const QUERY_BOUND_MS = Number(
+      readFileSync(join(process.cwd(), 'src/lib/mongodb/client.ts'), 'utf8').match(
+        /QUERY_MAX_TIME_MS\s*=\s*(\d+)/
+      )?.[1]
+    );
+
+    it('reads a query bound to compare against', () => {
+      // Guards the regex itself: if `QUERY_MAX_TIME_MS` is renamed or moved,
+      // `QUERY_BOUND_MS` is NaN and every comparison below passes vacuously.
+      expect(QUERY_BOUND_MS).toBeGreaterThan(0);
+    });
+
+    it('gives the function longer than both bounded reads can take', () => {
+      // A cold render does the directory read AND the profile read, each
+      // bounded at QUERY_MAX_TIME_MS, before rendering starts.
+      expect(maxDuration).toBeGreaterThanOrEqual((2 * QUERY_BOUND_MS) / 1000);
     });
   });
 });
