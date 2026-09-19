@@ -2,6 +2,17 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import SearchPage from "../page";
 
+// Searching is metered for readers without an account, so the page now reads
+// the session through `useMeter`. Signed in by default here: this suite is
+// about search behaviour, and the allowance has no ceiling for an account — the
+// wall gets its own suite rather than being smuggled into every assertion.
+const mockUseAuth = vi.fn(() => ({ user: { id: "user_1" }, loading: false }));
+vi.mock("@workos-inc/authkit-nextjs/components", () => ({
+  useAuth: () => mockUseAuth(),
+}));
+
+vi.mock("next/navigation", () => ({ usePathname: () => "/search" }));
+
 vi.mock("@/components/ui/error-boundary", () => ({
   ErrorBoundary: ({ children }: { children: React.ReactNode }) => (
     <>{children}</>

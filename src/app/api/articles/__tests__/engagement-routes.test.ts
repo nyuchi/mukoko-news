@@ -12,6 +12,29 @@ vi.mock('@/lib/mongodb/client', () => ({
   getDb: vi.fn(),
 }));
 
+// ⚠️ Likes and saves are ACCOUNT-ONLY as of the reader tier model, so this
+// suite has to say who is asking — and it must say so explicitly rather than
+// leaning on a default.
+//
+// Before the gate there was no authkit mock here at all: `withAuth()` threw,
+// `resolveEngagementSubject` caught it and returned an anonymous subject, and
+// every test ran as a stranger without ever saying so. That is precisely the
+// shape of an accidentally-passing suite — the identity under test was a side
+// effect of an unmocked module rather than a decision — so it is pinned now,
+// and `signedOut()` is what the denial tests use.
+const mockWithAuth = vi.fn();
+vi.mock('@workos-inc/authkit-nextjs', () => ({
+  withAuth: () => mockWithAuth(),
+}));
+
+function signedIn(id = 'user_1') {
+  mockWithAuth.mockResolvedValue({ user: { id } });
+}
+
+function signedOut() {
+  mockWithAuth.mockResolvedValue({ user: null });
+}
+
 type MockCollection = {
   findOne: ReturnType<typeof vi.fn>;
   insertOne: ReturnType<typeof vi.fn>;
@@ -69,10 +92,14 @@ function withParams(id: string) {
 
 beforeEach(() => {
   vi.mocked(getDb).mockReset();
+  mockWithAuth.mockReset();
+  // Signed in unless a test says otherwise: these routes now require it, so
+  // the interesting default is the one where the work actually happens.
+  signedIn();
 });
 
 describe('POST /api/articles/[id]/like', () => {
-  it('likes an article and sets the session cookie', async () => {
+  it('likes an article under the signed-in user key', async () => {
     const cols = useDb({
       articles: makeCollection({ findOne: vi.fn().mockResolvedValue({ _id: 'a-1' }) }),
       articleLikes: makeCollection({ countDocuments: vi.fn().mockResolvedValue(5) }),
@@ -84,7 +111,14 @@ describe('POST /api/articles/[id]/like', () => {
     const body = await res.json();
     expect(body).toMatchObject({ success: true, liked: true, count: 5 });
     expect(cols.articleLikes.insertOne).toHaveBeenCalledOnce();
-    expect(res.cookies.get('mukoko_session')?.value).toBeTruthy();
+    // The like is stored against `user:<id>`, which is what makes it follow the
+    // account across devices.
+    expect(cols.articleLikes.insertOne.mock.calls[0][0]).toMatchObject({
+      sessionId: 'user:user_1',
+    });
+    // No anonymous cookie is minted any more: a caller without a session never
+    // reaches this code, so minting one would be dead state on a real user.
+    expect(res.cookies.get('mukoko_session')).toBeUndefined();
   });
 
   it('toggles the like off when the unique index reports a duplicate', async () => {
@@ -104,9 +138,11 @@ describe('POST /api/articles/[id]/like', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body).toMatchObject({ success: true, liked: false, count: 4 });
+    // The cookie is still SENT, but the user key wins — that is what stops a
+    // signed-in reader's like being filed under whatever browser they used.
     expect(cols.articleLikes.deleteOne).toHaveBeenCalledWith({
       articleId: 'a-1',
-      sessionId: 'sess-1',
+      sessionId: 'user:user_1',
     });
   });
 
@@ -274,7 +310,7 @@ describe('POST /api/articles/[id]/save', () => {
   it('unsaves when a prior save exists', async () => {
     const cols = useDb({
       articleSaves: makeCollection({
-        findOne: vi.fn().mockResolvedValue({ articleId: 'a-3', sessionId: 'sess-3' }),
+        findOne: vi.fn().mockResolvedValue({ articleId: 'a-3', sessionId: 'user:user_1' }),
       }),
     });
 
@@ -287,7 +323,7 @@ describe('POST /api/articles/[id]/save', () => {
     expect(await res.json()).toMatchObject({ success: true, saved: false });
     expect(cols.articleSaves.deleteOne).toHaveBeenCalledWith({
       articleId: 'a-3',
-      sessionId: 'sess-3',
+      sessionId: 'user:user_1',
     });
   });
 
@@ -338,5 +374,99 @@ describe('POST /api/articles/[id]/save', () => {
     expect(
       (await likePost(makeRequest('/api/articles/a-4/like', ip), withParams('a-4'))).status
     ).toBe(200);
+  });
+});
+
+describe('interactions are account-only', () => {
+  it('denies an anonymous like with 401 and writes nothing', async () => {
+    signedOut();
+    const cols = useDb({
+      articles: makeCollection({ findOne: vi.fn().mockResolvedValue({ _id: 'a-9' }) }),
+      articleLikes: makeCollection(),
+    });
+
+    const res = await likePost(makeRequest('/api/articles/a-9/like', nextIp()), withParams('a-9'));
+
+    expect(res.status).toBe(401);
+    expect(await res.json()).toMatchObject({ success: false, requiresAuth: true });
+    // The gate is in FRONT of the database, not behind it. A 401 that still
+    // read the article would hand an anonymous caller a free existence oracle
+    // and spend a round trip on a request we were always going to refuse.
+    expect(getDb).not.toHaveBeenCalled();
+    expect(cols.articleLikes.insertOne).not.toHaveBeenCalled();
+  });
+
+  it('denies an anonymous save with 401 and writes nothing', async () => {
+    signedOut();
+    const cols = useDb({ articleSaves: makeCollection() });
+
+    const res = await savePost(makeRequest('/api/articles/a-9/save', nextIp()), withParams('a-9'));
+
+    expect(res.status).toBe(401);
+    expect(await res.json()).toMatchObject({ success: false, requiresAuth: true });
+    expect(cols.articleSaves.insertOne).not.toHaveBeenCalled();
+  });
+
+  it('answers requiresAuth so the client can send the reader to sign in', async () => {
+    signedOut();
+    useDb({});
+    const res = await likePost(makeRequest('/api/articles/a-9/like', nextIp()), withParams('a-9'));
+
+    // Not a bare 403. The difference is what the UI does with it: `requiresAuth`
+    // means "offer the account", while an unexplained refusal means "something
+    // went wrong" — and nothing went wrong.
+    const body = await res.json();
+    expect(body.requiresAuth).toBe(true);
+    expect(typeof body.message).toBe('string');
+  });
+
+  it('gates BEFORE validating the article id — which is what proves it is the gate', async () => {
+    // ⚠️ This test exists because the four around it could not tell the guard
+    // apart from the orphan-subject check further down the route. Both answer
+    // 401 for an anonymous caller, so disabling the guard entirely left the
+    // whole suite green — a set of tests that certified a gate they were not
+    // touching.
+    //
+    // Ordering is the discriminator. The guard runs above the id validation, so
+    // an anonymous caller with a plainly invalid id gets 401 and not 400: only
+    // the guard can produce that answer, because the orphan check sits below
+    // the validation that would have returned 400 first.
+    signedOut();
+
+    const res = await likePost(makeRequest('/api/articles//like', nextIp()), withParams(''));
+
+    expect(res.status).toBe(401);
+    expect(getDb).not.toHaveBeenCalled();
+  });
+
+  it('FAILS CLOSED when the session cannot be read at all', async () => {
+    // An auth outage denying a like is small, visible and self-correcting. An
+    // auth outage silently opening an account-only capability is none of those,
+    // and nothing in the logs would ever show it.
+    mockWithAuth.mockRejectedValue(new Error('workos unreachable'));
+    useDb({});
+
+    // An invalid id for the same reason as the test above: 401 here can only
+    // have come from the guard, since the id check would otherwise answer 400.
+    const res = await likePost(makeRequest('/api/articles//like', nextIp()), withParams(''));
+
+    expect(res.status).toBe(401);
+  });
+
+  it('does NOT gate views — a read is not an interaction', async () => {
+    // The distinction the whole tier model rests on. Views fire on every article
+    // load including a crawler's, and gating them would both break the counter
+    // and wall the traffic this product runs on.
+    signedOut();
+    useDb({
+      articles: makeCollection({
+        findOne: vi.fn().mockResolvedValue({ _id: 'a-10', viewsCount: 3 }),
+      }),
+      articleViews: makeCollection(),
+    });
+
+    const res = await viewPost(makeRequest('/api/articles/a-10/view', nextIp()), withParams('a-10'));
+
+    expect(res.status).toBe(200);
   });
 });

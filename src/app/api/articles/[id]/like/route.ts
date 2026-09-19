@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/mongodb/client'
 import { checkRateLimit, getRequestIp } from '@/lib/rate-limit'
 import { resolveEngagementSubject, claimSessionEngagement } from '@/lib/engagement'
+import { guardInteraction } from '@/lib/auth/interaction-guard'
 import { randomUUID } from 'crypto'
 
 export const runtime = 'nodejs'
@@ -24,6 +25,13 @@ export async function POST(
     )
   }
 
+  // Interactions are account-only (see @/lib/auth/interaction-guard). This is
+  // the one gate in the reader tier model enforced server-side, because it is
+  // the one that can be: no crawler POSTs here and no page is made dynamic by
+  // reading the session.
+  const gate = await guardInteraction()
+  if (!gate.allowed) return gate.denial!
+
   try {
     const { id: articleId } = await params
     if (typeof articleId !== 'string' || articleId.length === 0 || articleId.length > 128) {
@@ -34,7 +42,20 @@ export async function POST(
     }
     const cookieSessionId = request.cookies.get('mukoko_session')?.value
     const subject = await resolveEngagementSubject(cookieSessionId)
-    const sessionId = subject.key ?? randomUUID()
+    // The guard above established a session, so the subject MUST be the user
+    // key. If it is not, the two reads disagreed — and the old fallback here
+    // (`subject.key ?? randomUUID()`) would store the interaction under a key
+    // nobody can ever query again: an orphan row that reads as a successful
+    // like to the reader and is invisible to every surface afterwards. A
+    // failure the reader can see and retry beats a silent write to nowhere.
+    if (!subject.isUser || !subject.key) {
+      console.error('[/api/articles/[id]/like] guard passed but no user subject; refusing to write an orphan row')
+      return NextResponse.json(
+        { success: false, requiresAuth: true, message: 'Sign in to like and save articles' },
+        { status: 401 }
+      )
+    }
+    const sessionId = subject.key
 
     const db = await getDb()
 
@@ -88,15 +109,6 @@ export async function POST(
       count: likesCount,
     })
 
-    // Only anonymous visitors need the session cookie minted.
-    if (!subject.isUser && !request.cookies.get('mukoko_session')) {
-      response.cookies.set('mukoko_session', sessionId, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
-        maxAge: 60 * 60 * 24 * 365,
-      })
-    }
 
     return response
   } catch (error) {
