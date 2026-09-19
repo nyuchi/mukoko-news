@@ -52,9 +52,12 @@
  *
  * A rebuild must never leave the directory empty or partial for a reader mid
  * flight. `publishBylineDirectory` stamps every row with the build's
- * `generation`, upserts them all, and only then deletes what the sweep did not
- * touch. Until the sweep runs, readers see the previous snapshot; after it,
- * the new one. There is no window in which the collection is empty.
+ * `generation`, upserts them all, and only then deletes what is OLDER than this
+ * build. Until the sweep runs, readers see the previous snapshot; after it,
+ * the new one. There is no window in which the collection is empty — including
+ * when two builds overlap, which is what the `$lt` (rather than `$ne`) sweep
+ * filter buys, and why it is a correctness choice rather than a stylistic one.
+ * See the comment on the sweep itself.
  *
  * And it **refuses to publish an empty build over a populated snapshot**. A
  * build that legitimately finds no bylines and a build whose upstream read
@@ -215,7 +218,21 @@ export async function publishBylineDirectory(
   // served either a new row or the previous build's row, both of which are real
   // bylines. Deleting first would open a window where the directory is empty
   // and every author page answers `unavailable`.
-  const swept = await collection.deleteMany({ generation: { $ne: generation } })
+  //
+  // ⚠️ `$lt`, NOT `$ne` — the difference is the whole collection. `generation`
+  // is an ISO-8601 timestamp, so lexicographic order is chronological, and a
+  // build sweeps only what is OLDER than itself. With `$ne`, two overlapping
+  // builds destroy the directory:
+  //
+  //   A upserts all (gen A) → B upserts all (gen B) → A sweeps `$ne: A`
+  //   → every row is gen B → A deletes ALL OF THEM
+  //
+  // and every author page answers `unavailable` until the next build. That is
+  // not hypothetical: the build takes ~11 s, so a manual seed overlapping the
+  // hourly cron is enough. Under `$lt` the older build's sweep matches nothing
+  // the newer one wrote; the worst case becomes a few rows of an abandoned
+  // newer build lingering until a later sweep, and those are real bylines.
+  const swept = await collection.deleteMany({ generation: { $lt: generation } })
 
   return { published: true, written, removed: swept.deletedCount ?? 0, generation }
 }

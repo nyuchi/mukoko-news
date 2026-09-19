@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { collectionStub, dbStub, type CollectionStub } from './helpers/mongo';
@@ -144,11 +147,40 @@ describe('byline directory snapshot', () => {
       }>;
       expect(op.replaceOne.filter).toEqual({ _id: 'staff-reporter' });
       expect(op.replaceOne.upsert).toBe(true);
-      // The sweep is keyed on the generation this build stamped, so it removes
-      // exactly what this build did not write.
+      // The sweep removes what is OLDER than this build.
       expect(directory.deleteManyCalls[0]).toEqual({
-        generation: { $ne: op.replaceOne.replacement.generation },
+        generation: { $lt: op.replaceOne.replacement.generation },
       });
+    });
+
+    it('sweeps only OLDER builds, so two overlapping ones cannot empty it', async () => {
+      // `$ne` here would be a directory-wide outage rather than a nit:
+      //
+      //   A upserts all (gen A) → B upserts all (gen B) → A sweeps `$ne: A`
+      //   → every row is gen B → A deletes ALL OF THEM
+      //
+      // The build takes ~11 s, so a manual seed overlapping the hourly cron is
+      // enough to hit it. The driver stub cannot interleave two real publishes,
+      // so the REAL filter this build issued is evaluated against the rows a
+      // concurrent build would have left — which is the question that matters,
+      // and is why the filter is read off the call rather than written here.
+      const directory = mount({});
+      await publishBylineDirectory([IDENTITY], true);
+
+      const filter = directory.deleteManyCalls[0] as { generation: Record<string, string> };
+      const [[operator, bound]] = Object.entries(filter.generation);
+      const deletes = (rowGeneration: string) => {
+        if (operator === '$lt') return rowGeneration < bound;
+        if (operator === '$ne') return rowGeneration !== bound;
+        throw new Error(`unexpected sweep operator ${operator}`);
+      };
+
+      // A row written by a build that started AFTER this one must survive.
+      const newer = new Date(Date.parse(bound) + 60_000).toISOString();
+      expect(deletes(newer)).toBe(false);
+      // A genuinely stale row must still go.
+      const older = new Date(Date.parse(bound) - 60_000).toISOString();
+      expect(deletes(older)).toBe(true);
     });
 
     it('refuses to publish when the source read failed', async () => {
@@ -195,6 +227,36 @@ describe('byline directory snapshot', () => {
       expect(directory.bulkWriteCalls).toHaveLength(3);
       expect(directory.bulkWriteCalls[0].operations).toHaveLength(1000);
       expect(directory.bulkWriteCalls[2].operations).toHaveLength(500);
+    });
+  });
+
+  describe('the seeding script', () => {
+    // The snapshot is seeded from a terminal BEFORE the change deploys, so the
+    // deploy lands on a populated collection instead of on an outage. The one
+    // thing that script must not do is write the collection its own way: a
+    // second definition of the snapshot's shape is free to drift from the one
+    // the app reads, and the first symptom of that drift is a real byline
+    // 404ing. So it is asserted to go through the shared publisher.
+    const SCRIPT = readFileSync(
+      join(process.cwd(), 'scripts/seed-byline-directory.ts'),
+      'utf8'
+    ).replace(/\/\*[\s\S]*?\*\/|\/\/.*/g, ''); // comments explain this rule at length
+
+    it('reuses the same read and publish the cron route uses', () => {
+      expect(SCRIPT).toMatch(/import \{ getBylineDirectory \}/);
+      expect(SCRIPT).toMatch(/import \{ publishBylineDirectory \}/);
+    });
+
+    it('never touches the collection itself', () => {
+      for (const forbidden of ['bulkWrite', 'deleteMany', 'replaceOne', 'getDb', 'collection(']) {
+        expect(SCRIPT).not.toContain(forbidden);
+      }
+    });
+
+    it('refuses to run without MONGODB_URI', () => {
+      // Without it the driver throws three frames down, after the caller has
+      // been told a build is under way. The prerequisite is named up front.
+      expect(SCRIPT).toContain('MONGODB_URI');
     });
   });
 });
