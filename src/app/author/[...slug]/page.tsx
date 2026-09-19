@@ -35,8 +35,9 @@ import { getFullUrl } from '@/lib/constants'
  * distinction rather than hiding it behind the URL.
  *
  * ISR at an hour: a byline's article list moves when they file, which is a
- * timescale of hours, and the read behind it is a scan of the corpus (there is
- * no index on `author.name` — see `@/lib/mongodb/authors`).
+ * timescale of hours, and the read behind it is the slowest in the app — a
+ * covered scan of ~58,700 index keys, measured at 11.06 s warm on the live
+ * cluster (see `@/lib/mongodb/authors`).
  *
  * ## An outage is not an answer about a journalist
  *
@@ -70,6 +71,35 @@ import { getFullUrl } from '@/lib/constants'
  * guard, and it is keyed on ancestry rather than on that one filename.
  */
 export const revalidate = 3600
+
+/**
+ * The function gets long enough for this route's own timeouts to be the ones
+ * that fire.
+ *
+ * Without this, the platform default applies, and it is shorter than the work:
+ * the directory read measured **11.06 s** warm on the live cluster (a covered
+ * `IXSCAN`, `totalDocsExamined: 0` — the index is not the problem, the M20's
+ * two burstable vCPU are), and a cold render does that read AND the profile
+ * read, each bounded at `QUERY_MAX_TIME_MS` (15 s), so the worst case is ~30 s
+ * of database time before rendering starts.
+ *
+ * ⚠️ **The point is the ORDERING, not the headroom.** Every failure path on
+ * this route is built on our own bound firing: `maxTimeMS` aborts, the reader
+ * reports `ok: false`, the action answers `unavailable`, and the route throws
+ * so the reader gets a 5xx instead of a claim that a named journalist does not
+ * exist. A platform timeout preempts all of it — the function is killed with no
+ * stack in it, so nothing decides anything, and the reader gets whatever the
+ * platform serves rather than the response this route reasoned its way to. A
+ * shorter `maxDuration` than the query bound would quietly reinstate exactly
+ * the failure the byline fix was written to remove.
+ *
+ * 60 s is the smallest value that clears that ~30 s worst case with room for
+ * connection setup and render, and it is at or below the cap on every Vercel
+ * plan, so it cannot fail a deploy. It is a ceiling, not a target: a warm ISR
+ * hit still returns in milliseconds, and nothing here waits longer than it
+ * did — the budget only decides who gets to give up first.
+ */
+export const maxDuration = 60
 
 interface AuthorRouteProps {
   params: Promise<{ slug: string[] }>
