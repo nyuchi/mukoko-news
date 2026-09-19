@@ -1,16 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const { mockDirectory, mockProfile, mockOrgMap, mockSources } = vi.hoisted(() => ({
-  mockDirectory: vi.fn(),
+const { mockLookup, mockProfile, mockOrgMap, mockSources } = vi.hoisted(() => ({
+  mockLookup: vi.fn(),
   mockProfile: vi.fn(),
   mockOrgMap: vi.fn(),
   mockSources: vi.fn(),
 }));
 
-vi.mock('@/lib/mongodb/authors', () => ({
-  getBylineDirectory: mockDirectory,
-  getAuthorProfile: mockProfile,
-}));
+vi.mock('@/lib/mongodb/authors', () => ({ getAuthorProfile: mockProfile }));
+// Slug resolution is a snapshot lookup now, not a corpus scan folded in memory
+// — see `@/lib/mongodb/byline-directory`. This suite is about the routing rules
+// the action layers ON TOP of that answer (desk scoping, newsroom folding), so
+// the lookup itself is the seam it mocks.
+vi.mock('@/lib/mongodb/byline-directory', () => ({ lookupBylineIdentity: mockLookup }));
 vi.mock('@/lib/mongodb/organizations', () => ({ getPublisherOrganizationMap: mockOrgMap }));
 vi.mock('@/lib/mongodb/sources', () => ({ getSources: mockSources }));
 // The cache wrapper is Next's; these tests are about the routing rules around it.
@@ -69,7 +71,12 @@ const EMPTY_PROFILE = {
 describe('getAuthorPageAction', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockDirectory.mockResolvedValue({ ok: true, bylines: [PERSON, DESK] });
+    // The snapshot carries these two bylines and nothing else, so an unknown
+    // slug is a genuine `not-found` rather than an empty directory.
+    mockLookup.mockImplementation(async (slug: string) => {
+      const identity = [PERSON, DESK].find((entry) => entry.slug === slug);
+      return identity ? { status: 'ok', identity } : { status: 'not-found' };
+    });
     mockProfile.mockResolvedValue(EMPTY_PROFILE);
     mockSources.mockResolvedValue([{ id: 'src-joy-news', name: 'Joy News' }]);
     mockOrgMap.mockResolvedValue(
@@ -134,20 +141,21 @@ describe('getAuthorPageAction', () => {
     await expect(getAuthorPageAction('nobody-at-all')).resolves.toEqual({ status: 'not-found' });
   });
 
-  it('does NOT 404 when the directory read failed — it reports unavailable', async () => {
+  it('does NOT 404 when the directory could not be read — it reports unavailable', async () => {
     // ⚠️ This test used to assert the opposite, and it passed throughout the
     // outage it was written to prevent. A 404 is the platform stating that a
     // named journalist does not exist; we are only entitled to say that when we
-    // read the directory and they were not in it. A failed read is `ok: false`,
-    // and the caller owes the reader a 5xx, not a verdict.
-    mockDirectory.mockResolvedValue({ ok: false, bylines: [] });
+    // read the directory and they were not in it. The lookup reports
+    // `unavailable` for both a failed read and an unbuilt snapshot, and the
+    // action must pass that through rather than collapsing it to a verdict.
+    mockLookup.mockResolvedValue({ status: 'unavailable' });
     await expect(getAuthorPageAction('abubakar-ibrahim')).resolves.toEqual({
       status: 'unavailable',
     });
   });
 
   it('still 404s a byline missing from a directory that read fine', async () => {
-    mockDirectory.mockResolvedValue({ ok: true, bylines: [] });
+    mockLookup.mockResolvedValue({ status: 'not-found' });
     await expect(getAuthorPageAction('abubakar-ibrahim')).resolves.toEqual({
       status: 'not-found',
     });

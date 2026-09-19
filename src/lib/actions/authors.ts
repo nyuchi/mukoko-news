@@ -4,56 +4,33 @@ import { unstable_cache } from 'next/cache'
 
 import {
   getAuthorProfile,
-  getBylineDirectory,
   type AuthorFacet,
   type AuthorProfile,
-  type BylineIdentity,
 } from '@/lib/mongodb/authors'
+import { lookupBylineIdentity } from '@/lib/mongodb/byline-directory'
 import { getPublisherOrganizationMap } from '@/lib/mongodb/organizations'
 import { getSources } from '@/lib/mongodb/sources'
 import { authorSlug } from '@/lib/author-identity'
 
 /**
- * How long the byline directory and the two name catalogues are reused.
+ * How long the two name catalogues are reused.
  *
- * An hour, matching the coverage read. The directory is one scan of the
- * article corpus — the same cost class as `getLiveCountries` — and it exists so
- * that EVERY author page shares that one scan instead of paying for a
- * per-request lookup. Running it per request is the failure mode this cache
- * exists to prevent, not a tuning question.
+ * An hour, matching the coverage read. These are small collection reads
+ * (`feedSources`, `newsMediaOrganizations`) shared by every author page.
+ *
+ * ⚠️ The BYLINE DIRECTORY is no longer among them. It used to be cached here
+ * for the same hour, which meant whichever reader arrived on a cold cache paid
+ * its full 11-second corpus scan — an hour's TTL does not remove that cost, it
+ * just picks one unlucky reader per hour per region, and that reader is usually
+ * a crawler on a page nobody has opened recently. The build now runs on a cron
+ * (`/api/cron/byline-directory`) into a snapshot collection, and resolving a
+ * slug is a single `_id` lookup. See `@/lib/mongodb/byline-directory`.
  */
 const DIRECTORY_TTL_SECONDS = 3600
 
 /** How many chips each classification panel shows once variants are merged. */
 const TAG_CHIP_LIMIT = 12
 const CATEGORY_CHIP_LIMIT = 8
-
-/**
- * Thrown past `unstable_cache` when the directory read failed.
- *
- * This is the whole reason the cached function is a wrapper rather than
- * `getBylineDirectory` itself. `unstable_cache` memoises a RESOLVED value for
- * the full hour and stores nothing for a rejection — so returning the failed
- * read's empty list here would pin "this platform has no bylines" in front of
- * every author page until the TTL expired, turning one 15-second timeout into a
- * one-hour outage. Rejecting keeps the failure to the request that hit it.
- */
-class DirectoryUnavailableError extends Error {
-  constructor() {
-    super('byline directory read failed')
-    this.name = 'DirectoryUnavailableError'
-  }
-}
-
-const loadDirectory = unstable_cache(
-  async (): Promise<BylineIdentity[]> => {
-    const { ok, bylines } = await getBylineDirectory()
-    if (!ok) throw new DirectoryUnavailableError()
-    return bylines
-  },
-  ['byline-directory'],
-  { revalidate: DIRECTORY_TTL_SECONDS, tags: ['authors'] }
-)
 
 /** `feedSources._id` → the feed's own name, for labelling the sources panel. */
 const loadSourceNames = unstable_cache(
@@ -159,18 +136,6 @@ export type AuthorPageResult =
   | { status: 'unavailable' }
 
 /**
- * Find the byline a URL slug refers to.
- *
- * `undefined` means the directory was read and does not carry this slug. A
- * failed read does not reach here at all — it rejects out of `loadDirectory`.
- */
-async function findIdentity(slug: string): Promise<BylineIdentity | undefined> {
-  const wanted = authorSlug(slug)
-  if (!wanted) return undefined
-  return (await loadDirectory()).find((entry) => entry.slug === wanted)
-}
-
-/**
  * The author page, or why there is not one.
  *
  * ⚠️ This used to return `AuthorPage | null`, and the null was load-bearing in
@@ -191,19 +156,13 @@ export async function getAuthorPageAction(
   slug: string,
   newsroomSlug?: string
 ): Promise<AuthorPageResult> {
-  let identity: BylineIdentity | undefined
-  try {
-    identity = await findIdentity(slug)
-  } catch (error) {
-    // Deliberately not narrowed to `DirectoryUnavailableError`: an identity
-    // check across the `unstable_cache` boundary is not something to stake a
-    // reader's 404 on, and anything else thrown from here is a bug whose honest
-    // response is the same 5xx. What must never happen is falling through to
-    // `not-found`.
-    console.error('[authors.getAuthorPageAction]', error)
-    return { status: 'unavailable' }
-  }
-  if (!identity) return { status: 'not-found' }
+  // The snapshot answers all three cases itself — found, genuinely absent, and
+  // "we could not look" — so there is nothing to infer here. That is the point
+  // of `IdentityLookup` being three-valued rather than `T | undefined`: the one
+  // place that can tell an outage from a finding is the place that did the read.
+  const lookup = await lookupBylineIdentity(slug)
+  if (lookup.status !== 'ok') return { status: lookup.status }
+  const identity = lookup.identity
 
   const organizations = await getPublisherOrganizationMap()
 

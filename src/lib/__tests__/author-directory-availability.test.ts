@@ -9,13 +9,10 @@ import { collectionStub, dbStub, type CollectionStub } from './helpers/mongo';
  * ## What happened
  *
  * `getBylineDirectory` runs a `$group` on `$author.name` over the attributed
- * corpus. `news.articles` carries eleven classic indexes and NOT ONE touches
- * `author`; neither Atlas Search index maps it either. Measured 2026-09-17 on a
- * direct connection the `$group` did not return within 60 seconds, so
- * `QUERY_MAX_TIME_MS` (15s) aborted it on every render.
- *
- * Every layer below it was individually reasonable and the composition was a
- * lie:
+ * corpus, and nothing indexed `author`. Measured 2026-09-17 the `$group` did
+ * not return within 60 seconds, so `QUERY_MAX_TIME_MS` aborted it on every
+ * render. Every layer below was individually reasonable and the composition
+ * was a lie:
  *
  * ```
  *   reader times out    → catch → []                  "fail-soft"
@@ -26,15 +23,24 @@ import { collectionStub, dbStub, type CollectionStub } from './helpers/mongo';
  *
  * The platform was telling readers — and crawlers — that named journalists with
  * hundreds of published articles do not exist, on the strength of a slow query.
- * That is the failure mode this codebase's doctrine forbids everywhere else:
- * the `/insights` "No data available yet" incident, and the `CorpusSummary.ok`
- * flag that answered it.
  *
- * These tests drive a REJECTING DRIVER through the real reader, the real
- * caching layer and the real action, and assert on what comes out the far end.
- * Mocking `@/lib/mongodb/authors` — as the sibling routing suite does, rightly,
- * for its own purposes — cannot see this bug, because the bug is in how the
- * layers compose.
+ * ## What changed, and what did NOT
+ *
+ * A covering index removed the document FETCH but left the read at 11 s warm,
+ * so the build moved off the request path entirely: a cron publishes a snapshot
+ * and the page resolves a slug out of it by `_id`. The cache-poisoning layer is
+ * gone with it — there is no per-request cache left to poison.
+ *
+ * **The honesty property is unchanged and is what this suite is for.** An empty
+ * answer still has more than one cause, and only one of them is a statement
+ * about a journalist. The new shape of the trap is an UNBUILT SNAPSHOT: a fresh
+ * environment, a dropped collection or a cron that has never fired all look
+ * exactly like "this platform has no bylines".
+ *
+ * These tests drive a real driver stub through the real snapshot reader and the
+ * real action. Mocking `@/lib/mongodb/byline-directory` — as the sibling
+ * routing suite does, rightly, for its own purposes — cannot see this bug,
+ * because the bug is in how the layers compose.
  */
 
 const { mockGetDb, mockOrgMap, mockSources, mockGetArticlesByIds } = vi.hoisted(() => ({
@@ -48,38 +54,24 @@ vi.mock('@/lib/mongodb/client', () => ({ getDb: mockGetDb, QUERY_MAX_TIME_MS: 15
 vi.mock('@/lib/mongodb/articles', () => ({ getArticlesByIds: mockGetArticlesByIds }));
 vi.mock('@/lib/mongodb/organizations', () => ({ getPublisherOrganizationMap: mockOrgMap }));
 vi.mock('@/lib/mongodb/sources', () => ({ getSources: mockSources }));
-
-/**
- * A stand-in for `unstable_cache` that keeps the one property this defect turns
- * on: it memoises a RESOLVED value and stores NOTHING for a rejection.
- *
- * That is why the production wrapper rejects instead of returning the failed
- * read's empty list. Returning it would pin "this platform has no bylines" in
- * front of every author page for the full hour, so a single 15-second timeout
- * became a one-hour outage. An identity stub cannot tell the two apart.
- */
 vi.mock('next/cache', () => ({
-  unstable_cache: (fn: (...a: unknown[]) => Promise<unknown>) => {
-    let cached: Promise<unknown> | null = null;
-    return async (...args: unknown[]) => {
-      if (cached) return cached;
-      const pending = fn(...args);
-      cached = pending;
-      try {
-        return await pending;
-      } catch (error) {
-        cached = null;
-        throw error;
-      }
-    };
-  },
+  unstable_cache: (fn: (...a: unknown[]) => unknown) => fn,
 }));
 
 const TIMEOUT = new Error(
   'PlanExecutor error during aggregation :: caused by :: operation exceeded time limit'
 );
 
-const BYLINE_ROWS = [{ _id: 'Abubakar Ibrahim', articles: 323, newsroomIds: ['org-joy'] }];
+const SNAPSHOT_ROW = {
+  _id: 'abubakar-ibrahim',
+  slug: 'abubakar-ibrahim',
+  name: 'Abubakar Ibrahim',
+  variants: ['Abubakar Ibrahim'],
+  articles: 323,
+  newsroomIds: ['org-joy'],
+  desk: false,
+  generation: '2026-09-19T00:00:00.000Z',
+};
 
 const FACET = [
   {
@@ -94,19 +86,20 @@ const FACET = [
   },
 ];
 
-/**
- * A fresh module graph per test — the cache stub above holds state, and so does
- * the real `unstable_cache` this stands in for.
- */
 async function loadAction() {
   vi.resetModules();
   return (await import('@/lib/actions/authors')).getAuthorPageAction;
 }
 
-function withArticles(spec: Parameters<typeof collectionStub>[0]): CollectionStub {
-  const articles = collectionStub(spec);
-  mockGetDb.mockResolvedValue(dbStub({ articles }));
-  return articles;
+/** Mount both collections the read path can touch: the snapshot, and the corpus. */
+function mount(
+  directorySpec: Parameters<typeof collectionStub>[0],
+  articlesSpec: Parameters<typeof collectionStub>[0] = {}
+): { directory: CollectionStub; articles: CollectionStub } {
+  const directory = collectionStub(directorySpec);
+  const articles = collectionStub(articlesSpec);
+  mockGetDb.mockResolvedValue(dbStub({ bylineDirectory: directory, articles }));
+  return { directory, articles };
 }
 
 describe('a byline page over an unreachable corpus', () => {
@@ -117,15 +110,27 @@ describe('a byline page over an unreachable corpus', () => {
     mockGetArticlesByIds.mockResolvedValue([]);
   });
 
-  it('says UNAVAILABLE, not not-found, when the directory read times out', async () => {
+  it('says UNAVAILABLE, not not-found, when the snapshot read fails', async () => {
     // THE regression. `not-found` is a claim about a journalist; we have not
     // earned it, because we never managed to look.
-    withArticles({ aggregate: [TIMEOUT] });
+    mount({ findOne: [TIMEOUT] });
     const getAuthorPageAction = await loadAction();
 
     const result = await getAuthorPageAction('abubakar-ibrahim');
     expect(result.status).toBe('unavailable');
     expect(result.status).not.toBe('not-found');
+  });
+
+  it('says UNAVAILABLE when the snapshot has never been built', async () => {
+    // The new shape of the same trap. An empty collection is what a cron that
+    // has never fired looks like, and it is indistinguishable from a platform
+    // with no journalists — so it must never be answered as a 404.
+    mount({ findOne: [null], estimated: 0 });
+    const getAuthorPageAction = await loadAction();
+
+    await expect(getAuthorPageAction('abubakar-ibrahim')).resolves.toEqual({
+      status: 'unavailable',
+    });
   });
 
   it('says unavailable when the cluster cannot be reached at all', async () => {
@@ -138,58 +143,65 @@ describe('a byline page over an unreachable corpus', () => {
   });
 
   it('never renders a failed read as a byline with no articles', async () => {
-    // The shape the page must never be handed: a resolvable identity whose
-    // profile is an empty-but-confident zero. If a future edit reintroduces
-    // `ok`-less fail-soft, this is where it lands.
-    withArticles({ aggregate: [TIMEOUT] });
+    mount({ findOne: [TIMEOUT] });
     const getAuthorPageAction = await loadAction();
 
     const result = await getAuthorPageAction('abubakar-ibrahim');
     expect(result).not.toMatchObject({ status: 'ok' });
     if (result.status === 'ok') {
-      // Unreachable while the assertion above holds; here so that the day it
-      // does render a page, the page cannot be claiming zero articles.
       expect(result.page.profile.ok).toBe(true);
     }
   });
 
-  it('does not cache a failed directory read over the next hour', async () => {
-    // The amplification: `unstable_cache` memoises a resolved value for the full
-    // TTL. A failed read that RETURNS an empty list is therefore served to every
-    // author page for an hour; one that REJECTS is confined to the request that
-    // hit it. Second call re-queries, and recovers.
-    const articles = withArticles({ aggregate: [TIMEOUT, BYLINE_ROWS, FACET] });
+  it('NEVER runs the corpus scan on a reader request', async () => {
+    // The whole point of the change. `getBylineDirectory`'s `$group` on
+    // `$author.name` measured 11,057 ms warm; it belongs to the cron, and a
+    // page render must not issue it under any circumstance — not on a miss, not
+    // on a cold anything. An edit that "falls back to a live build" when the
+    // snapshot is missing would put an 11-second query back in front of a
+    // reader, and this is where it fails.
+    const { articles } = mount({ findOne: [null], estimated: 0 });
+    const getAuthorPageAction = await loadAction();
+
+    await getAuthorPageAction('abubakar-ibrahim');
+
+    const directoryScans = articles.aggregateCalls.filter((call) =>
+      JSON.stringify(call.pipeline).includes('$author.name')
+    );
+    expect(directoryScans).toHaveLength(0);
+  });
+
+  it('resolves a byline with a single point lookup, not a scan', async () => {
+    const { directory } = mount({ findOne: [SNAPSHOT_ROW] }, { aggregate: [FACET] });
+    const getAuthorPageAction = await loadAction();
+
+    const result = await getAuthorPageAction('abubakar-ibrahim');
+
+    expect(result.status).toBe('ok');
+    expect(directory.findCalls).toHaveLength(1);
+    expect(directory.findCalls[0].filter).toEqual({ _id: 'abubakar-ibrahim' });
+  });
+
+  it('does not memoise a failed read over the next request', async () => {
+    // The old amplification was `unstable_cache` holding a failed read's empty
+    // list for a full hour, so one timeout blacked out every author page. The
+    // snapshot read is not cached at all, so recovery is immediate: the very
+    // next request re-reads and succeeds.
+    mount({ findOne: [TIMEOUT, SNAPSHOT_ROW] }, { aggregate: [FACET] });
     const getAuthorPageAction = await loadAction();
 
     await expect(getAuthorPageAction('abubakar-ibrahim')).resolves.toEqual({
       status: 'unavailable',
     });
-
-    const second = await getAuthorPageAction('abubakar-ibrahim');
-    expect(second.status).toBe('ok');
-    expect(articles.aggregateCalls.length).toBeGreaterThan(1);
+    await expect(getAuthorPageAction('abubakar-ibrahim')).resolves.toMatchObject({
+      status: 'ok',
+    });
   });
 
-  it('still caches a directory read that succeeded', async () => {
-    // The flip side, so the fix above cannot be "stop caching". The directory is
-    // one scan of the corpus and it exists to be shared across every author
-    // page; re-running it per request is the failure this cache prevents.
-    const articles = withArticles({ aggregate: [BYLINE_ROWS, FACET, FACET] });
-    const getAuthorPageAction = await loadAction();
-
-    await getAuthorPageAction('abubakar-ibrahim');
-    await getAuthorPageAction('abubakar-ibrahim');
-
-    const directoryReads = articles.aggregateCalls.filter((call) =>
-      JSON.stringify(call.pipeline).includes('$author.name')
-    );
-    expect(directoryReads).toHaveLength(1);
-  });
-
-  it('still says not-found when the directory was read and carries no such byline', async () => {
+  it('still says not-found when the snapshot was read and carries no such byline', async () => {
     // `unavailable` must not become the answer to everything — a 404 that never
     // fires is as useless as one that always does.
-    withArticles({ aggregate: [BYLINE_ROWS] });
+    mount({ findOne: [null], estimated: 5448 });
     const getAuthorPageAction = await loadAction();
 
     await expect(getAuthorPageAction('nobody-at-all')).resolves.toEqual({
@@ -201,7 +213,7 @@ describe('a byline page over an unreachable corpus', () => {
     // The other half of the same defect: the byline resolves, so the page is
     // real, and its article list comes back empty from a timeout. `profile.ok`
     // is what stops the page printing "0 articles" over a real person's name.
-    withArticles({ aggregate: [BYLINE_ROWS, TIMEOUT] });
+    mount({ findOne: [SNAPSHOT_ROW] }, { aggregate: [TIMEOUT] });
     const getAuthorPageAction = await loadAction();
 
     const result = await getAuthorPageAction('abubakar-ibrahim');
