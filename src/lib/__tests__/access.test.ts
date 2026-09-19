@@ -3,7 +3,17 @@ import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
-import { canAccess, lockedFeatures, planFor, type Feature, type Plan } from '@/lib/access'
+import {
+  allowanceOf,
+  canAccess,
+  lockedFeatures,
+  meteredFor,
+  planFor,
+  withinAllowance,
+  type Feature,
+  type Meter,
+  type Plan,
+} from '@/lib/access'
 
 describe('planFor', () => {
   it('is anonymous signed out and free signed in', () => {
@@ -11,14 +21,38 @@ describe('planFor', () => {
     expect(planFor(true)).toBe('free')
   })
 
-  it('cannot return subscriber, because nothing can prove one', () => {
-    // There is no billing in this platform — no plan field, no webhook, no
-    // checkout. A tier that something could CLAIM but nothing could verify is
-    // worse than the gap: the obvious "source" would be a field on
-    // identity/entity, which the gateway's WorkOS webhook writes and Mongo's
-    // validators accept unknown keys into. That would make every writer to
-    // those databases an authority on who has paid.
-    expect([planFor(true), planFor(false)]).not.toContain('subscriber')
+  /**
+   * The paid tiers are reachable, but only from the billing field.
+   *
+   * This replaces an assertion that `planFor` could never return a paid tier at
+   * all. That was right while this app refused to read a plan from anywhere —
+   * and the refusal cost it the cross-app Mukoko subscription the sibling apps
+   * already share (`MukokoPlan` in nhimbe's `lib/mongo/entitlements.ts`).
+   *
+   * The original concern was about the WRITER, not the reader, and it was
+   * checked rather than assumed on 2026-09-19: the gateway's
+   * `services/IdentityService.ts` writes only WorkOS-owned OIDC claim fields
+   * and never touches `mukoko.plan`. So the field has exactly one intended
+   * writer — a billing service — and it does not exist yet.
+   */
+  it('reads the paid tiers only from the billing field', () => {
+    expect(planFor(true, 'pro')).toBe('pro')
+    expect(planFor(true, 'custom')).toBe('custom')
+  })
+
+  it('fails CLOSED to free on an unknown or absent plan', () => {
+    // A feature gated on a paid tier stays gated until a real subscription says
+    // otherwise, rather than unlocking because a field is unset or misspelled.
+    expect(planFor(true, null)).toBe('free')
+    expect(planFor(true, undefined)).toBe('free')
+    expect(planFor(true, 'enterprise')).toBe('free')
+    expect(planFor(true, 'PRO')).toBe('free')
+  })
+
+  it('never grants a paid tier to someone with no session', () => {
+    // Signing out must beat any plan string a caller could supply.
+    expect(planFor(false, 'pro')).toBe('anonymous')
+    expect(planFor(false, 'custom')).toBe('anonymous')
   })
 })
 
@@ -35,16 +69,16 @@ describe('canAccess', () => {
 
   it('lets a higher plan reach everything a lower one can', () => {
     // The ordering is the whole point of a rank rather than a set: a
-    // subscriber must never be refused something a free account gets.
+    // top plan must never be refused something a free account gets.
     for (const feature of lockedFeatures('anonymous')) {
-      expect(canAccess(feature, 'subscriber'), `subscriber denied ${feature}`).toBe(true)
+      expect(canAccess(feature, 'custom'), `custom denied ${feature}`).toBe(true)
     }
   })
 
   it('fails CLOSED on a feature it does not know', () => {
     // A typo'd or newly-introduced name must deny. A gate that fails open is
     // not a gate — the same rule `entity-access` uses for unknown roles.
-    expect(canAccess('not-a-real-feature' as Feature, 'subscriber')).toBe(false)
+    expect(canAccess('not-a-real-feature' as Feature, 'custom')).toBe(false)
   })
 
   it('fails CLOSED on a plan it does not know', () => {
@@ -59,7 +93,7 @@ describe('lockedFeatures', () => {
   })
 
   it('is empty for the top plan', () => {
-    expect(lockedFeatures('subscriber')).toEqual([])
+    expect(lockedFeatures('custom')).toEqual([])
   })
 })
 
@@ -242,5 +276,72 @@ describe('the withdrawn trust score', () => {
       /\b(sourceHealth|consecutiveFailures)\b/.test(code(f))
     )
     expect(offenders).toEqual([])
+  })
+})
+
+/**
+ * The allowances — owner decision 2026-09-19.
+ *
+ *   > "Free = public is 50 articles 5 searches, then the rest is gated but free
+ *   > user tier — have to be logged in. Similar to how Instagram and TikTok
+ *   > work. Interactions is gated by auth. Analytics and AI is gated to auth,
+ *   > 5 article insights then tiers by subscription kicks in."
+ *
+ * These numbers are policy, not derivation, so they are asserted literally: a
+ * change to them should be a visible decision in a diff, not a quiet edit to a
+ * config object.
+ */
+describe('allowances', () => {
+  it('lets a stranger read 50 articles and run 5 searches', () => {
+    expect(allowanceOf('articles', 'anonymous')).toBe(50)
+    expect(allowanceOf('searches', 'anonymous')).toBe(5)
+  })
+
+  it('stops counting articles and searches once signed in', () => {
+    // The wall exists to convert, so it has done its whole job the moment
+    // somebody signs up. Continuing to meter them would be a second wall.
+    expect(allowanceOf('articles', 'free')).toBeNull()
+    expect(allowanceOf('searches', 'free')).toBeNull()
+  })
+
+  it('gives a free account five AI insights, then a subscription', () => {
+    expect(allowanceOf('ai-summary', 'free')).toBe(5)
+    expect(allowanceOf('ai-summary', 'pro')).toBeNull()
+    expect(allowanceOf('ai-summary', 'custom')).toBeNull()
+  })
+
+  it('offers an anonymous reader no AI at all, agreeing with the gate', () => {
+    // Two mechanisms must not disagree: `canAccess` already says no, and a
+    // non-zero allowance here would be a second answer to the same question.
+    expect(canAccess('ai-summary', 'anonymous')).toBe(false)
+    expect(allowanceOf('ai-summary', 'anonymous')).toBe(0)
+  })
+
+  it('stops on the article AFTER the allowance, not the one that reaches it', () => {
+    expect(withinAllowance('articles', 'anonymous', 49)).toBe(true)
+    expect(withinAllowance('articles', 'anonymous', 50)).toBe(false)
+    expect(withinAllowance('articles', 'anonymous', 51)).toBe(false)
+  })
+
+  it('treats a broken counter as exhausted, never as unlimited', () => {
+    // A negative or non-finite count can only come from a broken meter, and the
+    // safe reading of a broken meter is not "let them through for ever".
+    expect(withinAllowance('articles', 'anonymous', -1)).toBe(false)
+    expect(withinAllowance('articles', 'anonymous', Number.NaN)).toBe(false)
+    expect(withinAllowance('articles', 'anonymous', Number.POSITIVE_INFINITY)).toBe(false)
+  })
+
+  it('fails CLOSED on a meter or plan it does not know', () => {
+    expect(allowanceOf('not-a-meter' as Meter, 'free')).toBe(0)
+    expect(allowanceOf('articles', 'enterprise' as Plan)).toBe(0)
+    expect(withinAllowance('articles', 'enterprise' as Plan, 0)).toBe(false)
+  })
+
+  it('names what an upgrade would actually raise', () => {
+    expect(meteredFor('anonymous')).toEqual(
+      expect.arrayContaining(['articles', 'searches', 'ai-summary'])
+    )
+    expect(meteredFor('free')).toEqual(['ai-summary'])
+    expect(meteredFor('pro')).toEqual([])
   })
 })
