@@ -38,10 +38,12 @@ vi.mock('@/lib/auth/guard', () => ({
 
 // The page reads via Server Actions, so mock the action module (not mongodb/).
 const mockRunCorpusQuery = vi.fn()
+const mockRunCorpusPreview = vi.fn()
 const mockGetQueryFacets = vi.fn()
 const mockGetCoverageConcentration = vi.fn()
 vi.mock('@/lib/actions/analytics', () => ({
   runCorpusQueryAction: (...args: unknown[]) => mockRunCorpusQuery(...args),
+  runCorpusPreviewAction: (...args: unknown[]) => mockRunCorpusPreview(...args),
   getQueryFacetsAction: (...args: unknown[]) => mockGetQueryFacets(...args),
   getCoverageConcentrationAction: (...args: unknown[]) => mockGetCoverageConcentration(...args),
 }))
@@ -153,6 +155,19 @@ describe('AnalyticsPage (query console)', () => {
     vi.clearAllMocks()
     mockSignedIn.mockResolvedValue(true)
     mockRunCorpusQuery.mockResolvedValue(baseResult)
+    mockRunCorpusPreview.mockResolvedValue({
+      query: baseResult.query,
+      answered: true,
+      total: 42,
+      usedSearchIndex: baseResult.usedSearchIndex,
+      series: [],
+      bySource: [],
+      byCountry: [],
+      byCategory: [],
+      byKeyword: [],
+      sentiment: { positive: 0, neutral: 0, negative: 0, mixed: 0, coverage: 0, covered: 0 },
+      generatedAt: '2026-09-19T00:00:00.000Z',
+    })
     mockGetQueryFacets.mockResolvedValue(baseFacets)
     mockGetCoverageConcentration.mockResolvedValue(baseConcentration)
   })
@@ -283,28 +298,48 @@ describe('AnalyticsPage (query console)', () => {
     expect(screen.queryByText('Export CSV')).not.toBeInTheDocument()
   })
 
+  /*
+   * These three used to assert a redirect to `/sign-in`, and the change that
+   * replaced it was deliberate rather than a regression: `/insights` is open and
+   * links in here, so the redirect fired at exactly the moment a reader chose to
+   * go deeper, and replaced their page with a form that never said what was
+   * behind it. The console now previews the reader's own query and asks for the
+   * account afterwards.
+   *
+   * What did NOT change is the part worth keeping: an anonymous visitor must
+   * still never reach the expensive read, and their query must still survive the
+   * round trip. Both are asserted below against the new shape.
+   */
   describe('access', () => {
     beforeEach(() => mockSignedIn.mockResolvedValue(false))
 
-    it('redirects an anonymous visitor to sign-in', async () => {
-      await expect(renderPage({})).rejects.toThrow(/NEXT_REDIRECT/)
-      expect(mockRedirect).toHaveBeenCalledWith('/sign-in?returnTo=%2Fanalytics')
+    it('previews for an anonymous visitor instead of turning them away', async () => {
+      await renderPage({})
+      expect(mockRedirect).not.toHaveBeenCalled()
+      expect(mockRunCorpusPreview).toHaveBeenCalled()
     })
 
     it('preserves the query across the sign-in round trip', async () => {
-      // A shared console link must survive the redirect, or the analyst lands
-      // on a blank console instead of the query they were sent.
-      await expect(
-        renderPage({ q: 'accident', country: 'ZW' })
-      ).rejects.toThrow(/NEXT_REDIRECT/)
-      const target = mockRedirect.mock.calls[0][0] as string
-      const returnTo = decodeURIComponent(target.split('returnTo=')[1])
+      // A shared console link must survive signing in, or the analyst lands on a
+      // blank console instead of the query they were sent. The return trip is
+      // now carried on the unlock link rather than forced on arrival.
+      await renderPage({ q: 'accident', country: 'ZW' })
+      const cta = screen.getByRole('link', { name: /create a free account/i })
+      const returnTo = decodeURIComponent(
+        (cta.getAttribute('href') ?? '').split('returnTo=')[1] ?? ''
+      )
       expect(returnTo).toContain('q=accident')
       expect(returnTo).toContain('country=ZW')
     })
 
+    /**
+     * The one that still matters most. `guard.ts` gates this console partly
+     * because it "makes the expensive path reachable without a cost owner", and
+     * the preview is only safe because it runs the cheap facet pass instead. If
+     * an edit ever points the anonymous branch at the full query, this fails.
+     */
     it('never runs the corpus query for an anonymous visitor', async () => {
-      await expect(renderPage({ q: 'accident' })).rejects.toThrow(/NEXT_REDIRECT/)
+      await renderPage({ q: 'accident' })
       expect(mockRunCorpusQuery).not.toHaveBeenCalled()
     })
   })
