@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { Search, Loader2, TrendingUp, BarChart3, X } from "lucide-react";
 import { ArticleCard } from "@/components/article-card";
+import { Button } from "@/components/ui/button";
 import { CategoryChip } from "@/components/ui/category-chip";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { type Article, type Category } from "@/lib/api";
@@ -122,25 +123,52 @@ export default function SearchPage() {
         {/* Search Bar */}
       <div className="mb-8">
         <form onSubmit={handleSearch} className="relative">
-          <div className="flex items-center gap-3 bg-surface border border-outline rounded-2xl px-4 py-3 focus-within:border-primary transition-colors">
-            <Search className="w-5 h-5 text-text-tertiary" />
+          <div className="flex items-center gap-2 sm:gap-3 bg-surface border border-control rounded-2xl pl-4 pr-2 py-2 focus-within:border-primary transition-colors">
+            <Search className="w-5 h-5 shrink-0 text-text-tertiary" aria-hidden="true" />
             <input
-              type="text"
+              type="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search African news..."
-              className="flex-1 bg-transparent outline-none text-foreground placeholder:text-text-tertiary"
+              aria-label="Search African news"
+              className="min-w-0 flex-1 bg-transparent outline-none text-foreground placeholder:text-text-tertiary [&::-webkit-search-cancel-button]:appearance-none"
             />
             {query && (
               <button
                 type="button"
                 onClick={handleClear}
-                className="p-1 hover:bg-elevated rounded-full transition-colors"
+                aria-label="Clear search"
+                className="shrink-0 p-1 hover:bg-elevated rounded-full transition-colors"
               >
                 <X className="w-4 h-4 text-text-tertiary" />
               </button>
             )}
-            {loading && <Loader2 className="w-5 h-5 text-primary animate-spin" />}
+            {/*
+              The form's only control used to be the text input, so there was
+              nothing to press: submission relied entirely on the browser's
+              implicit-submit-on-Enter, which is invisible on desktop and is the
+              one affordance a reader never discovers. The handler was always
+              correct — the button is what makes it reachable.
+            */}
+            <Button
+              type="submit"
+              size="sm"
+              disabled={!query.trim() || loading}
+              className="shrink-0"
+            >
+              {loading ? (
+                <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <Search className="w-4 h-4" aria-hidden="true" />
+              )}
+              {/*
+                One label, not a visible copy plus a screen-reader copy — two
+                would concatenate into the accessible name "Search Search".
+                `sr-only sm:not-sr-only` keeps the button icon-only on a narrow
+                phone while still naming it.
+              */}
+              <span className="sr-only sm:not-sr-only">Search</span>
+            </Button>
           </div>
         </form>
       </div>
