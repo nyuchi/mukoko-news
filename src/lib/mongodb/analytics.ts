@@ -913,6 +913,197 @@ export async function runCorpusQuery(params: CorpusQueryParams): Promise<CorpusQ
 }
 
 // ---------------------------------------------------------------------------
+// Preview — the anonymous half of the console
+//
+// `/insights` is open and `/analytics` is not, and the boundary between them is
+// where a reader who wants to go deeper decides whether to sign up. A redirect
+// to `/sign-in` is the worst possible thing to put there: it takes away the page
+// they were reading and replaces it with a form that does not say what they were
+// about to get. This app already learned that with the AI summary — "the gate
+// teases, it does not vanish… a component that simply disappears converts
+// nobody, because they never learn the feature exists" — and the console never
+// got the same treatment.
+//
+// So an anonymous reader gets their own query answered, partially.
+//
+// ## Why the line falls exactly here
+//
+// It is not a product line drawn over the data; it is the seam the engine
+// already has. `runCorpusQuery` issues TWO aggregations in parallel:
+//
+//   meta  — `$searchMeta` facets. Counts only. Milliseconds. No documents read.
+//   deep  — `$search` + `$limit` + `$match` + `$facet`. Reads documents, and is
+//           the pass that costs something.
+//
+// The preview runs the FIRST and never the second. That is what makes it safe
+// to hand an anonymous caller: `guard.ts` gates the console partly because it
+// "makes the expensive path reachable without a cost owner", and this path is
+// not the expensive one. Everything the deep pass produces — named entities,
+// bylines, the quality average, the sample articles — stays behind the session,
+// along with the CSV export of a matched slice.
+//
+// It also happens to be the honest product line. Counts, shares and a shape over
+// time are the same KIND of thing `/insights` already publishes, narrowed to a
+// question the reader asked. Rows, names and the articles themselves are the
+// queryable database the guard exists to protect.
+// ---------------------------------------------------------------------------
+
+/**
+ * What an anonymous caller may see of their own query.
+ *
+ * Deliberately NOT a `Partial<CorpusQueryResult>`: the locked panels are absent
+ * from the type rather than empty in it, so a client cannot render "no named
+ * entities for this query" over data it was simply not given. An empty array
+ * and a withheld one must not be the same value — that is the same rule
+ * `CorpusSummary.ok` exists for.
+ */
+export interface CorpusPreview {
+  query: NormalizedQuery
+  /**
+   * False when no Search index can express this query shape.
+   *
+   * `chooseIndex` returns null for a text term combined with a category,
+   * sentiment or quality filter — `runCorpusQuery` falls back to the deep pass
+   * there, and the preview will not, so it reports that it cannot answer rather
+   * than answering with zero. Zero would read as "no articles match", which is
+   * a claim about the corpus rather than about our indexes.
+   */
+  answered: boolean
+  total: number
+  usedSearchIndex: boolean
+  series: SeriesPoint[]
+  bySource: SourceRow[]
+  byCountry: CountryRow[]
+  byCategory: TermRow[]
+  byKeyword: TermRow[]
+  sentiment: SentimentSummary
+  generatedAt: string
+}
+
+function emptyPreview(query: NormalizedQuery, answered: boolean): CorpusPreview {
+  return {
+    query,
+    answered,
+    total: 0,
+    usedSearchIndex: Boolean(query.q),
+    series: [],
+    bySource: [],
+    byCountry: [],
+    byCategory: [],
+    byKeyword: [],
+    sentiment: { positive: 0, neutral: 0, negative: 0, mixed: 0, coverage: 0, covered: 0 },
+    generatedAt: new Date().toISOString(),
+  }
+}
+
+/**
+ * Run only the facet pass of a corpus query.
+ *
+ * Fail-soft like every other read in this module: a failure returns an
+ * empty-but-typed result with `answered: false`, never throws to the page.
+ */
+export async function runCorpusPreview(params: CorpusQueryParams): Promise<CorpusPreview> {
+  const query = normalizeQuery(params)
+
+  const facetIndex = chooseIndex(query)
+  // No index can express this shape, and the only other way to answer it is the
+  // document scan this function exists not to run. Say so instead.
+  if (!facetIndex) return emptyPreview(query, false)
+
+  try {
+    const db = await getDb()
+    const col = db.collection('articles')
+    const compound = buildCompound(query, facetIndex)
+
+    const meta = await col
+      .aggregate<SearchMetaResult>(
+        [
+          {
+            $searchMeta: {
+              index: facetIndex,
+              facet: { operator: { compound }, facets: buildMetaFacets(query, facetIndex) },
+              count: { type: 'total' },
+            },
+          },
+        ],
+        AGG_OPTS
+      )
+      .toArray()
+      .then((rows) => rows[0])
+
+    if (!meta) return emptyPreview(query, false)
+
+    const total = Number(meta.count?.total ?? 0)
+    if (total === 0) return { ...emptyPreview(query, true), total: 0 }
+
+    const sourceBuckets = bucketsOf(meta, 'source')
+    const sourceIds = [...new Set(sourceBuckets.map((b) => String(b._id)))].filter(Boolean)
+    const sourceDocs = sourceIds.length
+      ? await db
+          .collection<{ _id: string; name?: string; countryCode?: string }>('feedSources')
+          .find({ _id: { $in: sourceIds } }, { projection: { name: 1, countryCode: 1 } })
+          .toArray()
+      : []
+    const sourceNames = new Map(sourceDocs.map((s) => [s._id, s.name ?? s._id]))
+    const sourceCountries = new Map(sourceDocs.map((s) => [s._id, s.countryCode ?? null]))
+
+    const sentimentCounts = new Map(
+      (meta.facet?.sentiment ? bucketsOf(meta, 'sentiment') : []).map((b) => [
+        String(b._id),
+        Number(b.count),
+      ])
+    )
+    const sentimentCovered = [...sentimentCounts.values()].reduce((a, b) => a + b, 0)
+
+    return {
+      query,
+      answered: true,
+      total,
+      usedSearchIndex: Boolean(query.q),
+      series: seriesFromDayFacet(bucketsOf(meta, 'day'), query),
+      bySource: sourceBuckets
+        .filter((b) => typeof b._id === 'string' && b._id.length > 0)
+        // Fewer rows than the full console gives a signed-in reader. The point
+        // is to show the shape of the answer, not to be a smaller copy of it.
+        .slice(0, 10)
+        .map((b) => {
+          const id = String(b._id)
+          return {
+            sourceId: id,
+            name: sourceNames.get(id) ?? id,
+            country: sourceCountries.get(id) ?? null,
+            count: Number(b.count),
+            share: round((Number(b.count) / total) * 100, 1),
+          }
+        }),
+      byCountry: bucketsOf(meta, 'country')
+        .filter((b) => typeof b._id === 'string' && b._id.length > 0)
+        .slice(0, 10)
+        .map((b) => ({
+          code: String(b._id),
+          name: COUNTRY_NAMES[String(b._id)] ?? String(b._id),
+          count: Number(b.count),
+          share: round((Number(b.count) / total) * 100, 1),
+        })),
+      byCategory: meta.facet?.category ? termRows(bucketsOf(meta, 'category')).slice(0, 10) : [],
+      byKeyword: meta.facet?.keyword ? termRows(bucketsOf(meta, 'keyword')).slice(0, 10) : [],
+      sentiment: {
+        positive: sentimentCounts.get('positive') ?? 0,
+        neutral: sentimentCounts.get('neutral') ?? 0,
+        negative: sentimentCounts.get('negative') ?? 0,
+        mixed: sentimentCounts.get('mixed') ?? 0,
+        covered: sentimentCovered,
+        coverage: total > 0 ? round((sentimentCovered / total) * 100, 1) : 0,
+      },
+      generatedAt: new Date().toISOString(),
+    }
+  } catch (error) {
+    console.error('[analytics.runCorpusPreview]', error)
+    return emptyPreview(query, false)
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Coverage concentration
 // ---------------------------------------------------------------------------
 
