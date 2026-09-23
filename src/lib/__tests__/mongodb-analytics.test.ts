@@ -19,14 +19,46 @@ import {
   getQueryFacets,
   MAX_WINDOW_DAYS,
   ENRICHMENT_SCAN_LIMIT,
+  __resetCountryTokenCache,
 } from '../mongodb/analytics';
-import { getDb } from '../mongodb/client';
+import { getDb, getDomainDb } from '../mongodb/client';
 import { collectionStub, dbStub, type CollectionStub } from './helpers/mongo';
 
 vi.mock('../mongodb/client', () => ({
   getDb: vi.fn(),
+  getDomainDb: vi.fn(),
   QUERY_MAX_TIME_MS: 15000,
 }));
+
+/**
+ * The `places` SSOT, as the topic filter reads it.
+ *
+ * Countries are no longer a list in `analytics.ts` — they are a read from
+ * `places.placesGeo`, including the `altNames` alias layer. A suite that does
+ * not stub this exercises the FALLBACK, not the real path, so it must be
+ * explicit about which one it is testing. `usePlaces(null)` is the outage.
+ */
+function usePlaces(
+  countries: Array<{ isoCode: string; name: string; altNames?: string[] }> | null
+) {
+  if (countries === null) {
+    vi.mocked(getDomainDb).mockRejectedValue(new Error('places unreachable') as never);
+    return;
+  }
+  vi.mocked(getDomainDb).mockResolvedValue(
+    dbStub({
+      placesGeo: collectionStub({ find: [countries.map((c) => ({ ...c, geoType: 'country' }))] }),
+    }) as unknown as never
+  );
+}
+
+const LIVE_COUNTRIES = [
+  { isoCode: 'NG', name: 'Nigeria' },
+  { isoCode: 'ZA', name: 'South Africa' },
+  { isoCode: 'SN', name: 'Senegal', altNames: ['S\u00e9n\u00e9gal'] },
+  { isoCode: 'CI', name: "Cote d'Ivoire", altNames: ["C\u00f4te d'Ivoire", 'Ivory Coast'] },
+  { isoCode: 'GN', name: 'Guinea', altNames: ['Guin\u00e9e'] },
+];
 
 function useDb(collections: Record<string, CollectionStub>) {
   vi.mocked(getDb).mockResolvedValue(dbStub(collections) as unknown as never);
@@ -645,10 +677,18 @@ describe('getQueryFacets', () => {
  * it. Each test here fails against the code as it shipped.
  */
 describe('runCorpusPreview', () => {
+  // The token memo is module-level, so a stub set here is ignored unless the
+  // previous suite's answer is cleared first.
+  beforeEach(() => {
+    __resetCountryTokenCache();
+  });
+
   const previewMeta = (over: Record<string, unknown> = {}) =>
     collectionStub({ aggregate: [[metaRow(over)]] });
 
   it('drops country names from Topics, in every spelling the corpus carries', async () => {
+    // The alias layer is present, i.e. the real production path.
+    usePlaces(LIVE_COUNTRIES);
     // The counts are the live ones measured on the cluster 2026-09-23.
     useDb({
       articles: previewMeta({
@@ -677,6 +717,7 @@ describe('runCorpusPreview', () => {
   });
 
   it('reports a withheld facet as null, never as an empty result', async () => {
+    usePlaces(LIVE_COUNTRIES);
     // A text term routes to `articles_text_search`, which maps no category,
     // keyword or sentiment path — so `buildMetaFacets` never asks for them and
     // `$searchMeta` returns no such facet. `[]` here would render as
@@ -701,6 +742,7 @@ describe('runCorpusPreview', () => {
   });
 
   it('still returns an empty array when the facet was asked for and had no rows', async () => {
+    usePlaces(LIVE_COUNTRIES);
     // The other half of the distinction: this one IS a finding about the
     // corpus, and must not be confused with the withheld case above.
     useDb({
@@ -714,5 +756,37 @@ describe('runCorpusPreview', () => {
 
     expect(preview.byKeyword).toEqual([]);
     expect(preview.byKeyword).not.toBeNull();
+  });
+
+  it('degrades to English-only country names when places is unreachable', async () => {
+    /*
+     * The documented fallback, pinned so it cannot silently become something
+     * else. A `places` outage must NOT make the filter a no-op — that would put
+     * the whole country list back into Topics, which is the bug this closes.
+     * It falls back to the same static list the country picker uses, which
+     * carries English names only, so foreign spellings survive until `places`
+     * is readable again. A smaller, legible loss rather than an unfiltered panel.
+     */
+    usePlaces(null);
+    useDb({
+      articles: previewMeta({
+        keyword: {
+          buckets: [
+            { _id: 'Nigeria', count: 6184 },
+            { _id: 'Guin\u00e9e', count: 531 },
+            { _id: 'football', count: 1609 },
+          ],
+        },
+      }),
+      feedSources: collectionStub({ find: [[]] }),
+      newsMediaOrganizations: collectionStub({ find: [[]] }),
+    });
+
+    const { runCorpusPreview } = await import('../mongodb/analytics');
+    const preview = await runCorpusPreview({});
+
+    // Nigeria still filtered (English name is in the static list); Guinée is
+    // not, because the alias layer lives in `places` and `places` is down.
+    expect(preview.byKeyword?.map((k) => k.term)).toEqual(['Guin\u00e9e', 'football']);
   });
 });

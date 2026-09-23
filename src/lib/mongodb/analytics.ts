@@ -24,6 +24,7 @@ import type { Filter, Document } from 'mongodb'
 import { getDb } from './client'
 import { clampInt, MAX_LIMIT } from '@/lib/safety'
 import { COUNTRIES } from '@/lib/constants'
+import { getCountryTopicTokens } from './places'
 
 
 /**
@@ -88,56 +89,66 @@ const TOPIC_STOPWORDS = new Set<string>([
 ])
 
 /**
- * Lowercase and strip diacritics, so one spelling of a country matches another.
+ * Is this keyword a real topic, or is it the corpus's own country axis?
  *
- * The corpus carries French and Portuguese feeds, so a country arrives under
- * more than one spelling and `COUNTRIES` holds only the English one. Measured
- * on the live cluster over 30 days (2026-09-23), `Sénégal` is the **8th** most
- * common `aiKeywords` value at 1,213 — ahead of every real subject except
- * football and Bola Tinubu. Folding the accent is what lets it match the
- * `senegal` this set already has.
+ * ⚠️ THE COUNTRY LIST IS NOT DEFINED HERE, DELIBERATELY. It is read from the
+ * `places` domain — the platform SSOT for geography — via
+ * `getCountryTopicTokens()`. An earlier revision of this file derived the set
+ * from `COUNTRIES` in `src/lib/constants.ts` and then hand-added two spellings
+ * to it, which made this the FOURTH country list in the app and the seventeenth
+ * across the platform. Measured 2026-09-23, those copies already held five
+ * different answers to "how many countries are there" (53, 54, 55, 21, 16), and
+ * `/insights` and `/analytics` disagreed about Senegal on the same day.
+ *
+ * The tokens are passed IN rather than fetched here so this stays a pure,
+ * synchronous predicate that a `.filter()` can call per row.
  */
-const foldToken = (raw: string): string =>
-  raw
-    .trim()
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/\p{Diacritic}/gu, '')
-
-/**
- * Country names/codes, folded — excluded from topic ranking, because a country
- * is a FACET of this corpus rather than a topic within it. `byCountry` already
- * answers "where"; repeating it under "Topics" tells a reader the same thing
- * twice, which is exactly what the anonymous preview was doing in production:
- * five of its top ten topics were the five countries listed beside them.
- *
- * ⚠️ Folding is necessary but NOT sufficient, and the remainder is measured,
- * not assumed. Two spellings in the same 30-day window are different WORDS
- * rather than accent variants, so no normalisation reaches them from the
- * English set — they are listed explicitly with the count that earned them a
- * place:
- *   `Côte d'Ivoire` 727  (`COUNTRIES` carries "Ivory Coast")
- *   `Guinée`        531  (`COUNTRIES` carries "Guinea")
- * Anything not observed in that window is deliberately NOT invented here.
- *
- * ⚠️ This overlaps `COUNTRY_TOKENS` in the gateway's `services/InsightsReads.ts`,
- * which CLAUDE.md already records as a known duplication pending a shared
- * package. Note the gateway's own list carries `côte d'ivoire` but NOT
- * `guinée`, so it has the same gap this measurement just closed here.
- */
-const COUNTRY_TOKENS = new Set<string>([
-  ...COUNTRIES.flatMap((c) => [foldToken(c.name), foldToken(c.code)]),
-  foldToken("Côte d'Ivoire"),
-  foldToken('Guinée'),
-])
-
-function isMeaningfulTopic(raw: string): boolean {
+function isMeaningfulTopic(raw: string, countryTokens: ReadonlySet<string>): boolean {
   const t = raw.trim().toLowerCase()
   if (t.length < 2 || t.length > 60) return false
   if (TOPIC_STOPWORDS.has(t)) return false
-  if (COUNTRY_TOKENS.has(foldToken(raw))) return false
+  // Fold here so the caller's set and the incoming term are compared on the
+  // same footing; `getCountryTopicTokens` folds on the way in.
+  const folded = t.normalize('NFD').replace(/\p{Diacritic}/gu, '')
+  if (countryTokens.has(folded)) return false
   return true
 }
+
+/**
+ * The token set, memoised per isolate for `COUNTRY_TOKEN_TTL_MS`.
+ *
+ * Countries change on a timescale of years; re-reading `places` on every
+ * analytics query would add a round trip to the platform's slowest page for a
+ * list that is effectively static. A failed read falls back inside
+ * `getCountryTopicTokens` rather than here, so this never caches a failure as
+ * though it were an answer.
+ */
+const COUNTRY_TOKEN_TTL_MS = 10 * 60 * 1000
+let countryTokenCache: { at: number; tokens: ReadonlySet<string> } | null = null
+
+/**
+ * Clear the memo.
+ *
+ * Exported ONLY for tests, and it exists because the memo is otherwise
+ * invisible to them: the first suite to touch either read populates it for the
+ * whole file, so a later test that stubs `places` differently silently gets the
+ * earlier answer. That is not a test-harness quirk — it is the same staleness a
+ * long-lived isolate would show, so it is worth being able to reproduce.
+ */
+export function __resetCountryTokenCache(): void {
+  countryTokenCache = null
+}
+
+async function countryTokens(): Promise<ReadonlySet<string>> {
+  const now = Date.now()
+  if (countryTokenCache && now - countryTokenCache.at < COUNTRY_TOKEN_TTL_MS) {
+    return countryTokenCache.tokens
+  }
+  const tokens = await getCountryTopicTokens()
+  countryTokenCache = { at: now, tokens }
+  return tokens
+}
+
 
 /** Round to `dp` decimal places, returning 0 for null/NaN/undefined. */
 function round(value: unknown, dp = 2): number {
@@ -866,6 +877,8 @@ export async function runCorpusQuery(params: CorpusQueryParams): Promise<CorpusQ
     const sentimentCovered = [...sentimentCounts.values()].reduce((a, b) => a + b, 0)
     const sentimentDenominator = sentimentFromFacet ? facetDenominator : deepDenominator
 
+    // Country tokens come from the `places` SSOT, not from a list in this file.
+    const countries = await countryTokens()
     const categoryRows = exact && meta?.facet?.category
       ? termRows(bucketsOf(meta, 'category'))
       : termRows(deep.byCategory ?? [])
@@ -909,9 +922,9 @@ export async function runCorpusQuery(params: CorpusQueryParams): Promise<CorpusQ
           share: share(Number(b.count), facetDenominator),
         })),
       byCategory: categoryRows.slice(0, 20),
-      byKeyword: keywordRows.filter((r) => isMeaningfulTopic(r.term)).slice(0, 25),
+      byKeyword: keywordRows.filter((r) => isMeaningfulTopic(r.term, countries)).slice(0, 25),
       byEntity: (deep.byEntity ?? [])
-        .filter((r) => r._id?.name && isMeaningfulTopic(r._id.name))
+        .filter((r) => r._id?.name && isMeaningfulTopic(r._id.name, countries))
         .slice(0, 25)
         .map((r) => ({ name: r._id.name, type: r._id.type ?? 'UNKNOWN', count: r.count })),
       byAuthor: (deep.byAuthor ?? []).map((r) => ({ name: r._id, count: r.count })),
@@ -1085,8 +1098,31 @@ export async function runCorpusPreview(params: CorpusQueryParams): Promise<Corpu
     if (!meta) return emptyPreview(query, false)
 
     const total = Number(meta.count?.total ?? 0)
-    if (total === 0) return { ...emptyPreview(query, true), total: 0 }
+    if (total === 0) {
+      /*
+       * ANSWERED, and genuinely nothing matched — which is a finding about the
+       * corpus, not about our indexes.
+       *
+       * `emptyPreview` nulls the three facet-dependent fields because it is
+       * also the shape returned when we could not ask. Reusing it verbatim
+       * here made a legitimately-empty result render "Not available for a text
+       * search", asserting an index limitation that is not the cause. Carry
+       * `[]` for whatever the chosen index DOES map, so null keeps meaning
+       * exactly one thing: we did not ask.
+       */
+      const mapped = facetIndex === 'articles_insights'
+      return {
+        ...emptyPreview(query, true),
+        total: 0,
+        byCategory: mapped ? [] : null,
+        byKeyword: mapped ? [] : null,
+        sentiment: mapped
+          ? { positive: 0, neutral: 0, negative: 0, mixed: 0, covered: 0, coverage: 0 }
+          : null,
+      }
+    }
 
+    const countries = await countryTokens()
     const sourceBuckets = bucketsOf(meta, 'source')
     const sourceIds = [...new Set(sourceBuckets.map((b) => String(b._id)))].filter(Boolean)
     const sourceDocs = sourceIds.length
@@ -1148,7 +1184,7 @@ export async function runCorpusPreview(params: CorpusQueryParams): Promise<Corpu
       // South Africa 2,871, Ghana 2,189, Zimbabwe 1,804, Kenya 1,407).
       byKeyword: meta.facet?.keyword
         ? termRows(bucketsOf(meta, 'keyword'))
-            .filter((r) => isMeaningfulTopic(r.term))
+            .filter((r) => isMeaningfulTopic(r.term, countries))
             .slice(0, 10)
         : null,
       sentiment: meta.facet?.sentiment
