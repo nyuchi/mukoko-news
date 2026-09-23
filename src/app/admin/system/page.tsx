@@ -87,7 +87,7 @@ export default async function AdminSystemPage() {
           <div>
             <p className="font-medium text-foreground mb-1">Ingestion &amp; enrichment</p>
             <p className="text-sm text-text-secondary">
-              RSS collection and AI enrichment run in the <code>mukoko-news-pipeline</code> repo
+              RSS collection and AI enrichment run in the <code>mukoko-ingestion-pipeline</code> repo
               (Fly.io + Cloudflare Workers). Their status is not monitored from this frontend, so
               no status is shown here. Sync intervals and retention are configured in the
               pipeline repo, not here. The drain above is a command, not a status: it starts work
