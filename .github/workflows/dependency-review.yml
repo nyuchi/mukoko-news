@@ -7,7 +7,7 @@ name: Dependency Review
 # Requires Dependency graph + GitHub Advanced Security on the repository. It is
 # enabled here (this repo already runs CodeQL default setup and submits a
 # dependency graph); the same job had to be dropped from
-# nyuchi/mukoko-news-pipeline, where those settings are off.
+# nyuchi/mukoko-ingestion-pipeline, where those settings are off.
 
 on:
   pull_request:

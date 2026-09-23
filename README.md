@@ -38,7 +38,7 @@ app measures rather than asserts — see [Coverage](#coverage).
 
 > **The sibling repos.** This one is the reader-facing web app. The
 > [gateway](https://github.com/nyuchi/mukoko-news-gateway) is the public API and MCP server;
-> the [pipeline](https://github.com/nyuchi/mukoko-news-pipeline) does the ingestion and
+> the [pipeline](https://github.com/nyuchi/mukoko-ingestion-pipeline) does the ingestion and
 > enrichment. Issues land in whichever repo owns the code.
 
 ---
@@ -51,7 +51,7 @@ This repository is the **Next.js 15 frontend** for Mukoko News, deployed on Verc
 | ------------------------------------ | -------------------------------------------- |
 | **`nyuchi/mukoko-news`** (this repo) | Web frontend — Next.js 15, Vercel            |
 | `nyuchi/mukoko-news-gateway`         | Public API + MCP server — Cloudflare Workers |
-| `nyuchi/mukoko-news-pipeline`        | Data pipeline — Fly.io + Cloudflare          |
+| `nyuchi/mukoko-ingestion-pipeline`        | Data pipeline — Fly.io + Cloudflare          |
 
 The frontend reads news data directly from MongoDB Atlas via Next.js Server Actions.
 
