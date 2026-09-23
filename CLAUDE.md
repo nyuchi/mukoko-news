@@ -12,10 +12,10 @@ Mukoko News is a Pan-African digital news aggregation platform. "Mukoko" means "
 
 This repo (`nyuchi/mukoko-news`) is the **Next.js frontend only**. It deploys to Vercel.
 
-| Repo                          | Contents                                | Deploys to          |
-| ----------------------------- | --------------------------------------- | ------------------- |
-| `nyuchi/mukoko-news`          | Next.js 15 frontend                     | Vercel              |
-| `nyuchi/mukoko-news-gateway`  | Cloudflare Workers API + MCP            | Cloudflare Workers  |
+| Repo                               | Contents                                | Deploys to          |
+| ---------------------------------- | --------------------------------------- | ------------------- |
+| `nyuchi/mukoko-news`               | Next.js 15 frontend                     | Vercel              |
+| `nyuchi/mukoko-news-gateway`       | Cloudflare Workers API + MCP            | Cloudflare Workers  |
 | `nyuchi/mukoko-ingestion-pipeline` | Fly.io pipeline + Cloudflare processing | Fly.io + Cloudflare |
 
 **Hard rules for this repo:**
