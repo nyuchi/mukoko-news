@@ -52,8 +52,25 @@ export function describePreviewQuery(preview: CorpusPreview): string {
 function Bars({
   rows,
 }: {
-  rows: Array<{ key: string; label: string; value: number }>;
+  rows: Array<{ key: string; label: string; value: number }> | null;
 }) {
+  /*
+   * `null` and `[]` are different answers and must not read the same.
+   *
+   * `null` means the Search index serving this query carries no such facet —
+   * a text term routes to `articles_text_search`, which maps no category,
+   * keyword or sentiment path. Saying "No data for this query" there states
+   * something about the corpus that we never measured, which is the failure
+   * this file's own header comment forbids two panels above.
+   */
+  if (rows === null) {
+    return (
+      <p className="text-sm text-text-tertiary">
+        Not available for a text search — add a country or date filter instead,
+        or sign in for the full console.
+      </p>
+    );
+  }
   if (rows.length === 0) {
     return (
       <p className="text-sm text-text-tertiary">No data for this query.</p>
@@ -198,20 +215,24 @@ export default function AnalyticsPreview({
               </Panel>
               <Panel title="Topics" icon={Tags}>
                 <Bars
-                  rows={preview.byKeyword.map((k) => ({
-                    key: k.term,
-                    label: k.term,
-                    value: k.count,
-                  }))}
+                  rows={
+                    preview.byKeyword?.map((k) => ({
+                      key: k.term,
+                      label: k.term,
+                      value: k.count,
+                    })) ?? null
+                  }
                 />
               </Panel>
               <Panel title="Categories" icon={Tags}>
                 <Bars
-                  rows={preview.byCategory.map((c) => ({
-                    key: c.term,
-                    label: c.term,
-                    value: c.count,
-                  }))}
+                  rows={
+                    preview.byCategory?.map((c) => ({
+                      key: c.term,
+                      label: c.term,
+                      value: c.count,
+                    })) ?? null
+                  }
                 />
               </Panel>
             </div>

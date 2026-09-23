@@ -635,3 +635,84 @@ describe('getQueryFacets', () => {
     expect(await getQueryFacets({})).toEqual({ countries: [], categories: [] });
   });
 });
+
+/**
+ * `runCorpusPreview` — the ANONYMOUS reader's panels.
+ *
+ * It had no direct coverage at all, which is how both bugs below reached
+ * production and stayed there: every suite in this file exercised
+ * `runCorpusQuery`, the signed-in path, and the preview quietly diverged from
+ * it. Each test here fails against the code as it shipped.
+ */
+describe('runCorpusPreview', () => {
+  const previewMeta = (over: Record<string, unknown> = {}) =>
+    collectionStub({ aggregate: [[metaRow(over)]] });
+
+  it('drops country names from Topics, in every spelling the corpus carries', async () => {
+    // The counts are the live ones measured on the cluster 2026-09-23.
+    useDb({
+      articles: previewMeta({
+        keyword: {
+          buckets: [
+            { _id: 'Nigeria', count: 6184 },
+            { _id: 'South Africa', count: 2871 },
+            { _id: 'Sénégal', count: 1213 },
+            { _id: "Côte d'Ivoire", count: 727 },
+            { _id: 'Guinée', count: 531 },
+            { _id: 'football', count: 1609 },
+            { _id: 'Bola Tinubu', count: 1544 },
+          ],
+        },
+      }),
+      feedSources: collectionStub({ find: [[]] }),
+      newsMediaOrganizations: collectionStub({ find: [[]] }),
+    });
+
+    const { runCorpusPreview } = await import('../mongodb/analytics');
+    const preview = await runCorpusPreview({});
+
+    // Not one country, under any spelling — the `byCountry` panel beside it
+    // already answers "where", so these are the same answer printed twice.
+    expect(preview.byKeyword?.map((k) => k.term)).toEqual(['football', 'Bola Tinubu']);
+  });
+
+  it('reports a withheld facet as null, never as an empty result', async () => {
+    // A text term routes to `articles_text_search`, which maps no category,
+    // keyword or sentiment path — so `buildMetaFacets` never asks for them and
+    // `$searchMeta` returns no such facet. `[]` here would render as
+    // "No data for this query", a claim about the corpus we did not measure.
+    useDb({
+      articles: collectionStub({
+        aggregate: [[{ count: { total: 200 }, facet: { day: { buckets: [] }, source: { buckets: [] }, country: { buckets: [] } } }]],
+      }),
+      feedSources: collectionStub({ find: [[]] }),
+      newsMediaOrganizations: collectionStub({ find: [[]] }),
+    });
+
+    const { runCorpusPreview } = await import('../mongodb/analytics');
+    const preview = await runCorpusPreview({ q: 'election' });
+
+    expect(preview.byKeyword).toBeNull();
+    expect(preview.byCategory).toBeNull();
+    expect(preview.sentiment).toBeNull();
+    // The panels it CAN answer are still arrays, so null is specific to the
+    // withheld facets rather than a blanket failure signal.
+    expect(Array.isArray(preview.byCountry)).toBe(true);
+  });
+
+  it('still returns an empty array when the facet was asked for and had no rows', async () => {
+    // The other half of the distinction: this one IS a finding about the
+    // corpus, and must not be confused with the withheld case above.
+    useDb({
+      articles: previewMeta({ keyword: { buckets: [] } }),
+      feedSources: collectionStub({ find: [[]] }),
+      newsMediaOrganizations: collectionStub({ find: [[]] }),
+    });
+
+    const { runCorpusPreview } = await import('../mongodb/analytics');
+    const preview = await runCorpusPreview({});
+
+    expect(preview.byKeyword).toEqual([]);
+    expect(preview.byKeyword).not.toBeNull();
+  });
+});
