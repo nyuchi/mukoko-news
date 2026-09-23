@@ -87,16 +87,55 @@ const TOPIC_STOPWORDS = new Set<string>([
   'updates',
 ])
 
-/** Country names/codes, lowercased — excluded from topic ranking (they are a facet, not a topic). */
-const COUNTRY_TOKENS = new Set<string>(
-  COUNTRIES.flatMap((c) => [c.name.toLowerCase(), c.code.toLowerCase()])
-)
+/**
+ * Lowercase and strip diacritics, so one spelling of a country matches another.
+ *
+ * The corpus carries French and Portuguese feeds, so a country arrives under
+ * more than one spelling and `COUNTRIES` holds only the English one. Measured
+ * on the live cluster over 30 days (2026-09-23), `Sénégal` is the **8th** most
+ * common `aiKeywords` value at 1,213 — ahead of every real subject except
+ * football and Bola Tinubu. Folding the accent is what lets it match the
+ * `senegal` this set already has.
+ */
+const foldToken = (raw: string): string =>
+  raw
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+
+/**
+ * Country names/codes, folded — excluded from topic ranking, because a country
+ * is a FACET of this corpus rather than a topic within it. `byCountry` already
+ * answers "where"; repeating it under "Topics" tells a reader the same thing
+ * twice, which is exactly what the anonymous preview was doing in production:
+ * five of its top ten topics were the five countries listed beside them.
+ *
+ * ⚠️ Folding is necessary but NOT sufficient, and the remainder is measured,
+ * not assumed. Two spellings in the same 30-day window are different WORDS
+ * rather than accent variants, so no normalisation reaches them from the
+ * English set — they are listed explicitly with the count that earned them a
+ * place:
+ *   `Côte d'Ivoire` 727  (`COUNTRIES` carries "Ivory Coast")
+ *   `Guinée`        531  (`COUNTRIES` carries "Guinea")
+ * Anything not observed in that window is deliberately NOT invented here.
+ *
+ * ⚠️ This overlaps `COUNTRY_TOKENS` in the gateway's `services/InsightsReads.ts`,
+ * which CLAUDE.md already records as a known duplication pending a shared
+ * package. Note the gateway's own list carries `côte d'ivoire` but NOT
+ * `guinée`, so it has the same gap this measurement just closed here.
+ */
+const COUNTRY_TOKENS = new Set<string>([
+  ...COUNTRIES.flatMap((c) => [foldToken(c.name), foldToken(c.code)]),
+  foldToken("Côte d'Ivoire"),
+  foldToken('Guinée'),
+])
 
 function isMeaningfulTopic(raw: string): boolean {
   const t = raw.trim().toLowerCase()
   if (t.length < 2 || t.length > 60) return false
   if (TOPIC_STOPWORDS.has(t)) return false
-  if (COUNTRY_TOKENS.has(t)) return false
+  if (COUNTRY_TOKENS.has(foldToken(raw))) return false
   return true
 }
 
@@ -974,9 +1013,21 @@ export interface CorpusPreview {
   series: SeriesPoint[]
   bySource: SourceRow[]
   byCountry: CountryRow[]
-  byCategory: TermRow[]
-  byKeyword: TermRow[]
-  sentiment: SentimentSummary
+  /**
+   * `null` when the chosen Search index cannot answer this facet at all —
+   * NOT an empty result.
+   *
+   * `buildMetaFacets` adds the category/keyword/sentiment facets only for
+   * `articles_insights`, and a text term routes the query to
+   * `articles_text_search` instead. These three came back as `[]` in that
+   * case, which the UI rendered as "No data for this query." — a facet we
+   * never asked for, presented to a reader as a measured fact about the
+   * corpus. That is the same failure `CorpusSummary.ok` exists to prevent,
+   * and this type's own docstring above already forbids it.
+   */
+  byCategory: TermRow[] | null
+  byKeyword: TermRow[] | null
+  sentiment: SentimentSummary | null
   generatedAt: string
 }
 
@@ -989,9 +1040,9 @@ function emptyPreview(query: NormalizedQuery, answered: boolean): CorpusPreview 
     series: [],
     bySource: [],
     byCountry: [],
-    byCategory: [],
-    byKeyword: [],
-    sentiment: { positive: 0, neutral: 0, negative: 0, mixed: 0, coverage: 0, covered: 0 },
+    byCategory: null,
+    byKeyword: null,
+    sentiment: null,
     generatedAt: new Date().toISOString(),
   }
 }
@@ -1085,16 +1136,31 @@ export async function runCorpusPreview(params: CorpusQueryParams): Promise<Corpu
           count: Number(b.count),
           share: round((Number(b.count) / total) * 100, 1),
         })),
-      byCategory: meta.facet?.category ? termRows(bucketsOf(meta, 'category')).slice(0, 10) : [],
-      byKeyword: meta.facet?.keyword ? termRows(bucketsOf(meta, 'keyword')).slice(0, 10) : [],
-      sentiment: {
-        positive: sentimentCounts.get('positive') ?? 0,
-        neutral: sentimentCounts.get('neutral') ?? 0,
-        negative: sentimentCounts.get('negative') ?? 0,
-        mixed: sentimentCounts.get('mixed') ?? 0,
-        covered: sentimentCovered,
-        coverage: total > 0 ? round((sentimentCovered / total) * 100, 1) : 0,
-      },
+      // `null` rather than `[]` when the index carries no such facet — see the
+      // note on `CorpusPreview.byCategory`. An empty array is a finding about
+      // the corpus; a withheld facet is a fact about our indexes.
+      byCategory: meta.facet?.category ? termRows(bucketsOf(meta, 'category')).slice(0, 10) : null,
+      // The `isMeaningfulTopic` filter runs AFTER the counts, which is why the
+      // facet over-fetches at `numBuckets: 80` — the same ordering
+      // `runCorpusQuery` uses. Omitting it here is what put five country names
+      // in the anonymous preview's top ten "Topics", duplicating the country
+      // panel sitting next to it (measured live 2026-09-23: Nigeria 6,184,
+      // South Africa 2,871, Ghana 2,189, Zimbabwe 1,804, Kenya 1,407).
+      byKeyword: meta.facet?.keyword
+        ? termRows(bucketsOf(meta, 'keyword'))
+            .filter((r) => isMeaningfulTopic(r.term))
+            .slice(0, 10)
+        : null,
+      sentiment: meta.facet?.sentiment
+        ? {
+            positive: sentimentCounts.get('positive') ?? 0,
+            neutral: sentimentCounts.get('neutral') ?? 0,
+            negative: sentimentCounts.get('negative') ?? 0,
+            mixed: sentimentCounts.get('mixed') ?? 0,
+            covered: sentimentCovered,
+            coverage: total > 0 ? round((sentimentCovered / total) * 100, 1) : 0,
+          }
+        : null,
       generatedAt: new Date().toISOString(),
     }
   } catch (error) {
