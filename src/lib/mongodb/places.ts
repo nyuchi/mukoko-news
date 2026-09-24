@@ -90,3 +90,99 @@ export async function getCountries(): Promise<CountryOption[]> {
     return STATIC_COUNTRIES;
   }
 }
+
+/**
+ * Country tokens for TOPIC FILTERING, folded, read from the `places` SSOT.
+ *
+ * WHY THIS EXISTS AT ALL
+ * ----------------------
+ * A country is a FACET of this corpus, not a subject within it: `byCountry`
+ * already answers "where". Ranking country names as "Topics" tells a reader the
+ * same thing twice, and it is not a small effect — measured on the live cluster
+ * 2026-09-23, five of the top ten keywords were the five countries listed in
+ * the panel beside them.
+ *
+ * WHY IT IS HERE AND NOT IN `analytics.ts`
+ * ----------------------------------------
+ * Because it kept being in `analytics.ts`, and in `insights.ts`, and in the
+ * gateway, and each copy drifted. A platform-wide audit on 2026-09-23 counted
+ * SIXTEEN independently hand-maintained country lists across the four repos,
+ * holding FIVE different answers to "how many countries are there" (53, 54, 55,
+ * 21, 16). Two dashboards in THIS app disagreed about whether Senegal is a
+ * trending topic, because one copy folded diacritics and the other did not.
+ *
+ * `places` is the declared owner of geography. A list of countries that lives
+ * anywhere else is a copy, and a copy is a future disagreement. This function
+ * is a read, not a list.
+ *
+ * THE ALIAS LAYER
+ * ---------------
+ * `placesGeo` carries English names only, which is exactly why every app grew
+ * its own alias array — the spellings the corpus actually publishes had nowhere
+ * canonical to live. They now live on the country document as `altNames`,
+ * seeded 2026-09-23 from the top-400 `aiKeywords` facet over 90 days, and only
+ * with spellings OBSERVED there: `Sénégal`, `Côte d'Ivoire`, `Guinée`, `Maroc`,
+ * `Algérie`, `RDC`. Nothing was inferred — a French form nobody publishes is
+ * not a fact about this corpus, and inventing one in the SSOT is worse than
+ * leaving the gap visible.
+ *
+ * Adding a spelling is now a write to `places`, once, for every app.
+ */
+export async function getCountryTopicTokens(): Promise<Set<string>> {
+  const fold = (raw: string): string =>
+    raw
+      .trim()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/\p{Diacritic}/gu, '');
+
+  try {
+    const db = await getDomainDb('places');
+    const rows = await db
+      .collection<{ isoCode?: unknown; name?: unknown; altNames?: unknown }>('placesGeo')
+      .find(
+        { geoType: 'country' },
+        { projection: { _id: 0, isoCode: 1, name: 1, altNames: 1 } }
+      )
+      .toArray();
+
+    const tokens = new Set<string>();
+    for (const row of rows) {
+      if (typeof row.name === 'string' && row.name.trim()) tokens.add(fold(row.name));
+      if (typeof row.isoCode === 'string' && row.isoCode.trim()) tokens.add(fold(row.isoCode));
+      if (Array.isArray(row.altNames)) {
+        for (const alt of row.altNames) {
+          if (typeof alt === 'string' && alt.trim()) tokens.add(fold(alt));
+        }
+      }
+    }
+
+    // An empty read is a failed one, exactly as in `getCountries`. Returning an
+    // empty set here would silently turn the filter into a no-op and put the
+    // country list straight back into the Topics panel — the bug this closes.
+    if (tokens.size === 0) return staticCountryTokens();
+
+    return tokens;
+  } catch (error) {
+    console.error('[PLACES] country token read failed — falling back to the static list', error);
+    return staticCountryTokens();
+  }
+}
+
+/**
+ * The fallback, and it is deliberately the SAME static list the country picker
+ * falls back to rather than a second one. It carries English names only, so a
+ * `places` outage degrades the filter to what it caught before the alias layer
+ * existed — countries still filtered, foreign spellings temporarily not. That
+ * is a smaller, more legible loss than an unfiltered panel.
+ */
+function staticCountryTokens(): Set<string> {
+  const fold = (raw: string): string =>
+    raw.trim().toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '');
+  const tokens = new Set<string>();
+  for (const c of STATIC_COUNTRIES) {
+    tokens.add(fold(c.name));
+    tokens.add(fold(c.code));
+  }
+  return tokens;
+}

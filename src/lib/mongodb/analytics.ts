@@ -24,6 +24,7 @@ import type { Filter, Document } from 'mongodb'
 import { getDb } from './client'
 import { clampInt, MAX_LIMIT } from '@/lib/safety'
 import { COUNTRIES } from '@/lib/constants'
+import { getCountryTopicTokens } from './places'
 
 
 /**
@@ -87,18 +88,67 @@ const TOPIC_STOPWORDS = new Set<string>([
   'updates',
 ])
 
-/** Country names/codes, lowercased — excluded from topic ranking (they are a facet, not a topic). */
-const COUNTRY_TOKENS = new Set<string>(
-  COUNTRIES.flatMap((c) => [c.name.toLowerCase(), c.code.toLowerCase()])
-)
-
-function isMeaningfulTopic(raw: string): boolean {
+/**
+ * Is this keyword a real topic, or is it the corpus's own country axis?
+ *
+ * ⚠️ THE COUNTRY LIST IS NOT DEFINED HERE, DELIBERATELY. It is read from the
+ * `places` domain — the platform SSOT for geography — via
+ * `getCountryTopicTokens()`. An earlier revision of this file derived the set
+ * from `COUNTRIES` in `src/lib/constants.ts` and then hand-added two spellings
+ * to it, which made this the FOURTH country list in the app and the seventeenth
+ * across the platform. Measured 2026-09-23, those copies already held five
+ * different answers to "how many countries are there" (53, 54, 55, 21, 16), and
+ * `/insights` and `/analytics` disagreed about Senegal on the same day.
+ *
+ * The tokens are passed IN rather than fetched here so this stays a pure,
+ * synchronous predicate that a `.filter()` can call per row.
+ */
+function isMeaningfulTopic(raw: string, countryTokens: ReadonlySet<string>): boolean {
   const t = raw.trim().toLowerCase()
   if (t.length < 2 || t.length > 60) return false
   if (TOPIC_STOPWORDS.has(t)) return false
-  if (COUNTRY_TOKENS.has(t)) return false
+  // Fold here so the caller's set and the incoming term are compared on the
+  // same footing; `getCountryTopicTokens` folds on the way in.
+  const folded = t.normalize('NFD').replace(/\p{Diacritic}/gu, '')
+  if (countryTokens.has(folded)) return false
   return true
 }
+
+/**
+ * The token set, memoised per isolate for `COUNTRY_TOKEN_TTL_MS`.
+ *
+ * Countries change on a timescale of years; re-reading `places` on every
+ * analytics query would add a round trip to the platform's slowest page for a
+ * list that is effectively static. A failed read falls back inside
+ * `getCountryTopicTokens` rather than here, so this never caches a failure as
+ * though it were an answer.
+ */
+const COUNTRY_TOKEN_TTL_MS = 10 * 60 * 1000
+let countryTokenCache: { at: number; tokens: ReadonlySet<string> } | null = null
+
+/**
+ * Clear the memo.
+ *
+ * Exported ONLY for tests, and it exists because the memo is otherwise
+ * invisible to them: the first suite to touch either read populates it for the
+ * whole file, so a later test that stubs `places` differently silently gets the
+ * earlier answer. That is not a test-harness quirk — it is the same staleness a
+ * long-lived isolate would show, so it is worth being able to reproduce.
+ */
+export function __resetCountryTokenCache(): void {
+  countryTokenCache = null
+}
+
+async function countryTokens(): Promise<ReadonlySet<string>> {
+  const now = Date.now()
+  if (countryTokenCache && now - countryTokenCache.at < COUNTRY_TOKEN_TTL_MS) {
+    return countryTokenCache.tokens
+  }
+  const tokens = await getCountryTopicTokens()
+  countryTokenCache = { at: now, tokens }
+  return tokens
+}
+
 
 /** Round to `dp` decimal places, returning 0 for null/NaN/undefined. */
 function round(value: unknown, dp = 2): number {
@@ -827,6 +877,8 @@ export async function runCorpusQuery(params: CorpusQueryParams): Promise<CorpusQ
     const sentimentCovered = [...sentimentCounts.values()].reduce((a, b) => a + b, 0)
     const sentimentDenominator = sentimentFromFacet ? facetDenominator : deepDenominator
 
+    // Country tokens come from the `places` SSOT, not from a list in this file.
+    const countries = await countryTokens()
     const categoryRows = exact && meta?.facet?.category
       ? termRows(bucketsOf(meta, 'category'))
       : termRows(deep.byCategory ?? [])
@@ -870,9 +922,9 @@ export async function runCorpusQuery(params: CorpusQueryParams): Promise<CorpusQ
           share: share(Number(b.count), facetDenominator),
         })),
       byCategory: categoryRows.slice(0, 20),
-      byKeyword: keywordRows.filter((r) => isMeaningfulTopic(r.term)).slice(0, 25),
+      byKeyword: keywordRows.filter((r) => isMeaningfulTopic(r.term, countries)).slice(0, 25),
       byEntity: (deep.byEntity ?? [])
-        .filter((r) => r._id?.name && isMeaningfulTopic(r._id.name))
+        .filter((r) => r._id?.name && isMeaningfulTopic(r._id.name, countries))
         .slice(0, 25)
         .map((r) => ({ name: r._id.name, type: r._id.type ?? 'UNKNOWN', count: r.count })),
       byAuthor: (deep.byAuthor ?? []).map((r) => ({ name: r._id, count: r.count })),
@@ -974,9 +1026,21 @@ export interface CorpusPreview {
   series: SeriesPoint[]
   bySource: SourceRow[]
   byCountry: CountryRow[]
-  byCategory: TermRow[]
-  byKeyword: TermRow[]
-  sentiment: SentimentSummary
+  /**
+   * `null` when the chosen Search index cannot answer this facet at all —
+   * NOT an empty result.
+   *
+   * `buildMetaFacets` adds the category/keyword/sentiment facets only for
+   * `articles_insights`, and a text term routes the query to
+   * `articles_text_search` instead. These three came back as `[]` in that
+   * case, which the UI rendered as "No data for this query." — a facet we
+   * never asked for, presented to a reader as a measured fact about the
+   * corpus. That is the same failure `CorpusSummary.ok` exists to prevent,
+   * and this type's own docstring above already forbids it.
+   */
+  byCategory: TermRow[] | null
+  byKeyword: TermRow[] | null
+  sentiment: SentimentSummary | null
   generatedAt: string
 }
 
@@ -989,9 +1053,9 @@ function emptyPreview(query: NormalizedQuery, answered: boolean): CorpusPreview 
     series: [],
     bySource: [],
     byCountry: [],
-    byCategory: [],
-    byKeyword: [],
-    sentiment: { positive: 0, neutral: 0, negative: 0, mixed: 0, coverage: 0, covered: 0 },
+    byCategory: null,
+    byKeyword: null,
+    sentiment: null,
     generatedAt: new Date().toISOString(),
   }
 }
@@ -1034,8 +1098,31 @@ export async function runCorpusPreview(params: CorpusQueryParams): Promise<Corpu
     if (!meta) return emptyPreview(query, false)
 
     const total = Number(meta.count?.total ?? 0)
-    if (total === 0) return { ...emptyPreview(query, true), total: 0 }
+    if (total === 0) {
+      /*
+       * ANSWERED, and genuinely nothing matched — which is a finding about the
+       * corpus, not about our indexes.
+       *
+       * `emptyPreview` nulls the three facet-dependent fields because it is
+       * also the shape returned when we could not ask. Reusing it verbatim
+       * here made a legitimately-empty result render "Not available for a text
+       * search", asserting an index limitation that is not the cause. Carry
+       * `[]` for whatever the chosen index DOES map, so null keeps meaning
+       * exactly one thing: we did not ask.
+       */
+      const mapped = facetIndex === 'articles_insights'
+      return {
+        ...emptyPreview(query, true),
+        total: 0,
+        byCategory: mapped ? [] : null,
+        byKeyword: mapped ? [] : null,
+        sentiment: mapped
+          ? { positive: 0, neutral: 0, negative: 0, mixed: 0, covered: 0, coverage: 0 }
+          : null,
+      }
+    }
 
+    const countries = await countryTokens()
     const sourceBuckets = bucketsOf(meta, 'source')
     const sourceIds = [...new Set(sourceBuckets.map((b) => String(b._id)))].filter(Boolean)
     const sourceDocs = sourceIds.length
@@ -1085,16 +1172,31 @@ export async function runCorpusPreview(params: CorpusQueryParams): Promise<Corpu
           count: Number(b.count),
           share: round((Number(b.count) / total) * 100, 1),
         })),
-      byCategory: meta.facet?.category ? termRows(bucketsOf(meta, 'category')).slice(0, 10) : [],
-      byKeyword: meta.facet?.keyword ? termRows(bucketsOf(meta, 'keyword')).slice(0, 10) : [],
-      sentiment: {
-        positive: sentimentCounts.get('positive') ?? 0,
-        neutral: sentimentCounts.get('neutral') ?? 0,
-        negative: sentimentCounts.get('negative') ?? 0,
-        mixed: sentimentCounts.get('mixed') ?? 0,
-        covered: sentimentCovered,
-        coverage: total > 0 ? round((sentimentCovered / total) * 100, 1) : 0,
-      },
+      // `null` rather than `[]` when the index carries no such facet — see the
+      // note on `CorpusPreview.byCategory`. An empty array is a finding about
+      // the corpus; a withheld facet is a fact about our indexes.
+      byCategory: meta.facet?.category ? termRows(bucketsOf(meta, 'category')).slice(0, 10) : null,
+      // The `isMeaningfulTopic` filter runs AFTER the counts, which is why the
+      // facet over-fetches at `numBuckets: 80` — the same ordering
+      // `runCorpusQuery` uses. Omitting it here is what put five country names
+      // in the anonymous preview's top ten "Topics", duplicating the country
+      // panel sitting next to it (measured live 2026-09-23: Nigeria 6,184,
+      // South Africa 2,871, Ghana 2,189, Zimbabwe 1,804, Kenya 1,407).
+      byKeyword: meta.facet?.keyword
+        ? termRows(bucketsOf(meta, 'keyword'))
+            .filter((r) => isMeaningfulTopic(r.term, countries))
+            .slice(0, 10)
+        : null,
+      sentiment: meta.facet?.sentiment
+        ? {
+            positive: sentimentCounts.get('positive') ?? 0,
+            neutral: sentimentCounts.get('neutral') ?? 0,
+            negative: sentimentCounts.get('negative') ?? 0,
+            mixed: sentimentCounts.get('mixed') ?? 0,
+            covered: sentimentCovered,
+            coverage: total > 0 ? round((sentimentCovered / total) * 100, 1) : 0,
+          }
+        : null,
       generatedAt: new Date().toISOString(),
     }
   } catch (error) {

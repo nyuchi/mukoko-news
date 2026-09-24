@@ -12,11 +12,11 @@ Mukoko News is a Pan-African digital news aggregation platform. "Mukoko" means "
 
 This repo (`nyuchi/mukoko-news`) is the **Next.js frontend only**. It deploys to Vercel.
 
-| Repo                          | Contents                                | Deploys to          |
-| ----------------------------- | --------------------------------------- | ------------------- |
-| `nyuchi/mukoko-news`          | Next.js 15 frontend                     | Vercel              |
-| `nyuchi/mukoko-news-gateway`  | Cloudflare Workers API + MCP            | Cloudflare Workers  |
-| `nyuchi/mukoko-news-pipeline` | Fly.io pipeline + Cloudflare processing | Fly.io + Cloudflare |
+| Repo                               | Contents                                | Deploys to          |
+| ---------------------------------- | --------------------------------------- | ------------------- |
+| `nyuchi/mukoko-news`               | Next.js 15 frontend                     | Vercel              |
+| `nyuchi/mukoko-news-gateway`       | Cloudflare Workers API + MCP            | Cloudflare Workers  |
+| `nyuchi/mukoko-ingestion-pipeline` | Fly.io pipeline + Cloudflare processing | Fly.io + Cloudflare |
 
 **Hard rules for this repo:**
 
@@ -475,7 +475,7 @@ The ask was _"source trust is really good information... make that public, good 
 - `src-malawivoice-mw` — 45+ foreign-language casino-affiliate pages — scores **85.8 → "Established"**, because a fluent SEO page scores _well_ on `content_depth`. The platform was publishing "Established" over a spam farm.
 - `news.sourceScoreHistory`, which `articles.ts` and this file both described as auditing every change to the score, holds **zero rows**. There has never been a trail.
 
-So it was not gated, it was withdrawn: gating a wrong verdict publishes it to a smaller audience. `ArticleTrustPanel` is deleted. It comes back when the pipeline folds feed reliability into the score — a `nyuchi/mukoko-news-pipeline` change, not one this repo can make.
+So it was not gated, it was withdrawn: gating a wrong verdict publishes it to a smaller audience. `ArticleTrustPanel` is deleted. It comes back when the pipeline folds feed reliability into the score — a `nyuchi/mukoko-ingestion-pipeline` change, not one this repo can make.
 
 **`sourceHealth` / `consecutiveFailures` / `lastFetchError` are the second trap, and the sharper one.** They look exactly like the reliability signal a provenance panel wants. Measured the same day: of the 387 active sources sitting in `lastFetchStatus: 'error'`, **351 (91%) carry the platform's OWN MongoDB read timeout** — `…mongodb.net:27017: The read operation timed out` — as the _source's_ fetch error. Only 28 carry a real publisher-side HTTP status. The platform had marked 351 named newsrooms `critical`/`failing` because our database was slow, and that is what the directory's status dot was rendering. **`lastSuccessfulFetchAt` is used instead**: a timestamp of something that demonstrably happened, which cannot blame anyone for an outage. On the same read 138 sources had succeeded within 24h and 238 within a week — the feeds are overwhelmingly fine and the health field was simply wrong.
 
