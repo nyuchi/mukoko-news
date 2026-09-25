@@ -23,6 +23,8 @@ export interface FindCall {
   skip?: number;
   limit?: number;
   maxTimeMS?: number;
+  /** The index named with `.hint()`, when the reader named one. */
+  hint?: unknown;
   /** Convenience: the projection the caller passed in `options`. */
   projection: unknown;
 }
@@ -154,6 +156,7 @@ export function collectionStub(spec: CollectionSpec = {}): CollectionStub {
       skip: vi.fn((n: number) => ((record.skip = n), cursor)),
       limit: vi.fn((n: number) => ((record.limit = n), cursor)),
       maxTimeMS: vi.fn((n: number) => ((record.maxTimeMS = n), cursor)),
+      hint: vi.fn((h: unknown) => ((record.hint = h), cursor)),
       toArray: vi.fn(() => settle(result)),
     };
     return cursor;

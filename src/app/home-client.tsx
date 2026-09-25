@@ -101,9 +101,25 @@ export default function HomeClient({ initialFeed = null, initialCategories = nul
     [selectedCategories]
   );
 
+  // Whether a feed is already on screen, read by `fetchData` without making it
+  // a dependency (which would refetch every time a rail changed length). It
+  // starts true when the server rendered a feed, because the mount-time
+  // refetch runs before the effect below has had a chance to sync it.
+  const hasContentRef = useRef(Boolean(initialFeed));
+
   // Fetch sectioned feed
+  //
+  // A skeleton is for when there is NOTHING to show. The server renders the
+  // default feed into the HTML; a reader whose saved countries or categories
+  // differ then refetches on mount. That refetch used to set `loading`, which
+  // swapped the feed they were already looking at for a full-page skeleton
+  // until the server answered — and on a cold, burstable cluster it answered
+  // in up to 30 seconds (owner report 2026-09-25). Now anything already on
+  // screen stays, the small "Updating…" pill says a newer version is coming,
+  // and the new feed replaces it in place when it lands.
   const fetchData = useCallback(async (isRefresh = false) => {
-    if (isRefresh) {
+    const keepVisible = isRefresh || hasContentRef.current;
+    if (keepVisible) {
       setRefreshing(true);
     } else {
       setLoading(true);
@@ -134,7 +150,13 @@ export default function HomeClient({ initialFeed = null, initialCategories = nul
       );
     } catch (err) {
       console.error("Failed to fetch feed:", err);
-      setError(err instanceof Error ? err.message : "Failed to load news feed");
+      if (keepVisible) {
+        // A failed update must not take away the feed that is already there.
+        // Say so above it instead of replacing it with an error screen.
+        setNotice("Couldn't update your feed. Pull down to retry.");
+      } else {
+        setError(err instanceof Error ? err.message : "Failed to load news feed");
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -339,6 +361,9 @@ export default function HomeClient({ initialFeed = null, initialCategories = nul
   };
 
   const hasContent = topStories.length > 0 || yourNews.length > 0 || byCategory.length > 0 || latestArticles.length > 0;
+  useEffect(() => {
+    hasContentRef.current = hasContent;
+  }, [hasContent]);
 
   // Extract primary articles from story clusters for schema.org
   const topStoriesArticles = useMemo(
@@ -392,7 +417,7 @@ export default function HomeClient({ initialFeed = null, initialCategories = nul
         <div className="fixed top-[80px] left-0 right-0 flex justify-center z-50" role="status" aria-live="polite">
           <div className="bg-primary text-on-primary px-4 py-2 rounded-full text-sm font-medium flex items-center gap-2 shadow-lg">
             <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
-            Refreshing...
+            Updating…
           </div>
         </div>
       )}

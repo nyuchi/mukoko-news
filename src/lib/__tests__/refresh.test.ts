@@ -1,12 +1,20 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { triggerFeedCollection } from '../actions/refresh';
+/**
+ * The refresh button asks the GATEWAY, never the pipeline.
+ *
+ * Owner rule (2026-09-25): the pipeline sits behind the databases and never
+ * touches the app; the gateway Worker is the app's backend. If this regresses,
+ * the app holds the pipeline's service secret again and skips the gateway's
+ * per-caller cooldown.
+ */
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 const mockFetch = vi.fn();
 
 beforeEach(() => {
-  vi.stubGlobal('fetch', mockFetch);
-  vi.stubEnv('FLY_WORKER_URL', '');
-  vi.stubEnv('FLY_TRIGGER_TOKEN', '');
+  vi.resetModules();
+  vi.stubGlobal("fetch", mockFetch);
 });
 
 afterEach(() => {
@@ -15,68 +23,57 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe('triggerFeedCollection', () => {
-  it('does nothing when FLY_WORKER_URL is not set', async () => {
-    vi.stubEnv('FLY_TRIGGER_TOKEN', 'tok');
-    await triggerFeedCollection();
-    expect(mockFetch).not.toHaveBeenCalled();
-  });
+async function load() {
+  return (await import("../actions/refresh")).triggerFeedCollection;
+}
 
-  it('does nothing when FLY_TRIGGER_TOKEN is not set', async () => {
-    vi.stubEnv('FLY_WORKER_URL', 'http://fly-worker.example');
-    await triggerFeedCollection();
-    expect(mockFetch).not.toHaveBeenCalled();
-  });
+describe("triggerFeedCollection", () => {
+  it("POSTs to the gateway's refresh endpoint with no credential of its own", async () => {
+    vi.stubEnv("GATEWAY_API_URL", "https://news.mukoko.dev");
+    mockFetch.mockResolvedValueOnce(new Response("{}", { status: 202 }));
 
-  it('does nothing when both env vars are missing', async () => {
-    await triggerFeedCollection();
-    expect(mockFetch).not.toHaveBeenCalled();
-  });
-
-  it('POSTs to the correct trigger URL with Bearer token', async () => {
-    vi.stubEnv('FLY_WORKER_URL', 'https://news-ingestion.fly-worker.nyuchi.dev');
-    vi.stubEnv('FLY_TRIGGER_TOKEN', 'bf61a6184dbe6da192ffa0706e7666ec');
-    mockFetch.mockResolvedValueOnce(new Response('{}', { status: 202 }));
-
-    await triggerFeedCollection();
+    await (
+      await load()
+    )();
 
     expect(mockFetch).toHaveBeenCalledOnce();
-    expect(mockFetch).toHaveBeenCalledWith(
-      'https://news-ingestion.fly-worker.nyuchi.dev/trigger/collect',
-      {
-        method: 'POST',
-        headers: { Authorization: 'Bearer bf61a6184dbe6da192ffa0706e7666ec' },
-        signal: expect.any(AbortSignal),
-      }
+    const [url, init] = mockFetch.mock.calls[0];
+    expect(url).toBe("https://news.mukoko.dev/api/refresh");
+    expect(init.method).toBe("POST");
+    expect(init.headers).toBeUndefined();
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("defaults to the production gateway when GATEWAY_API_URL is unset", async () => {
+    vi.stubEnv("GATEWAY_API_URL", "");
+    mockFetch.mockResolvedValueOnce(new Response("{}", { status: 202 }));
+
+    await (
+      await load()
+    )();
+
+    expect(mockFetch.mock.calls[0][0]).toBe(
+      "https://news.mukoko.dev/api/refresh",
     );
   });
 
-  it('bounds the request with an abort timeout signal', async () => {
-    vi.stubEnv('FLY_WORKER_URL', 'https://news-ingestion.fly-worker.nyuchi.dev');
-    vi.stubEnv('FLY_TRIGGER_TOKEN', 'tok');
-    const timeoutSpy = vi.spyOn(AbortSignal, 'timeout');
-    mockFetch.mockResolvedValueOnce(new Response('{}', { status: 202 }));
+  it("swallows a declined or failed refresh so the feed still reloads", async () => {
+    mockFetch.mockResolvedValueOnce(new Response("{}", { status: 429 }));
+    await expect((await load())()).resolves.toBeUndefined();
 
-    await triggerFeedCollection();
-
-    expect(timeoutSpy).toHaveBeenCalledWith(5000);
-    const { signal } = mockFetch.mock.calls[0][1] as RequestInit;
-    expect(signal).toBe(timeoutSpy.mock.results[0].value);
+    mockFetch.mockRejectedValueOnce(new Error("network down"));
+    await expect((await load())()).resolves.toBeUndefined();
   });
 
-  it('swallows network errors silently (fire-and-forget)', async () => {
-    vi.stubEnv('FLY_WORKER_URL', 'https://news-ingestion.fly-worker.nyuchi.dev');
-    vi.stubEnv('FLY_TRIGGER_TOKEN', 'tok');
-    mockFetch.mockRejectedValueOnce(new Error('ECONNREFUSED'));
-
-    await expect(triggerFeedCollection()).resolves.toBeUndefined();
-  });
-
-  it('swallows non-2xx responses silently', async () => {
-    vi.stubEnv('FLY_WORKER_URL', 'https://news-ingestion.fly-worker.nyuchi.dev');
-    vi.stubEnv('FLY_TRIGGER_TOKEN', 'tok');
-    mockFetch.mockResolvedValueOnce(new Response('Rate limit exceeded', { status: 429 }));
-
-    await expect(triggerFeedCollection()).resolves.toBeUndefined();
+  it("never names the pipeline or its credential", () => {
+    const source = readFileSync(
+      join(__dirname, "../actions/refresh.ts"),
+      "utf8",
+    )
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/.*$/gm, "");
+    expect(source).not.toMatch(
+      /FLY_WORKER_URL|FLY_TRIGGER_TOKEN|trigger\/collect|fly\.dev|fly-worker/,
+    );
   });
 });
