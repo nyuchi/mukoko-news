@@ -135,8 +135,13 @@ const loadPage = cache(
  * The route's own unavailability error.
  *
  * Named so it is greppable in the Vercel log next to the
- * `[authors.getBylineDirectory]` line that caused it; the reader only ever sees
- * `app/error.tsx`.
+ * `[byline-directory.lookupBylineIdentity]` line that caused it; the reader
+ * only ever sees `app/error.tsx`.
+ *
+ * ⚠️ It now also covers a cause that is not an error at all: a snapshot that
+ * has never been built. That is deliberate — an unbuilt directory and an
+ * unreachable one are equally "we could not look", and the one answer neither
+ * may be given is a 404 over a named journalist.
  */
 class BylineDirectoryUnavailable extends Error {
   constructor() {

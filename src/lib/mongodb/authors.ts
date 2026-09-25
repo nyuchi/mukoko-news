@@ -12,40 +12,39 @@
  *    author page instead.
  * 2. `getAuthorProfile` answers everything the page shows, from ONE `$facet`.
  *
- * ## Both reads are unindexed, and the window does NOT rescue them
+ * ## `getBylineDirectory` is indexed now, and still slow — so it is OFF the read path
  *
- * ⚠️ **Corrected 2026-09-17.** This header used to claim that the 365-day
- * window "rides `status_1_datePublished_-1` as a range seek". It does not, and
- * that claim is why nobody looked when every byline page started answering
- * "Byline not found" over a corpus of 65,203 articles. Two independent reasons:
+ * ⚠️ **Twice-corrected.** This header first claimed the 365-day window "rides
+ * `status_1_datePublished_-1` as a range seek", and then, correcting that,
+ * claimed the `$ne` on `status` sat on the index's leading key and forbade the
+ * seek. **Both were wrong**, and a real `explain` on the live cluster settled
+ * it: that index is MISNAMED — its key pattern is `{datePublished: -1,
+ * status: 1}` — so `datePublished` led and seeked normally, and removing the
+ * `$ne` pair was tested and made the query SLOWER. The cost was the FETCH:
+ * `author.name` was in no index, so every key became a document read.
  *
- * 1. **`$ne` on the leading key forbids the seek.** `VISIBLE` opens with
- *    `status: {$ne: 'rejected'}`, which is a RANGE predicate on the index's
- *    first field — bounds of `[MinKey, "rejected") ∪ ("rejected", MaxKey]`,
- *    i.e. the whole key space less one point. With a range rather than an
- *    equality on the leading key, the `datePublished` bound on the second key
- *    cannot narrow the scan's entry point. This is the same shape, on the same
- *    collection, as the `/insights` incident already on record in `CLAUDE.md`:
- *    explained live, a `$facet` behind that identical `$ne` pair took 27,529 ms
- *    and examined all 65,203 documents with ZERO index keys.
- * 2. **The window is wider than the corpus.** The oldest articles date from
- *    2026-05, so a 365-day window excludes nothing. Even a perfect range seek
- *    would return every key in the collection. The window bounds this read
- *    later, as the corpus ages — it bounds nothing today.
+ * `authorName_1_datePublished_-1_covering` was created on the cluster
+ * 2026-09-17 and fixed that half. The read is now covered — `GROUP → IXSCAN`,
+ * no FETCH stage, `totalDocsExamined` **0**, down from ~65,203.
  *
- * And `author.name`, `moderationStatus` and `mediaOrganizationId` appear in NO
- * index (classic or Atlas Search), so every candidate must be FETCHed from the
- * 1.5 GB collection regardless of how it was found. Measured 2026-09-17 on a
- * direct connection, the directory `$group` did not return within 60 seconds;
- * bounded by `QUERY_MAX_TIME_MS` it throws instead.
+ * ⚠️ **And it is still 11,057 ms warm**, because ~58,700 index keys is simply
+ * that much work for an M20's two burstable vCPU. Nothing in this file, and no
+ * further index, changes that — which is why the fix was structural rather than
+ * a query rewrite: **`getBylineDirectory` no longer runs on a reader's
+ * request.** `/api/cron/byline-directory` runs it on a schedule and publishes
+ * the result to a snapshot collection; `@/lib/mongodb/byline-directory`
+ * resolves a slug out of it with one `_id` lookup. This function is now a BUILD
+ * step with a cron behind it, not a read with a reader waiting on it, and it
+ * should stay that way — see that module's header before calling it from
+ * anywhere that serves a request.
  *
- * **Nothing in this file can fix that** — the fix is an index on
- * `{'author.name': 1, datePublished: -1}`, which is a live-cluster change this
- * repo does not make. What this file CAN do, and now does, is refuse to pass a
- * failed read off as a finding: both reads carry `ok`, so the caller can tell
- * "we could not look" from "there is nothing there". A byline directory that
- * came back empty because the cluster timed out must never reach a reader as
- * the statement that a journalist does not exist.
+ * `getAuthorProfile` does still run per request, and it is the read the
+ * covering index genuinely rescued: its `$in` on one to three exact spellings
+ * is an equality on the leading key, so it seeks rather than scans.
+ *
+ * Both reads carry `ok` regardless, because that is a separate guarantee from
+ * being fast: a directory that came back empty because the cluster timed out
+ * must never reach a reader as the statement that a journalist does not exist.
  *
  * A year is the window because the corpus is younger than that, so today it is
  * every article the platform holds while still bounding the read as the corpus
@@ -63,10 +62,11 @@ export const AUTHOR_WINDOW_DAYS = 365
 /**
  * Ceiling on rows returned by the directory read.
  *
- * 3,792 distinct raw bylines on the live corpus today. The cap is an order of
- * magnitude above that so it never truncates in practice, and exists so a
+ * Measured 2026-09-17: **5,448** distinct folded bylines on the live corpus
+ * (the 3,792 this line used to record was already stale). The cap is an order
+ * of magnitude above that so it never truncates in practice, and exists so a
  * pipeline fault that starts minting bylines degrades this into "some author
- * links 404" rather than into a multi-megabyte cached blob on every page.
+ * links 404" rather than into an unbounded build.
  */
 const DIRECTORY_LIMIT = 40_000
 
