@@ -898,3 +898,65 @@ describe('articleExists', () => {
     await expect(articleExists('a1')).resolves.toBeNull();
   });
 });
+
+// ───────────────────────────────────────────────────────────────────────────
+// The feed index hint
+// ───────────────────────────────────────────────────────────────────────────
+
+describe('feed reads name their index', () => {
+  /**
+   * If this regresses, a reader whose saved countries differ from the default
+   * waits behind a skeleton while MongoDB races five candidate indexes before
+   * running a query it answers in milliseconds. Measured 2026-09-25 on the
+   * live cluster: 28,138 ms of planning under load, 0 ms with the hint, same
+   * keys examined and same rows returned.
+   */
+  it('hints the newest-first index on the latest feed', async () => {
+    const articles = collectionStub({ find: [[articleDoc()]] });
+    useDb({ articles, feedSources: collectionStub({ find: [[sourceDoc()]] }) });
+
+    await getArticles({ limit: 5 });
+
+    expect(articles.findCalls[0].hint).toBe('status_1_datePublished_-1');
+  });
+
+  it('hints it on the popular rail and on a cursor page too', async () => {
+    const popular = collectionStub({ find: [[articleDoc()]] });
+    useDb({ articles: popular, feedSources: collectionStub({ find: [[sourceDoc()]] }) });
+    await getArticles({ sort: 'popular' });
+    expect(popular.findCalls[0].hint).toBe('status_1_datePublished_-1');
+
+    const paged = collectionStub({ find: [[articleDoc()]] });
+    useDb({ articles: paged, feedSources: collectionStub({ find: [[sourceDoc()]] }) });
+    const cursor = Buffer.from('2026-09-01T06:30:00.000Z|a1', 'utf8').toString('base64url');
+    await getArticles({ cursor });
+    expect(paged.findCalls[0].hint).toBe('status_1_datePublished_-1');
+  });
+
+  it('reads unhinted rather than failing when the index has been dropped', async () => {
+    const articles = collectionStub({
+      find: [
+        new Error('hint provided does not correspond to an existing index'),
+        [articleDoc()],
+      ],
+    });
+    useDb({ articles, feedSources: collectionStub({ find: [[sourceDoc()]] }) });
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const { articles: rows } = await getArticles({ limit: 5 });
+
+    expect(rows).toHaveLength(1);
+    expect(articles.findCalls).toHaveLength(2);
+    expect(articles.findCalls[1].hint).toBeUndefined();
+    expect(spy).toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it('does not retry an error that has nothing to do with the hint', async () => {
+    const articles = collectionStub({ find: [new Error('operation exceeded time limit')] });
+    useDb({ articles, feedSources: collectionStub() });
+
+    await expect(getArticles({ limit: 5 })).rejects.toThrow('operation exceeded time limit');
+    expect(articles.findCalls).toHaveLength(1);
+  });
+});

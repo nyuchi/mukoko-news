@@ -4,7 +4,7 @@
  * Import only in Server Components, Route Handlers, or Server Actions.
  */
 
-import type { Collection, Filter } from 'mongodb'
+import type { Collection, Filter, FindCursor } from 'mongodb'
 import { getDb, QUERY_MAX_TIME_MS } from './client'
 import { stripHtml } from '@/lib/utils'
 import { clampInt, MAX_LIMIT, MAX_PAGE } from '@/lib/safety'
@@ -367,6 +367,60 @@ function toArticle(
 const POPULAR_CANDIDATE_POOL = 200
 
 /**
+ * The index every feed read uses, named rather than chosen.
+ *
+ * ⚠️ The NAME lies: `status_1_datePublished_-1` has the key pattern
+ * `{datePublished: -1, status: 1}`. `datePublished` leads, which is exactly why
+ * it serves a newest-first feed — it streams in the sort order and stops at the
+ * page limit.
+ *
+ * Why hint at all, when the planner picks this index anyway: because it takes
+ * the planner up to half a minute to decide. Every country filter turns into a
+ * different `feedSourceId: {$in: [...]}` list, so each reader's preferences are
+ * a query shape the plan cache has not seen, and each one pays for a full
+ * multi-plan race across five candidate indexes on a burstable-CPU M20.
+ * Measured 2026-09-25 on the live cluster, countries + categories:
+ *
+ *   unhinted  optimizationTimeMillis 28,138 (under load) / 1,823 (quiet)
+ *   hinted    optimizationTimeMillis      0, same 3,088 keys, same 21 rows
+ *
+ * That planning time is what a reader with non-default preferences sat behind
+ * a skeleton for. The hint changes which work is done by nothing — the winning
+ * plan was already this index — it only stops the race.
+ */
+export const FEED_INDEX = 'status_1_datePublished_-1'
+
+/** A hint naming an index that no longer exists fails the query outright. */
+function isMissingHintError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err)
+  return /hint provided does not correspond to an existing index|bad hint/i.test(message)
+}
+
+/**
+ * Run a feed `find` against FEED_INDEX, and if that index has been dropped or
+ * renamed, run it again unhinted rather than fail. A missing index must cost
+ * speed, not the feed: the unhinted query is slow but correct. It is logged,
+ * because a silent fallback would reinstate the slow path with nobody told.
+ */
+async function findFeed<T>(
+  col: Collection<MongoArticle>,
+  filter: Filter<MongoArticle>,
+  shape: (cursor: FindCursor<MongoArticle>) => FindCursor<MongoArticle>,
+): Promise<T[]> {
+  try {
+    return (await shape(
+      col.find(filter, { projection: LIST_PROJECTION }).hint(FEED_INDEX),
+    ).toArray()) as unknown as T[]
+  } catch (err) {
+    if (!isMissingHintError(err)) throw err
+    console.error(`[articles] feed index ${FEED_INDEX} is missing; reading unhinted`, err)
+    return (await shape(
+      col.find(filter, { projection: LIST_PROJECTION }),
+    ).toArray()) as unknown as T[]
+  }
+}
+
+/**
  * Ceiling on the pagination total, for the callers that explicitly ask for one.
  *
  * `countDocuments(filter)` with only `$ne` filters cannot use an index and cannot
@@ -494,12 +548,9 @@ export async function getArticles(params: {
   // `popular`: read a recent pool on the index, rank it here. See
   // POPULAR_CANDIDATE_POOL for why this is not a MongoDB sort.
   if (isPopular) {
-    const pool = await col
-      .find(filter, { projection: LIST_PROJECTION })
-      .sort({ datePublished: -1 })
-      .limit(POPULAR_CANDIDATE_POOL)
-      .maxTimeMS(QUERY_MAX_TIME_MS)
-      .toArray()
+    const pool = await findFeed<MongoArticle>(col, filter, (c) =>
+      c.sort({ datePublished: -1 }).limit(POPULAR_CANDIDATE_POOL).maxTimeMS(QUERY_MAX_TIME_MS),
+    )
 
     pool.sort((a, b) => {
       const qa = typeof a.qualityScore === 'number' ? a.qualityScore : -1
@@ -547,13 +598,9 @@ export async function getArticles(params: {
 
   // Fetch one more than asked for. Its presence answers "is there another page"
   // exactly, with no count at all — the cheap half of the TikTok-style feed.
-  const docs = await col
-    .find(filter, { projection: LIST_PROJECTION })
-    .sort(sortField as never)
-    .skip(skip)
-    .limit(limit + 1)
-    .maxTimeMS(QUERY_MAX_TIME_MS)
-    .toArray()
+  const docs = await findFeed<MongoArticle>(col, filter, (c) =>
+    c.sort(sortField as never).skip(skip).limit(limit + 1).maxTimeMS(QUERY_MAX_TIME_MS),
+  )
 
   const hasMore = docs.length > limit
   const pageDocs = hasMore ? docs.slice(0, limit) : docs
